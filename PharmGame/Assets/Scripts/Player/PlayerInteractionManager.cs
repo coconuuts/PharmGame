@@ -6,6 +6,7 @@ public class PlayerInteractionManager : MonoBehaviour
     [Header("Raycast Settings")]
     public float rayDistance = 2f;
     public Transform cameraTransform;
+    private bool isRaycastActive = true; // Added flag to control raycast
 
     [Header("TMP Prompt Settings")]
     // The shared TextMeshPro UI element reused across objects.
@@ -30,15 +31,19 @@ public class PlayerInteractionManager : MonoBehaviour
         }
     }
 
+
     private void Update()
     {
-        HandleInteractionRaycast();
+        if (isRaycastActive) // Only perform raycast if it's active
+        {
+            HandleInteractionRaycast();
+        }
 
         // When the player presses E and there's an interactable object, trigger the interaction.
         if (Input.GetKeyDown(KeyCode.E) && currentInteractable != null)
         {
             currentInteractable.Interact();
-            currentInteractable.DeactivatePrompt(promptText);
+            currentInteractable.DeactivatePrompt();
             currentInteractable = null;
         }
     }
@@ -54,7 +59,7 @@ public class PlayerInteractionManager : MonoBehaviour
         // If an interactable object is already active, clear the previous prompt.
         if (currentInteractable != null)
         {
-            currentInteractable.DeactivatePrompt(promptText);
+            currentInteractable.DeactivatePrompt();
             currentInteractable = null;
         }
 
@@ -70,12 +75,12 @@ public class PlayerInteractionManager : MonoBehaviour
                     if (currentInteractable != interactable)
                     {
                         // Deactivate the previous prompt if any.
-                        currentInteractable?.DeactivatePrompt(promptText);
+                        currentInteractable?.DeactivatePrompt();
                         currentInteractable = interactable;
                         // Activate the prompt at the object's origin.
-                        currentInteractable.ActivatePrompt(promptText);
+                        currentInteractable.ActivatePrompt();
                     }
-                    return;  // Exit early if an interactable object is found.
+                    return; // Exit early if an interactable object is found.
                 }
             }
         }
@@ -83,8 +88,18 @@ public class PlayerInteractionManager : MonoBehaviour
         // If no interactable object is hit, ensure the prompt is hidden.
         if (currentInteractable != null)
         {
-            currentInteractable.DeactivatePrompt(promptText);
+            currentInteractable.DeactivatePrompt();
             currentInteractable = null;
         }
+    }
+
+    public void DisableRaycast()
+    {
+        isRaycastActive = false;
+    }
+
+    public void EnableRaycast()
+    {
+        isRaycastActive = true;
     }
 }

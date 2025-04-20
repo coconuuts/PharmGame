@@ -20,6 +20,11 @@ TagManager:
   - LightSwitchOn
   - LightSwitchOff
   - RoomLampLights
+  - ObjectInventory
+  - PlayerInventory
+  - OrderMed
+  - InteractionPrompt
+  - InventoryItems
   layers:
   - Default
   - TransparentFX

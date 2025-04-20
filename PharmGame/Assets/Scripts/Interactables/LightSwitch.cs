@@ -1,5 +1,4 @@
 using UnityEngine;
-using TMPro;
 
 public class LightSwitch : MonoBehaviour, IInteractable
 {
@@ -11,9 +10,8 @@ public class LightSwitch : MonoBehaviour, IInteractable
     public GameObject lightGroup;
 
     [Header("Prompt Settings")]
-    public Vector3 textPromptOffset = Vector3.zero;
-    public Vector3 textPromptRotationOffset = Vector3.zero; // New rotation offset
-    private Quaternion initialPromptRotation;
+    public Vector3 lightTextPromptOffset = Vector3.zero;
+    public Vector3 lightTextPromptRotationOffset = Vector3.zero;
 
     [Header("Lightbulb Material Settings")]
     public Material onMaterial;
@@ -51,40 +49,23 @@ public class LightSwitch : MonoBehaviour, IInteractable
         if (onModel != null) onModel.SetActive(isLightOn);
         if (lightGroup != null) lightGroup.SetActive(isLightOn);
 
-        // Store the initial rotation of the prompt text element
-        if (FindAnyObjectByType<PlayerInteractionManager>()?.promptText != null)
-        {
-            initialPromptRotation = FindAnyObjectByType<PlayerInteractionManager>().promptText.transform.rotation;
-        }
-        else
-        {
-            Debug.LogWarning("PlayerInteractionManager or promptText not found. Cannot store initial prompt rotation.");
-        }
-
         UpdateLightbulbMaterial();
     }
 
     /// <summary>
-    /// Activates the prompt by positioning and rotating the shared TMP_Text element.
+    /// Activates the interaction prompt.
     /// </summary>
-    /// <param name="prompt">The shared TMP_Text element.</param>
-    public void ActivatePrompt(TMP_Text prompt)
+    public void ActivatePrompt()
     {
-        prompt.transform.position = transform.position + textPromptOffset;
-        // Apply the rotation offset in world space
-        prompt.transform.rotation = initialPromptRotation * Quaternion.Euler(textPromptRotationOffset);
-        prompt.text = InteractionPrompt;
-        prompt.enabled = true;
+        PromptEditor.Instance.DisplayPrompt(transform, InteractionPrompt, lightTextPromptOffset, lightTextPromptRotationOffset);
     }
 
     /// <summary>
-    /// Deactivates (hides) the prompt text.
+    /// Deactivates (hides) the interaction prompt.
     /// </summary>
-    /// <param name="prompt">The shared TMP_Text element.</param>
-    public void DeactivatePrompt(TMP_Text prompt)
+    public void DeactivatePrompt()
     {
-        prompt.text = "";
-        prompt.enabled = false;
+        PromptEditor.Instance.HidePrompt();
     }
 
     /// <summary>
@@ -110,25 +91,5 @@ public class LightSwitch : MonoBehaviour, IInteractable
         {
             lightbulbRenderer.material = isLightOn ? onMaterial : offMaterial;
         }
-    }
-
-    /// <summary>
-    /// Allows adjustment of the prompt offset via code.
-    /// </summary>
-    /// <param name="positionOffset">A new Vector3 position offset value.</param>
-    /// <param name="rotationOffset">A new Vector3 rotation offset value.</param>
-    public void SetTextPromptOffset(Vector3 positionOffset, Vector3 rotationOffset)
-    {
-        textPromptOffset = positionOffset;
-        textPromptRotationOffset = rotationOffset;
-    }
-
-    /// <summary>
-    /// Allows adjustment of the prompt position offset via code.
-    /// </summary>
-    /// <param name="offset">A new Vector3 position offset value.</param>
-    public void SetTextPromptOffset(Vector3 offset)
-    {
-        textPromptOffset = offset;
     }
 }

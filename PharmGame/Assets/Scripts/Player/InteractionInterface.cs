@@ -1,5 +1,4 @@
 using UnityEngine;
-using TMPro;
 
 public interface IInteractable
 {
@@ -9,16 +8,14 @@ public interface IInteractable
     string InteractionPrompt { get; }
 
     /// <summary>
-    /// Activates the shared prompt text and positions it relative to the object.
+    /// Activates the interaction prompt.
     /// </summary>
-    /// <param name="prompt">The shared TMP_Text element to update.</param>
-    void ActivatePrompt(TMP_Text prompt);
+    void ActivatePrompt();
 
     /// <summary>
-    /// Deactivates (hides) the shared prompt text.
+    /// Deactivates (hides) the interaction prompt.
     /// </summary>
-    /// <param name="prompt">The shared TMP_Text element to update.</param>
-    void DeactivatePrompt(TMP_Text prompt);
+    void DeactivatePrompt();
 
     /// <summary>
     /// Runs the object's specific interaction logic.
