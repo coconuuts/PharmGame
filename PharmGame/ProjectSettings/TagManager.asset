@@ -25,6 +25,7 @@ TagManager:
   - OrderMed
   - InteractionPrompt
   - InventoryItems
+  - PlayerToolbarInventory
   layers:
   - Default
   - TransparentFX

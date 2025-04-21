@@ -181,36 +181,6 @@ namespace Systems.Inventory
             }
         }
 
-        // Optional: Add an overload to add a list of items
-        public void AddItems(IEnumerable<Item> itemsToAdd)
-        {
-             if (itemsToAdd == null) return;
-
-             // Use ToList() or ToArray() if the enumeration might be modified during iteration
-             var itemsList = itemsToAdd.ToList();
-
-             // Check if there's *any* space in physical slots before trying to add
-             if (inventoryState.Count >= PhysicalSlotCount) // Use the Count property from ObservableArray
-             {
-                 Debug.LogWarning($"Failed to add multiple items: Physical inventory slots are full ({PhysicalSlotCount} / {PhysicalSlotCount}).");
-                 return; // Physical inventory is full
-             }
-
-
-             foreach(var item in itemsList)
-             {
-                 // Call the single item add method, which respects physical slot limit
-                 bool added = AddItem(item);
-                 if (!added)
-                 {
-                     // If AddItem fails, the physical slots became full during the loop
-                     // You might want to break or keep trying depending on desired behavior
-                     Debug.LogWarning($"Stopped adding items from list because physical inventory became full.");
-                     break;
-                 }
-             }
-        }
-
         /// <summary>
         /// Attempts to remove the item from a specific physical slot index.
         /// </summary>

@@ -45,7 +45,7 @@ public class InventoryTester : MonoBehaviour
         }
 
         // --- Test adding Test1 item ---
-        if (Input.GetKeyDown(KeyCode.Alpha1))
+        if (Input.GetKeyDown(KeyCode.F1))
         {
             if (testItem1Details != null)
             {
@@ -68,7 +68,7 @@ public class InventoryTester : MonoBehaviour
         }
 
         // --- Test adding Test2 item ---
-        if (Input.GetKeyDown(KeyCode.Alpha2))
+        if (Input.GetKeyDown(KeyCode.F2))
         {
             if (testItem2Details != null)
             {

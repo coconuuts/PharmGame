@@ -11,9 +11,9 @@ namespace Systems.Inventory
 
         // --- ADD THIS DECLARATION ---
         private List<InventorySlotUI> slotUIComponents;
-        // --------------------------
-
-        // Removed direct FlexibleGridLayout reference finding in Awake
+    
+        // --- ADD THIS PUBLIC GETTER ---
+        public List<InventorySlotUI> SlotUIComponents => slotUIComponents;
 
         /// <summary>
         /// Sets the list of visual InventorySlotUI components for this Visualizer to manage.
