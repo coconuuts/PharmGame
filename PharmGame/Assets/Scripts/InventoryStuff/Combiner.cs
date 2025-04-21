@@ -41,10 +41,7 @@ namespace Systems.Inventory
 
         private void Awake()
         {
-            Debug.Log($"Combiner ({gameObject.name}): Awake started.", this);
             InitializeInventoryData();
-            // --- ADD THIS DEBUG LOG ---
-            Debug.Log($"Combiner ({gameObject.name}): Awake finished.", this);
         }
 
         // Optional: You might want to call this publicly if initialization needs to happen later
@@ -59,12 +56,6 @@ namespace Systems.Inventory
                     Debug.LogError("Combiner requires a FlexibleGridLayout component on the same GameObject or assigned in the inspector.", this);
                     return;
                 }
-                Debug.Log($"Combiner ({gameObject.name}): Found FlexibleGridLayout on self.", this); // Adjust log if using GetComponentInParent
-            }
-            else
-            {
-                 // --- ADD THIS DEBUG LOG ---
-                 Debug.Log($"Combiner ({gameObject.name}): FlexibleGridLayout assigned in inspector.", this);
             }
 
             // Get the number of physical slots from the UI layout

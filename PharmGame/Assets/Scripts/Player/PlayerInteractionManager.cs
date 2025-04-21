@@ -1,29 +1,26 @@
 using UnityEngine;
 using TMPro;
+using Systems.Interaction; // ADD THIS USING
 
 public class PlayerInteractionManager : MonoBehaviour
 {
     [Header("Raycast Settings")]
     public float rayDistance = 2f;
     public Transform cameraTransform;
-    private bool isRaycastActive = true; // Added flag to control raycast
+    private bool isRaycastActive = true;
 
     [Header("TMP Prompt Settings")]
-    // The shared TextMeshPro UI element reused across objects.
     public TMP_Text promptText;
 
-    // Holds the current interactable object in view.
     private IInteractable currentInteractable;
 
     private void Awake()
     {
-        // Use the main camera if no cameraTransform is explicitly provided.
         if (cameraTransform == null)
         {
             cameraTransform = Camera.main.transform;
         }
 
-        // Hide the prompt text initially.
         if (promptText != null)
         {
             promptText.text = "";
@@ -31,23 +28,42 @@ public class PlayerInteractionManager : MonoBehaviour
         }
     }
 
-
     private void Update()
     {
-        if (isRaycastActive) // Only perform raycast if it's active
+        if (isRaycastActive)
         {
             HandleInteractionRaycast();
         }
 
-        // When the player presses E and there's an interactable object, trigger the interaction.
+        // When the player presses E and there's an interactable object
         if (Input.GetKeyDown(KeyCode.E) && currentInteractable != null)
         {
-            currentInteractable.Interact();
-            currentInteractable.DeactivatePrompt();
-            currentInteractable = null;
+            // --- Call Interact and capture the response ---
+            Debug.Log("PlayerInteractionManager: 'E' pressed. Calling Interact().");
+            InteractionResponse response = currentInteractable.Interact();
+            Debug.Log($"PlayerInteractionManager: Interact() returned a response of type {response?.GetType().Name ?? "null"}.");
+            // ---------------------------------------------
+
+            currentInteractable.DeactivatePrompt(); // Deactivate prompt immediately after interaction
+            currentInteractable = null; // Clear the current interactable reference
+
+            // --- Pass the response to the MenuManager for handling ---
+            // This part will be fully implemented in Step 4
+            if (response != null && MenuManager.Instance != null)
+            {
+                Debug.Log("PlayerInteractionManager: Passing interaction response to MenuManager.");
+                MenuManager.Instance.HandleInteractionResponse(response); // This method will be added in MenuManager (Step 4)
+            }
+            else
+            {
+                if (response == null) Debug.LogWarning("PlayerInteractionManager: Interactable returned a null response.");
+                if (MenuManager.Instance == null) Debug.LogError("PlayerInteractionManager: MenuManager Instance is null! Cannot handle interaction response.");
+                // Handle cases where there's no response or no MenuManager if necessary
+            }
         }
     }
 
+    // ... (HandleInteractionRaycast, DisableRaycast, EnableRaycast methods remain the same)
     /// <summary>
     /// Casts a ray from the camera to detect interactable objects.
     /// </summary>
@@ -56,17 +72,14 @@ public class PlayerInteractionManager : MonoBehaviour
         Ray ray = new Ray(cameraTransform.position, cameraTransform.forward);
         RaycastHit hit;
 
-        // If an interactable object is already active, clear the previous prompt.
         if (currentInteractable != null)
         {
             currentInteractable.DeactivatePrompt();
             currentInteractable = null;
         }
 
-        // Check if the ray hits a collider within the specified distance.
         if (Physics.Raycast(ray, out hit, rayDistance))
         {
-            // Process only if the hit collider is a trigger.
             if (hit.collider.isTrigger)
             {
                 IInteractable interactable = hit.collider.GetComponent<IInteractable>();
@@ -74,18 +87,15 @@ public class PlayerInteractionManager : MonoBehaviour
                 {
                     if (currentInteractable != interactable)
                     {
-                        // Deactivate the previous prompt if any.
                         currentInteractable?.DeactivatePrompt();
                         currentInteractable = interactable;
-                        // Activate the prompt at the object's origin.
                         currentInteractable.ActivatePrompt();
                     }
-                    return; // Exit early if an interactable object is found.
+                    return;
                 }
             }
         }
 
-        // If no interactable object is hit, ensure the prompt is hidden.
         if (currentInteractable != null)
         {
             currentInteractable.DeactivatePrompt();

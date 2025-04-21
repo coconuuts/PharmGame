@@ -1,4 +1,4 @@
-using UnityEngine;
+using Systems.Interaction; // ADD THIS USING
 
 public interface IInteractable
 {
@@ -18,7 +18,8 @@ public interface IInteractable
     void DeactivatePrompt();
 
     /// <summary>
-    /// Runs the object's specific interaction logic.
+    /// Runs the object's specific interaction logic and returns a response describing the outcome.
     /// </summary>
-    void Interact();
+    /// <returns>An InteractionResponse object describing the result of the interaction.</returns>
+    InteractionResponse Interact(); // CHANGED RETURN TYPE
 }

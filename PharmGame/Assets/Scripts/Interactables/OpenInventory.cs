@@ -1,5 +1,6 @@
 using UnityEngine;
-using Systems.Inventory; // Needed for the Inventory script reference
+using InventoryClass = Systems.Inventory.Inventory; // Use the alias
+using Systems.Interaction; // ADD THIS USING
 
 // Ensure this script is on the same GameObject as the Collider that the PlayerInteractionManager hits
 public class OpenInventory : MonoBehaviour, IInteractable
@@ -8,16 +9,11 @@ public class OpenInventory : MonoBehaviour, IInteractable
     [SerializeField] private GameObject inventoryUIRoot;
 
     [Tooltip("The Inventory component associated with this interactable object.")]
-    [SerializeField] private Inventory inventoryComponent;
+    [SerializeField] private InventoryClass inventoryComponent; // Use the alias
 
     [Tooltip("The text to display in the interaction prompt.")]
     [SerializeField] private string interactionPrompt = "Open Inventory (E)"; // Default prompt
 
-    [Header("Prompt Settings")]
-    public Vector3 inventoryTextPromptOffset = Vector3.zero;
-    public Vector3 inventoryTextPromptRotationOffset = Vector3.zero;
-
-    // Get the prompt text from the inspector field
     public string InteractionPrompt => interactionPrompt;
 
     // --- IInteractable Implementation ---
@@ -28,7 +24,14 @@ public class OpenInventory : MonoBehaviour, IInteractable
     /// </summary>
     public void ActivatePrompt()
     {
-        PromptEditor.Instance.DisplayPrompt(transform, InteractionPrompt, inventoryTextPromptOffset, inventoryTextPromptRotationOffset);
+         if (PromptEditor.Instance != null)
+         {
+             PromptEditor.Instance.DisplayPrompt(transform, InteractionPrompt, computerTextPromptOffset, computerTextPromptRotationOffset); // Assuming prompt offsets are part of the interactable now
+         }
+         else
+         {
+              Debug.LogWarning($"OpenInventory ({gameObject.name}): PromptEditor.Instance is null. Cannot display prompt.");
+         }
     }
 
     /// <summary>
@@ -37,39 +40,38 @@ public class OpenInventory : MonoBehaviour, IInteractable
     /// </summary>
     public void DeactivatePrompt()
     {
-        PromptEditor.Instance.HidePrompt();
+         if (PromptEditor.Instance != null)
+         {
+             PromptEditor.Instance.HidePrompt();
+         }
     }
 
-
     /// <summary>
-    /// Called by PlayerInteractionManager when the player interacts with this object (e.g., presses E).
-    /// Triggers the inventory opening sequence.
+    /// Runs the object's specific interaction logic and returns a response describing the outcome.
+    /// Changed to return InteractionResponse.
     /// </summary>
-    public void Interact()
+    /// <returns>An InteractionResponse object describing the result of the interaction.</returns>
+    public InteractionResponse Interact() // CHANGED RETURN TYPE
     {
-        Debug.Log($"OpenInventory ({gameObject.name}): Interact called. Attempting to open inventory.", this);
+        Debug.Log($"OpenInventory ({gameObject.name}): Interact called. Returning OpenInventoryResponse.", this);
 
         if (inventoryUIRoot == null)
         {
-            Debug.LogError($"OpenInventory ({gameObject.name}): Inventory UI Root GameObject is not assigned!", this);
-            return;
+            Debug.LogError($"OpenInventory ({gameObject.name}): Inventory UI Root GameObject is not assigned! Cannot create response.", this);
+            return null; // Return null response on error
         }
          if (inventoryComponent == null)
          {
-             Debug.LogError($"OpenInventory ({gameObject.name}): Inventory Component is not assigned!", this);
-             return;
+             Debug.LogError($"OpenInventory ({gameObject.name}): Inventory Component is not assigned! Cannot create response.", this);
+             return null; // Return null response on error
          }
 
-        // Tell the MenuManager to open this specific inventory's UI
-        // We need to modify MenuManager to accept the Inventory reference.
-        if (MenuManager.Instance != null)
-        {
-            MenuManager.Instance.OpenInventory(inventoryComponent, inventoryUIRoot); // Pass both the data component and the UI root
-        }
-        else
-        {
-            Debug.LogError("OpenInventory: MenuManager Instance is null!");
-        }
+        // --- Create and return the response ---
+        // The PlayerInteractionManager will receive this and pass it to the MenuManager
+        return new OpenInventoryResponse(inventoryComponent, inventoryUIRoot);
+        // --------------------------------------
+
+        // Removed: Direct call to MenuManager.Instance.OpenInventory(inventoryComponent, inventoryUIRoot);
     }
 
     // --- Optional: Add validation in editor ---
@@ -79,9 +81,16 @@ public class OpenInventory : MonoBehaviour, IInteractable
          {
              Debug.LogWarning($"OpenInventory ({gameObject.name}): Assigned Inventory UI Root GameObject '{inventoryUIRoot.name}' does not have a FlexibleGridLayout component. Are you sure this is the correct GameObject?", this);
          }
-          if (inventoryComponent != null && inventoryComponent.GetComponent<Combiner>() == null)
+         // Note: Need to check for Combiner on the GameObject that holds the Inventory component
+         if (inventoryComponent != null && inventoryComponent.GetComponent<Systems.Inventory.Combiner>() == null) // Use full namespace or alias for Combiner check
          {
              Debug.LogWarning($"OpenInventory ({gameObject.name}): Assigned Inventory Component GameObject '{inventoryComponent.gameObject.name}' does not have a Combiner component. Are you sure this is the correct GameObject?", this);
          }
     }
+
+    // Assuming computerTextPromptOffset and computerTextPromptRotationOffset are defined elsewhere or were a copy-paste error.
+    // If they are specific to the computer, remove them from OpenInventory or handle them generically.
+     [Header("Prompt Settings")] // Assuming prompt settings are common, move these up if needed
+     public Vector3 computerTextPromptOffset = Vector3.zero; // Consider renaming or removing
+     public Vector3 computerTextPromptRotationOffset = Vector3.zero; // Consider renaming or removing
 }

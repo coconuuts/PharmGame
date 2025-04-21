@@ -27,14 +27,6 @@ namespace Systems.Inventory
                 return;
             }
             slotUIComponents = slotUis; // This line now works because slotUIComponents is declared
-            Debug.Log($"Visualizer ({gameObject.name}): Received {slotUis.Count} slot UI components.", this);
-            // No visual update needed here, RefreshUI will be called by InitialLoad event
-        }
-
-        private void Awake()
-        {
-            Debug.Log($"Visualizer ({gameObject.name}): Awake started. Waiting for Inventory to provide components.", this);
-            // Slot finding logic moved to Inventory.Awake
         }
 
         private void OnDestroy()
@@ -42,17 +34,14 @@ namespace Systems.Inventory
             if (inventoryState != null)
             {
                 inventoryState.AnyValueChanged -= HandleInventoryChange;
-                Debug.Log($"Visualizer ({gameObject.name}): Unsubscribed from state in OnDestroy.", this);
             }
         }
 
         public void SetInventoryState(ObservableArray<Item> state)
         {
-            Debug.Log($"Visualizer ({gameObject.name}): Attempting to set inventory state.", this);
             if (inventoryState != null)
             {
                 inventoryState.AnyValueChanged -= HandleInventoryChange;
-                Debug.Log($"Visualizer ({gameObject.name}): Unsubscribed from previous state.", this);
             }
 
             inventoryState = state;
@@ -61,8 +50,6 @@ namespace Systems.Inventory
             {
                 inventoryState.AnyValueChanged += HandleInventoryChange;
                 Debug.Log($"Visualizer ({gameObject.name}): Subscribed to new state.", this);
-
-                Debug.Log($"Visualizer ({gameObject.name}): Requesting initial load event from ObservableArray.", this);
                 inventoryState.TriggerInitialLoadEvent(); // Call the specific initial load trigger
             }
              else
@@ -99,7 +86,6 @@ namespace Systems.Inventory
              {
                  case ArrayChangeType.InitialLoad:
                  case ArrayChangeType.ArrayCleared:
-                      Debug.Log($"Visualizer ({gameObject.name}): Handling InitialLoad or ArrayCleared. Refreshing all {visualSlotCount} visible slots.", this);
                      for (int i = 0; i < visualSlotCount; i++)
                      {
                          Item item = (currentItems != null && i < currentItems.Length) ? currentItems[i] : null;
@@ -121,7 +107,6 @@ namespace Systems.Inventory
                      int singleIndex = changeInfo.Index;
                      if (singleIndex >= 0 && singleIndex < visualSlotCount)
                      {
-                          Debug.Log($"Visualizer ({gameObject.name}): Handling single slot update at index {singleIndex}. Calling SetItem.", this);
                           // This line now works because slotUIComponents is declared
                           slotUIComponents[singleIndex].SetItem(changeInfo.NewItem);
                      }
@@ -140,7 +125,6 @@ namespace Systems.Inventory
 
                      if (index1 >= 0 && index1 < visualSlotCount)
                      {
-                          Debug.Log($"Visualizer ({gameObject.name}): Handling swap. Updating visual slot {index1}.", this);
                           // This line now works because slotUIComponents is declared
                           slotUIComponents[index1].SetItem(changeInfo.NewItem);
                           updatedVisualSlot1 = true;
@@ -152,7 +136,6 @@ namespace Systems.Inventory
 
                      if (index2 >= 0 && index2 < visualSlotCount)
                      {
-                           Debug.Log($"Visualizer ({gameObject.name}): Handling swap. Updating visual slot {index2}.", this);
                            // This line now works because slotUIComponents is declared
                            slotUIComponents[index2].SetItem(changeInfo.NewTargetItem);
                            updatedVisualSlot2 = true;

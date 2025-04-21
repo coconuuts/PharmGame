@@ -34,10 +34,6 @@ namespace Systems.Inventory
              {
                  highlightElement.SetActive(false); // Ensure highlight is off by default
              }
-             else
-             {
-                  Debug.LogWarning($"InventorySlotUI ({gameObject.name}, Index: {SlotIndex}): Highlight Element is not assigned. Selection highlight will not be visible.", this);
-             }
         }
         
         // Method to update the visual representation of the slot

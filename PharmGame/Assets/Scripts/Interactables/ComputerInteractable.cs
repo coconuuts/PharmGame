@@ -1,21 +1,20 @@
 using UnityEngine;
-using UnityEngine.UI; // Required for UI components like Text, Button, Image
-using System.Collections; // Required for Coroutines
-using System.Collections.Generic; // Required for Dictionary
-using System.Text; // Required for StringBuilder
+using UnityEngine.UI;
+using System.Collections; // Keep if you have other coroutines, otherwise remove
+using System.Collections.Generic;
+using System.Text;
 using TMPro;
-using Systems.Inventory; // ADD THIS USING
+using Systems.Inventory; // Needed for ItemDetails and Inventory
+using Systems.Interaction; // ADD THIS USING
 
 public class ComputerInteractable : MonoBehaviour, IInteractable
 {
-    // --- Existing Camera and Interaction Logic ---
+    [Header("Camera View Point")]
+    [Tooltip("The transform the camera should move to when interacting with the computer.")]
     [SerializeField] private Transform cameraViewPoint;
-    [SerializeField] private float cameraMoveDuration = 0.5f;
 
-    private Transform playerCameraTransform;
-    private Quaternion originalCameraRotation;
-    private Vector3 originalCameraPosition;
-    private Coroutine currentCameraMoveCoroutine;
+    [Tooltip("The duration of the camera movement animation.")]
+    [SerializeField] private float cameraMoveDuration = 0.5f;
 
     [Tooltip("The text to display in the interaction prompt.")]
     [SerializeField] private string interactionPrompt = "Access Computer (E)";
@@ -26,7 +25,11 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
 
     public string InteractionPrompt => interactionPrompt;
 
-    private bool isInteracting = false; // Tracks if *this* computer is being interacted with
+    // The purpose of isInteracting needs re-evaluation now that state/UI is external.
+    // If it's just to prevent re-interacting while already using *this* computer, keep it and reset elsewhere.
+    // If MenuManager handles entering/exiting computer state, its state check might be sufficient.
+    // For now, let's keep it but its state management connection is removed.
+    private bool isInteracting = false; // Tracks if *this* computer is conceptually being used
 
     // --- Shopping Cart and UI Logic ---
     [Header("Computer UI References")]
@@ -43,30 +46,26 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
     [SerializeField] private TextMeshProUGUI shoppingCartText;
 
     [Tooltip("Button to process the purchase.")]
-    [SerializeField] private Button buyButton; // ADD THIS FIELD
+    [SerializeField] private Button buyButton;
 
     // --- Item Details and Delivery Inventory ---
     [Header("Inventory Integration")]
     [Tooltip("The ItemDetails ScriptableObject for the first purchasable item.")]
-    [SerializeField] private ItemDetails item1Details; // ADD THIS FIELD
+    [SerializeField] private ItemDetails item1Details;
 
     [Tooltip("The ItemDetails ScriptableObject for the second purchasable item.")]
-    [SerializeField] private ItemDetails item2Details; // ADD THIS FIELD
+    [SerializeField] private ItemDetails item2Details;
 
     [Tooltip("The Inventory component where purchased items will be added (e.g., a delivery truck inventory).")]
-    [SerializeField] private Inventory targetDeliveryInventory; // ADD THIS FIELD
+    [SerializeField] private Inventory targetDeliveryInventory;
 
 
-    // Dictionary to store item details and their quantities
-    private Dictionary<ItemDetails, int> shoppingCart = new Dictionary<ItemDetails, int>(); // CHANGE DICTIONARY KEY TYPE
-
-    // Item names are now obtained from ItemDetails
+    private Dictionary<ItemDetails, int> shoppingCart = new Dictionary<ItemDetails, int>();
 
     // --- Existing IInteractable methods ---
     public void ActivatePrompt()
     {
-        // Assuming PromptEditor.Instance is available and handles the UI display
-         if (PromptEditor.Instance != null) // Added null check
+         if (PromptEditor.Instance != null)
          {
              PromptEditor.Instance.DisplayPrompt(transform, InteractionPrompt, computerTextPromptOffset, computerTextPromptRotationOffset);
          }
@@ -78,45 +77,23 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
 
     public void DeactivatePrompt()
     {
-         if (PromptEditor.Instance != null) // Added null check
+         if (PromptEditor.Instance != null)
          {
              PromptEditor.Instance.HidePrompt();
          }
     }
 
-    // --- Start Method + New UI Setup ---
+    // --- Start Method ---
     private void Start()
     {
-        // Find the player camera by tag
-        GameObject playerCameraObject = GameObject.FindGameObjectWithTag("MainCamera");
-        if (playerCameraObject != null)
-        {
-            playerCameraTransform = playerCameraObject.transform;
-        }
-        else
-        {
-            Debug.LogError("ComputerInteractable: Could not find GameObject with tag 'MainCamera'. Cannot move camera.", this);
-        }
-
         if (cameraViewPoint == null)
         {
             Debug.LogError("ComputerInteractable: 'Camera View Point' Transform is not assigned!", this);
         }
 
-        // Subscribe to MenuManager state changes
-        if (MenuManager.Instance != null)
-        {
-            MenuManager.OnStateChanged += HandleGameStateChanged;
-        }
-        else
-        {
-            Debug.LogError("ComputerInteractable: MenuManager.Instance is null! State changes cannot be handled.", this);
-        }
-
         // Subscribe to button click events
-        if (item1Button != null && item1Details != null) // Added null check for itemDetails
+        if (item1Button != null && item1Details != null)
         {
-             // Use lambda to pass the ItemDetails directly
             item1Button.onClick.AddListener(() => AddItemToCart(item1Details));
         }
         else
@@ -125,9 +102,8 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
             if(item1Details == null) Debug.LogWarning("ComputerInteractable: Item 1 Details are not assigned. Item 1 button will not work.");
         }
 
-        if (item2Button != null && item2Details != null) // Added null check for itemDetails
+        if (item2Button != null && item2Details != null)
         {
-             // Use lambda to pass the ItemDetails directly
             item2Button.onClick.AddListener(() => AddItemToCart(item2Details));
         }
         else
@@ -136,139 +112,65 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
              if(item2Details == null) Debug.LogWarning("ComputerInteractable: Item 2 Details are not assigned. Item 2 button will not work.");
         }
 
-        // Link the Buy button click to the ProcessPurchase method
-        if(buyButton != null) // Added null check
+        if(buyButton != null)
         {
-            buyButton.onClick.AddListener(ProcessPurchase); // Link the method
+            buyButton.onClick.AddListener(ProcessPurchase);
         }
         else
         {
              Debug.LogWarning("ComputerInteractable: Buy Button is not assigned. Purchase functionality will not work.");
         }
 
-
-        // Initialize the shopping cart display (should show empty initially)
         UpdateShoppingCartUI();
     }
 
     // --- Existing OnDestroy Method ---
     private void OnDestroy()
     {
-        if (MenuManager.Instance != null)
-        {
-            MenuManager.OnStateChanged -= HandleGameStateChanged;
-        }
-
-        // Ensure we unsubscribe from button events to prevent memory leaks
+        // Unsubscribe button events
         if(item1Button != null) item1Button.onClick.RemoveAllListeners();
         if(item2Button != null) item2Button.onClick.RemoveAllListeners();
-        if(buyButton != null) buyButton.onClick.RemoveAllListeners(); // Unsubscribe buy button
+        if(buyButton != null) buyButton.onClick.RemoveAllListeners();
     }
 
-    // --- Existing Interact Method + State Transition ---
-    public void Interact()
+    /// <summary>
+    /// Runs the object's specific interaction logic and returns a response describing the outcome.
+    /// Changed to return InteractionResponse.
+    /// </summary>
+    /// <returns>An InteractionResponse object describing the result of the interaction.</returns>
+    public InteractionResponse Interact() // CHANGED RETURN TYPE
     {
-        // Only interact if the game is in the Playing state and not already interacting with THIS computer
-        if (MenuManager.Instance == null || MenuManager.Instance.currentState != MenuManager.GameState.Playing || isInteracting)
+        // Only interact if the game is in the Playing state (MenuManager checks this)
+        // We can remove the state check here if PlayerInteractionManager only calls Interact in Playing state.
+        // Let's keep the isInteracting check if it's used elsewhere to prevent re-triggering.
+        if (isInteracting) // Check if *this* computer is already in use
         {
-            if(isInteracting) Debug.Log("ComputerInteractable: Already interacting with this computer.");
-            else Debug.Log("ComputerInteractable: Cannot interact - not in Playing state.");
-            return;
+            Debug.Log("ComputerInteractable: Already interacting with this computer.");
+            return null; // Return null response if already interacting
         }
 
-        if (playerCameraTransform == null || cameraViewPoint == null)
+        if (cameraViewPoint == null || computerUIContainer == null) // Check essential data for response
         {
-            Debug.LogError("ComputerInteractable: Cannot interact - Camera or View Point not assigned.", this);
-            return;
+             Debug.LogError("ComputerInteractable: Cannot create EnterComputerResponse - Camera View Point or Computer UI Container not assigned.", this);
+             return null;
         }
 
-        Debug.Log("ComputerInteractable: Interacting with computer!");
+        Debug.Log("ComputerInteractable: Interact called. Returning EnterComputerResponse.");
 
-        originalCameraPosition = playerCameraTransform.position;
-        originalCameraRotation = playerCameraTransform.rotation;
+        // --- Create and return the response ---
+        // The PlayerInteractionManager will receive this and pass it to the MenuManager
+        EnterComputerResponse response = new EnterComputerResponse(
+            cameraViewPoint,
+            cameraMoveDuration,
+            computerUIContainer, 
+            this
+        );
 
-        if (currentCameraMoveCoroutine != null) StopCoroutine(currentCameraMoveCoroutine);
-        currentCameraMoveCoroutine = StartCoroutine(MoveCamera(cameraViewPoint.position, cameraViewPoint.rotation, cameraMoveDuration));
-
-        // Tell the MenuManager to enter the *Computer* state
-        MenuManager.Instance.SetState(MenuManager.GameState.InComputer); // Use the new state
-
-        // Mark this computer as the one being interacted with
+        // Mark as interacting *immediately* before returning the response
+        // The state exit action in MenuManager will be responsible for clearing this flag.
         isInteracting = true;
 
-        // Cursor state is handled by MenuManager state entry
-    }
-
-    // --- Existing HandleGameStateChanged Method + New UI Deactivation ---
-    private void HandleGameStateChanged(MenuManager.GameState newState)
-    {
-        // If we were interacting with THIS computer and the state is changing back to Playing
-        if (isInteracting && newState == MenuManager.GameState.Playing)
-        {
-            Debug.Log("ComputerInteractable: State changed back to Playing. Moving camera back.");
-            // Stop any existing camera movement coroutine (in case escape was pressed mid-move)
-            if (currentCameraMoveCoroutine != null)
-            {
-                StopCoroutine(currentCameraMoveCoroutine);
-            }
-
-            // Start the coroutine to move the camera back to its original position
-            currentCameraMoveCoroutine = StartCoroutine(MoveCamera(originalCameraPosition, originalCameraRotation, cameraMoveDuration));
-
-            // We are no longer interacting with this computer
-            isInteracting = false;
-
-             // Restore cursor state (assuming you lock it during gameplay)
-             Cursor.visible = false;
-             Cursor.lockState = CursorLockMode.Locked;
-
-
-        }
-         else if (isInteracting && newState != MenuManager.GameState.InComputer)
-        {
-             // If we were interacting with this computer, but the state changed to something OTHER than Playing or InComputer
-             // (e.g., Pause Menu, or perhaps another interactable forced a state change unexpectedly),
-             // treat this as exiting the computer interaction.
-             Debug.Log($"ComputerInteractable: State changed from InComputer to {newState}. Treating as exit, moving camera back.");
-
-             if (currentCameraMoveCoroutine != null)
-             {
-                 StopCoroutine(currentCameraMoveCoroutine);
-             }
-
-             currentCameraMoveCoroutine = StartCoroutine(MoveCamera(originalCameraPosition, originalCameraRotation, cameraMoveDuration));
-
-             isInteracting = false;
-
-              // Restore cursor state
-              Cursor.visible = false;
-              Cursor.lockState = CursorLockMode.Locked;
-         }
-    }
-
-    // --- Existing Coroutine ---
-    private IEnumerator MoveCamera(Vector3 targetPosition, Quaternion targetRotation, float duration)
-    {
-         // ... (Coroutine remains the same)
-        float elapsed = 0f;
-        Vector3 startPosition = playerCameraTransform.position;
-        Quaternion startRotation = playerCameraTransform.rotation;
-
-        while (elapsed < duration)
-        {
-            elapsed += Time.unscaledDeltaTime;
-            float t = Mathf.Clamp01(elapsed / duration);
-
-            playerCameraTransform.position = Vector3.Lerp(startPosition, targetPosition, t);
-            playerCameraTransform.rotation = Quaternion.Slerp(startRotation, targetRotation, t);
-
-            yield return null;
-        }
-
-        playerCameraTransform.position = targetPosition;
-        playerCameraTransform.rotation = targetRotation;
-
-        currentCameraMoveCoroutine = null;
+        return response;
     }
 
     // --- Shopping Cart Methods ---
@@ -435,5 +337,12 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
         UpdateShoppingCartUI(); // Refresh display
 
         Debug.Log("ComputerInteractable: Purchase process completed.");
+    }
+
+    // --- Public method to reset the interacting state (Called by MenuManager state exit action) ---
+    public void ResetInteraction()
+    {
+        isInteracting = false;
+        Debug.Log($"ComputerInteractable ({gameObject.name}): ResetInteraction called. isInteracting is now false.", this);
     }
 }
