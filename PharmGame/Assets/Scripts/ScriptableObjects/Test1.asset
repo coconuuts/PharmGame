@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: Test1
   m_EditorClassIdentifier: 
   Name: Test1
-  maxStack: 1
+  maxStack: 20
   Id:
     Part1: 1954108932
     Part2: 1128778770
@@ -21,3 +21,5 @@ MonoBehaviour:
     Part4: 1274007288
   Icon: {fileID: -146929918, guid: 02d66aeb778ed0f4299c9fde9303d125, type: 3}
   Description: yo
+  prefab3D: {fileID: 5829944590135129764, guid: 18b8e46e780aa064e876b6d593d1a4ad, type: 3}
+  shelfArrangement: 0

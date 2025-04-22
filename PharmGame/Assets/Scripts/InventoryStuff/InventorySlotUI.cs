@@ -1,17 +1,13 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
-using Systems.Inventory;
-using UnityEngine.EventSystems;
+using Systems.Inventory; // Needed for Inventory reference
+using UnityEngine.EventSystems; // Needed for IPointerEnterHandler, IPointerExitHandler, IPointerDownHandler, IDragHandler, IPointerUpHandler
 
 namespace Systems.Inventory
 {
-    /// <summary>
-    /// Represents a single visual inventory slot in the UI and handles user input events.
-    /// </summary>
-    // KEEP these interfaces. We will use OnPointerDown, OnDrag, and OnPointerUp.
-    // We REMOVE IEndDragHandler implementation from the class declaration line if it was there explicitly.
-    public class InventorySlotUI : MonoBehaviour, IPointerDownHandler, IDragHandler, IPointerUpHandler // Removed IEndDragHandler if it was listed
+    // Add IPointerEnterHandler and IPointerExitHandler interfaces
+    public class InventorySlotUI : MonoBehaviour, IPointerDownHandler, IDragHandler, IPointerUpHandler, IPointerEnterHandler, IPointerExitHandler
     {
         [Tooltip("The index of this slot in the inventory's data array (0-based).")]
         [HideInInspector] public int SlotIndex;
@@ -20,23 +16,35 @@ namespace Systems.Inventory
         [SerializeField] private Image itemIcon;
 
         [Tooltip("The Text or TextMeshPro component for displaying the quantity.")]
-        [SerializeField] private TextMeshProUGUI quantityText; // Change to Text if not using TextMeshPro
+        [SerializeField] private TextMeshProUGUI quantityText;
 
-        [Tooltip("The UI element used for highlighting this slot when selected.")]
+        [Tooltip("The UI element used for highlighting this slot.")]
         [SerializeField] private GameObject highlightElement;
 
-        // Reference back to the main Inventory this slot belongs to
         [HideInInspector] public Inventory ParentInventory;
 
-        private void Awake() // Added Awake to ensure highlight element is off initially
+        // --- ADD FIELDS TO TRACK HIGHLIGHT STATE ---
+        private bool isSelected = false; // True if this slot is selected by the InventorySelector
+        private bool isHovered = false; // True if the mouse pointer is currently over this slot
+        // ------------------------------------------
+
+
+        private void Awake()
         {
              if (highlightElement != null)
              {
                  highlightElement.SetActive(false); // Ensure highlight is off by default
              }
+             else
+             {
+                  Debug.LogWarning($"InventorySlotUI ({gameObject.name}, Index: {SlotIndex}): Highlight Element is not assigned. Selection/Hover highlight will not be visible.", this);
+             }
+
+             // Ensure state flags are false initially
+             isSelected = false;
+             isHovered = false;
         }
-        
-        // Method to update the visual representation of the slot
+
         public void SetItem(Item item)
         {
             // ... (SetItem method remains exactly as in your latest code)
@@ -73,45 +81,75 @@ namespace Systems.Inventory
             }
         }
 
+        // --- METHODS CALLED BY InventorySelector (FOR SELECTION HIGHLIGHT) ---
         /// <summary>
-        /// Activates the visual highlight for this slot.
+        /// Applies the visual highlight for selection.
         /// </summary>
-        public void Highlight()
+        public void ApplySelectionHighlight()
         {
-             if (highlightElement != null)
-             {
-                 highlightElement.SetActive(true);
-                 // Debug.Log($"InventorySlotUI ({gameObject.name}, Index: {SlotIndex}): Highlighted.");
-             }
+             isSelected = true;
+             UpdateHighlightVisual(); // Update the visual based on combined state
+             // Debug.Log($"InventorySlotUI ({gameObject.name}, Index: {SlotIndex}): Selection Highlight Applied.");
         }
 
         /// <summary>
-        /// Deactivates the visual highlight for this slot.
+        /// Removes the visual highlight for selection.
         /// </summary>
-        public void Unhighlight()
+        public void RemoveSelectionHighlight()
+        {
+             isSelected = false;
+             UpdateHighlightVisual(); // Update the visual based on combined state
+             // Debug.Log($"InventorySlotUI ({gameObject.name}, Index: {SlotIndex}): Selection Highlight Removed.");
+        }
+        // -------------------------------------------------------------------
+
+
+        // --- METHODS CALLED BY POINTER EVENTS (FOR HOVER HIGHLIGHT) ---
+        /// <summary>
+        /// Applies the visual highlight for hover.
+        /// </summary>
+        public void ApplyHoverHighlight()
+        {
+             isHovered = true;
+             UpdateHighlightVisual(); // Update the visual based on combined state
+             // Debug.Log($"InventorySlotUI ({gameObject.name}, Index: {SlotIndex}): Hover Highlight Applied.");
+        }
+
+        /// <summary>
+        /// Removes the visual highlight for hover.
+        /// </summary>
+        public void RemoveHoverHighlight()
+        {
+             isHovered = false;
+             UpdateHighlightVisual(); // Update the visual based on combined state
+             // Debug.Log($"InventorySlotUI ({gameObject.name}, Index: {SlotIndex}): Hover Highlight Removed.");
+        }
+        // ------------------------------------------------------------
+
+
+        /// <summary>
+        /// Updates the visual highlight element's active state based on isSelected and isHovered flags.
+        /// </summary>
+        private void UpdateHighlightVisual()
         {
              if (highlightElement != null)
              {
-                 highlightElement.SetActive(false);
-                 // Debug.Log($"InventorySlotUI ({gameObject.name}, Index: {SlotIndex}): Unhighlighted.");
+                 // The highlight is active if EITHER selected OR hovered
+                 highlightElement.SetActive(isSelected || isHovered);
              }
         }
 
-        // --- Implement Event Handlers ---
 
+        // --- Pointer Event Handlers (remain for Drag & Drop) ---
         public void OnPointerDown(PointerEventData eventData)
         {
             if (eventData.button == PointerEventData.InputButton.Left)
             {
                 if (DragAndDropManager.Instance != null)
                 {
-                    // Start the drag process when the button is pressed down
                     DragAndDropManager.Instance.StartDrag(this, eventData);
                 }
-                else
-                {
-                    Debug.LogError("InventorySlotUI: DragAndDropManager Instance is null!", this);
-                }
+                else Debug.LogError("InventorySlotUI: DragAndDropManager Instance is null!", this);
             }
         }
 
@@ -119,7 +157,6 @@ namespace Systems.Inventory
         {
              if (eventData.button == PointerEventData.InputButton.Left)
             {
-                // Continue the drag process (update ghost position)
                  if (DragAndDropManager.Instance != null)
                  {
                      DragAndDropManager.Instance.Drag(eventData);
@@ -131,24 +168,37 @@ namespace Systems.Inventory
         {
              if (eventData.button == PointerEventData.InputButton.Left)
             {
-                // --- CALL EndDrag logic here on mouse button release ---
-                // This ensures the drop logic/cleanup runs even on a fast click where OnEndDrag might not fire.
                  if (DragAndDropManager.Instance != null)
                  {
                      DragAndDropManager.Instance.EndDrag(eventData);
                  }
-                 else
-                 {
-                     Debug.LogError("InventorySlotUI: DragAndDropManager Instance is null!", this);
-                 }
+                 else Debug.LogError("InventorySlotUI: DragAndDropManager Instance is null!", this);
             }
         }
 
-        // Optional: Implement this if you want to control when a drag actually begins (e.g., after moving a certain distance)
-        // public void OnInitializePotentialDrag(PointerEventData eventData)
-        // {
-        //      // Tell the EventSystem which button can start this drag
-        //      eventData.button = PointerEventData.InputButton.Left;
-        // }
+
+        // --- ADD POINTER ENTER AND EXIT HANDLERS FOR HOVER ---
+        public void OnPointerEnter(PointerEventData eventData)
+        {
+             // Only apply hover highlight if the game state is InInventory
+             if (MenuManager.Instance != null && MenuManager.Instance.currentState == MenuManager.GameState.InInventory)
+             {
+                  ApplyHoverHighlight();
+             }
+             // Optional: Handle hover effects in other states if needed, but the requirement is for InInventory
+        }
+
+        public void OnPointerExit(PointerEventData eventData)
+        {
+             // Only remove hover highlight if the game state is InInventory
+             if (MenuManager.Instance != null && MenuManager.Instance.currentState == MenuManager.GameState.InInventory)
+             {
+                 RemoveHoverHighlight();
+             }
+             // Optional: Ensure hover is removed even if state changes while hovering (handled by state exit action)
+        }
+        // --------------------------------------------------
+
+        // Removed obsolete Highlight() and Unhighlight() methods.
     }
 }

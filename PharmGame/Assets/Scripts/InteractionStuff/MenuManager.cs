@@ -6,6 +6,7 @@ using Systems.Interaction; // Needed for InteractionResponse types
 using System.Collections;
 using Systems.CameraControl;
 using Systems.Minigame;
+using Systems.Inventory;    
 
 public class MenuManager : MonoBehaviour
 {
@@ -23,7 +24,7 @@ public class MenuManager : MonoBehaviour
     // ------------------------
 
     public GameState currentState = GameState.Playing;
-    private GameState previousState;
+    [HideInInspector] public GameState previousState;
 
     public delegate void StateChangedHandler(GameState newState);
     public static event StateChangedHandler OnStateChanged;
@@ -32,6 +33,8 @@ public class MenuManager : MonoBehaviour
     public GameObject player;
     public string cameraTag = "MainCamera";
     private PlayerInteractionManager interactionManager;
+    [Tooltip("Drag the player's toolbar InventorySelector GameObject here.")]
+    [SerializeField] private InventorySelector playerToolbarInventorySelector;
 
     // Fields to track the currently active UI and data for states like InInventory or InComputer
     private GameObject currentActiveUIRoot; // Renamed for generality
@@ -58,12 +61,32 @@ public class MenuManager : MonoBehaviour
         if (Instance == null) Instance = this;
         else { Debug.LogWarning("MenuManager: Duplicate instance found. Destroying this one.", this); Destroy(gameObject); return; }
         Debug.Log("MenuManager: Awake completed.");
+
+         // Ensure playerToolbarInventorySelector is assigned or try finding it
+         if (playerToolbarInventorySelector == null)
+         {
+             GameObject playerToolbarObject = GameObject.FindGameObjectWithTag("PlayerToolbarInventory"); // Use your actual toolbar tag
+             if (playerToolbarObject != null)
+             {
+                 playerToolbarInventorySelector = playerToolbarObject.GetComponent<InventorySelector>();
+                 if (playerToolbarInventorySelector == null)
+                 {
+                      Debug.LogError($"MenuManager: GameObject with tag 'PlayerToolbarInventory' found, but it does not have an InventorySelector component.", playerToolbarObject);
+                 }
+             }
+             else
+             {
+                  Debug.LogWarning($"MenuManager: Player Toolbar Inventory GameObject with tag 'PlayerToolbarInventory' not found. Cannot manage toolbar highlights.", this);
+             }
+         }
+         else
+         {
+              Debug.Log("MenuManager: Player Toolbar Inventory Selector assigned in Inspector.", this);
+         }
     }
 
     private void Start()
     {
-        Debug.Log("MenuManager: Start started.");
-
         // --- GET REFERENCES ---
         if (player != null)
         {
@@ -116,8 +139,6 @@ public class MenuManager : MonoBehaviour
         }
 
         OnStateChanged?.Invoke(currentState); // Trigger initial event
-
-        Debug.Log("MenuManager: Start completed. Initial state setup finished.");
     }
 
     private void Update()
@@ -165,7 +186,6 @@ public class MenuManager : MonoBehaviour
 
         previousState = currentState;
 
-        Debug.Log($"MenuManager: Attempting to exit state: {currentState}");
         if (stateExitActions.TryGetValue(currentState, out var exitAction))
         {
             exitAction.Invoke(response); // Pass the response to the EXIT action
@@ -175,7 +195,6 @@ public class MenuManager : MonoBehaviour
         Debug.Log("Menu State: " + currentState);
         OnStateChanged?.Invoke(newState); // Trigger the event *after* the state is set
 
-        Debug.Log($"MenuManager: Attempting to enter state: {currentState}");
         if (stateEntryActions.TryGetValue(currentState, out var entryAction))
         {
             entryAction.Invoke(response); // Pass the response to the ENTRY action
@@ -200,8 +219,6 @@ public class MenuManager : MonoBehaviour
             Debug.LogWarning("MenuManager: Received a null interaction response.", this);
             return; // Do not proceed with null response unless it's a specific internal signal
         }
-
-        Debug.Log($"MenuManager: Handling interaction response of type: {response.GetType().Name}", this);
 
         // Check the type of the response and trigger the appropriate state change OR action
         if (response is OpenInventoryResponse openInventoryResponse)
@@ -235,19 +252,32 @@ public class MenuManager : MonoBehaviour
 
     private void HandlePlayingStateEntry(InteractionResponse response)
     {
-        Debug.Log("MenuManager: Handling entry to Playing state.");
         Time.timeScale = 1f;
         interactionManager?.EnableRaycast();
 
         if (CameraManager.Instance != null)
         {
              CameraManager.Instance.SetCameraMode(CameraManager.CameraMode.MouseLook);
-             Debug.Log("MenuManager: Set CameraManager to MouseLook mode.");
         }
         else Debug.LogError("MenuManager: CameraManager Instance is null! Cannot set camera mode.");
 
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
+
+        if (playerToolbarInventorySelector != null && playerToolbarInventorySelector.SlotUIComponents != null)
+        {
+             foreach (var slotUI in playerToolbarInventorySelector.SlotUIComponents)
+             {
+                  if (slotUI != null)
+                  {
+                       slotUI.RemoveHoverHighlight(); // Ensure hover state is false and visual updated
+                  }
+             }
+        }
+        else
+        {
+             Debug.LogWarning("MenuManager: Player Toolbar Inventory Selector or its SlotUIComponents list is null. Cannot clear hover highlights on Playing entry.", this);
+        }
 
         // Clear specific state references (redundant with exit actions clearing, but safe)
         // currentActiveUIRoot = null;
@@ -259,14 +289,12 @@ public class MenuManager : MonoBehaviour
 
     private void HandleInInventoryStateEntry(InteractionResponse response)
     {
-        Debug.Log("MenuManager: Handling entry to InInventory state.");
         InMenu();
         interactionManager?.DisableRaycast();
 
         if (CameraManager.Instance != null)
         {
              CameraManager.Instance.SetCameraMode(CameraManager.CameraMode.Locked);
-             Debug.Log("MenuManager: Set CameraManager to Locked mode.");
         }
         else Debug.LogError("MenuManager: CameraManager Instance is null! Cannot set camera mode.");
 
@@ -283,29 +311,34 @@ public class MenuManager : MonoBehaviour
             else Debug.LogWarning("MenuManager: OpenInventoryResponse did not contain a valid UI Root to activate.", this);
         }
         else Debug.LogError("MenuManager: Entered InInventory state, but the response was not an OpenInventoryResponse!", this);
+
+        currentComputerInteractable = null;
+        currentCashRegisterInteractable = null;
     }
 
     private void HandleInPauseMenuEntry(InteractionResponse response)
     {
-        Debug.Log("MenuManager: Handling entry to InPauseMenu state.");
         InMenu();
         interactionManager?.DisableRaycast();
 
         if (CameraManager.Instance != null)
         {
              CameraManager.Instance.SetCameraMode(CameraManager.CameraMode.Locked);
-             Debug.Log("MenuManager: Set CameraManager to Locked mode.");
         }
         else Debug.LogError("MenuManager: CameraManager Instance is null! Cannot set camera mode.");
 
         // TODO: Activate Pause Menu UI GameObject (You'll need a field for this in MenuManager)
         Debug.LogWarning("MenuManager: Pause Menu UI activation is not implemented yet.");
          // Pause Menu entry doesn't need data from a response currently
+
+        currentActiveUIRoot = null;
+        currentOpenInventoryComponent = null;
+        currentComputerInteractable = null;
+        currentCashRegisterInteractable = null;
     }
 
     private void HandleInComputerStateEntry(InteractionResponse response)
     {
-        Debug.Log("MenuManager: Handling entry to InComputer state.");
         InMenu();
         interactionManager?.DisableRaycast();
 
@@ -323,16 +356,17 @@ public class MenuManager : MonoBehaviour
                      computerResponse.CameraTargetView, // Pass the target Transform
                      computerResponse.CameraMoveDuration // Pass the duration
                  );
-                 Debug.Log("MenuManager: Set CameraManager to CinematicView mode for Computer.");
              }
              else Debug.LogError("MenuManager: CameraManager Instance is null! Cannot set camera mode.");
         }
         else Debug.LogError("MenuManager: Entered InComputer state, but the response was not an EnterComputerResponse!", this);
+
+        currentOpenInventoryComponent = null;
+        currentCashRegisterInteractable = null;
     }
 
     private void HandleInMinigameStateEntry(InteractionResponse response)
     {
-        Debug.Log("MenuManager: Handling entry to InMinigame state.");
         InMenu();
         interactionManager?.DisableRaycast();
 
@@ -349,14 +383,12 @@ public class MenuManager : MonoBehaviour
                      minigameResponse.CameraTargetView,
                      minigameResponse.CameraMoveDuration
                  );
-                 Debug.Log("MenuManager: Set CameraManager to CinematicView mode for Minigame.");
              }
              else Debug.LogError("MenuManager: CameraManager Instance is null! Cannot set camera mode.");
 
              if (currentActiveUIRoot != null)
              {
                  currentActiveUIRoot.SetActive(true);
-                 Debug.Log("MenuManager: Activated Minigame UI.", this);
              }
              else Debug.LogWarning("MenuManager: StartMinigameResponse did not contain a valid UI Root to activate.", this);
 
@@ -365,7 +397,6 @@ public class MenuManager : MonoBehaviour
              {
                   // Pass the target click count from the response
                   MinigameManager.Instance.StartMinigame(minigameResponse.TargetClickCount); // Call the StartMinigame method
-                  Debug.Log($"MenuManager: Called MinigameManager.StartMinigame with target clicks: {minigameResponse.TargetClickCount}");
              }
              else Debug.LogError("MenuManager: MinigameManager Instance is null! Cannot start minigame.");
              // --------------------------------------------
@@ -383,20 +414,39 @@ public class MenuManager : MonoBehaviour
 
     private void HandlePlayingStateExit(InteractionResponse response)
     {
-         Debug.Log("MenuManager: Handling exit from Playing state.");
+
     }
 
     private void HandleInInventoryStateExit(InteractionResponse response)
     {
-        Debug.Log("MenuManager: Handling exit from InInventory state.");
          // Deactivate the UI using the stored generic field
          if (currentActiveUIRoot != null)
          {
              currentActiveUIRoot.SetActive(false);
-             // Debug.Log($"MenuManager: Deactivated UI for inventory: {currentOpenInventoryComponent?.Id}.", this); // Specific log
-             Debug.Log("MenuManager: Deactivated Inventory UI.", this); // Generic log
+
+             // --- FIND AND CLEAR HOVER HIGHLIGHTS ON ALL SLOTS ---
+             // Get the Visualizer from the inventory component's GameObject
+             if (currentOpenInventoryComponent != null)
+             {
+                  Visualizer visualizer = currentOpenInventoryComponent.GetComponent<Visualizer>();
+                  if (visualizer != null && visualizer.SlotUIComponents != null)
+                  {
+                       foreach (var slotUI in visualizer.SlotUIComponents)
+                       {
+                            // Call RemoveHoverHighlight on each slot
+                            if (slotUI != null)
+                            {
+                                slotUI.RemoveHoverHighlight();
+                            }
+                       }
+                  }
+                  else Debug.LogWarning("MenuManager: Could not find Visualizer or SlotUIComponents on the closing Inventory GameObject to clear hover highlights.", currentOpenInventoryComponent?.gameObject);
+             }
+             else Debug.LogWarning("MenuManager: currentOpenInventoryComponent is null when exiting InInventory state. Cannot clear hover highlights.");
+             // ----------------------------------------------------
          }
          else Debug.LogWarning("MenuManager: No stored UI Root GameObject reference to deactivate when exiting InInventory.", this);
+
 
          // Clear the stored references AFTER using them
          currentOpenInventoryComponent = null;
@@ -407,17 +457,12 @@ public class MenuManager : MonoBehaviour
 
     private void HandleInPauseMenuExit(InteractionResponse response)
     {
-        Debug.Log("MenuManager: Handling exit from InPauseMenu state.");
         // TODO: Deactivate Pause Menu UI GameObject
-        Debug.LogWarning("MenuManager: Pause Menu UI deactivation is not implemented yet.");
-
         // Camera mode and player controls handled in HandlePlayingStateEntry if transitioning to Playing
     }
 
     private void HandleInComputerStateExit(InteractionResponse response)
     {
-        Debug.Log("MenuManager: Handling exit from InComputer state.");
-
          // --- Tell CameraManager to go back to MouseLook mode ---
          if (CameraManager.Instance != null)
          {
@@ -427,7 +472,6 @@ public class MenuManager : MonoBehaviour
                  null, // Target view is null for MouseLook return
                  storedCinematicDuration // Pass the stored duration for the return move
              );
-             Debug.Log($"MenuManager: Set CameraManager to MouseLook mode after Computer exit, initiating return movement over {storedCinematicDuration}s.");
          }
          else Debug.LogError("MenuManager: CameraManager Instance is null! Cannot set camera mode.");
         // -----------------------------------------------------
@@ -436,7 +480,6 @@ public class MenuManager : MonoBehaviour
          if (currentComputerInteractable != null)
          {
              currentComputerInteractable.ResetInteraction();
-             Debug.Log("MenuManager: Called ResetInteraction on ComputerInteractable instance.", this);
          }
          else Debug.LogWarning("MenuManager: No stored ComputerInteractable instance to call ResetInteraction.", this);
 
@@ -451,12 +494,9 @@ public class MenuManager : MonoBehaviour
 
     private void HandleInMinigameStateExit(InteractionResponse response)
     {
-        Debug.Log("MenuManager: Handling exit from InMinigame state.");
-
          if (currentActiveUIRoot != null)
          {
              currentActiveUIRoot.SetActive(false);
-             Debug.Log("MenuManager: Deactivated Minigame UI using stored reference.", this);
          }
          else Debug.LogWarning("MenuManager: No stored UI Root GameObject reference to deactivate when exiting Minigame.", this);
 
@@ -468,7 +508,6 @@ public class MenuManager : MonoBehaviour
                  null,
                  storedCinematicDuration
              );
-             Debug.Log($"MenuManager: Set CameraManager to MouseLook mode after Minigame exit, initiating return movement over {storedCinematicDuration}s.");
          }
          else Debug.LogError("MenuManager: CameraManager Instance is null! Cannot set camera mode.");
 
@@ -477,7 +516,6 @@ public class MenuManager : MonoBehaviour
          if (MinigameManager.Instance != null) // Check if MinigameManager instance exists
          {
              MinigameManager.Instance.ResetMinigame(); // Call the ResetMinigame method
-             Debug.Log("MenuManager: Called MinigameManager.ResetMinigame.");
          }
          else Debug.LogError("MenuManager: MinigameManager Instance is null! Cannot reset minigame.");
 
@@ -485,7 +523,6 @@ public class MenuManager : MonoBehaviour
          if (currentCashRegisterInteractable != null)
          {
              currentCashRegisterInteractable.ResetInteraction();
-             Debug.Log("MenuManager: Called ResetInteraction on CashRegisterInteractable instance.", this);
          }
          else Debug.LogWarning("MenuManager: No stored CashRegisterInteractable instance to call ResetInteraction.", this);
 
@@ -495,7 +532,7 @@ public class MenuManager : MonoBehaviour
         currentActiveUIRoot = null;
 
 
-         interactionManager?.EnableRaycast();
+        interactionManager?.EnableRaycast();
     }
 
     // --- Helper Method ---

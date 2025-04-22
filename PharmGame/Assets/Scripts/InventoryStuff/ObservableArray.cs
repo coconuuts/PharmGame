@@ -29,6 +29,11 @@ namespace Systems.Inventory
          // **Refinement:** It's often cleaner if Combiner handles the high-level drop logic
          // using the ObservableArray's SetItemAtIndex, Swap, etc. But let's follow the plan.
          void HandleDrop(T itemToDrop, int targetIndex, ObservableArray<T> sourceArray, int sourceOriginalIndex); // Added sourceOriginalIndex
+
+        /// <summary>
+        /// Provides read access to the current state of the internal item array.
+        /// </summary>
+        Item[] GetCurrentArrayState();
     }
 
     [Serializable]
@@ -307,6 +312,18 @@ namespace Systems.Inventory
              // unless the item being dropped was only partially stacked.
              // The current logic in HandleDrop correctly clears the ghost slot (sourceArray.SetItemAtIndex(null, sourceArray.Length - 1))
              // when the itemToDrop quantity reaches <= 0 (fully stacked or swapped). This seems correct.
+        }
+
+        /// <summary>
+        /// Provides read access to the current state of the internal item array.
+        /// </summary>
+        public Item[] GetCurrentArrayState() // Implementing the interface method
+        {
+            // You can choose to return the direct reference or a copy.
+            // Returning direct reference is more performant for read-only access.
+            // Returning a copy prevents external modification but adds overhead.
+            // Let's return the direct reference for performance in this context.
+            return items;
         }
     }
 }

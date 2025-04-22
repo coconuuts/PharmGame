@@ -21,3 +21,5 @@ MonoBehaviour:
     Part4: 151915564
   Icon: {fileID: -2101987318, guid: 63650193f9a5aee408e20b3fafb02b0e, type: 3}
   Description: yoo
+  prefab3D: {fileID: 5873640265792693031, guid: d3a99bf08e077074b9ff2b0ada0e8995, type: 3}
+  shelfArrangement: 1

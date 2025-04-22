@@ -1,6 +1,7 @@
 using System;
 using UnityEngine;
 using UnityEditor; // Still needed for OnValidate and EditorUtility
+using VisualStorage;
 
 namespace Systems.Inventory
 {
@@ -22,6 +23,13 @@ namespace Systems.Inventory
         public Sprite Icon;
         [TextArea] // Makes the Description field a multi-line text area in the Inspector
         public string Description;
+
+        // --- ADD FIELDS FOR VISUAL STORAGE ---
+        [Header("Visual Storage Settings")]
+        [Tooltip("The 3D prefab to instantiate on shelves for this item.")]
+        public GameObject prefab3D; // Reference to the 3D prefab
+        [Tooltip("How this item prefab occupies ShelfSlot grid spaces.")]
+        public ShelfSlotArrangement shelfArrangement = ShelfSlotArrangement.OneByOne; // ADD THIS FIELD
 
         // --- Editor-Specific Logic ---
 
