@@ -4,6 +4,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using TMPro; // Needed for TextMeshProUGUI
 using System.Collections.Generic;
+using System;
 
 namespace Systems.Inventory
 {
@@ -25,6 +26,8 @@ namespace Systems.Inventory
         private Inventory sourceInventory; // The inventory the item came from
         private int sourceSlotIndex; // The original slot index in the source inventory
 
+        public event Action OnDragDropCompleted;
+
         // List of all active inventories in the scene (inventories register themselves)
         private static List<Inventory> allInventories = new List<Inventory>();
 
@@ -33,7 +36,6 @@ namespace Systems.Inventory
              if (!allInventories.Contains(inventory))
              {
                  allInventories.Add(inventory);
-                 Debug.Log($"DragAndDropManager: Registered Inventory '{inventory.Id}'. Total inventories: {allInventories.Count}");
              }
         }
 
@@ -42,7 +44,6 @@ namespace Systems.Inventory
             if (allInventories.Contains(inventory))
             {
                 allInventories.Remove(inventory);
-                 Debug.Log($"DragAndDropManager: Unregistered Inventory '{inventory.Id}'. Total inventories: {allInventories.Count}");
             }
         }
 
@@ -54,7 +55,6 @@ namespace Systems.Inventory
             {
                 Instance = this;
                 // Optional: DontDestroyOnLoad(gameObject); // If the manager should persist between scenes
-                Debug.Log("DragAndDropManager: Instance created.", this);
             }
             else
             {
@@ -92,7 +92,6 @@ namespace Systems.Inventory
             if (Instance == this)
             {
                 Instance = null;
-                Debug.Log("DragAndDropManager: Instance destroyed.", this);
             }
         }
 
@@ -143,18 +142,14 @@ namespace Systems.Inventory
                           {
                                ghostQuantityText.text = itemBeingDragged.quantity.ToString();
                                ghostQuantityText.gameObject.SetActive(true);
-                                Debug.Log($"DragAndDropManager: Setting ghost quantity to {itemBeingDragged.quantity}.", this);
                           }
                           else
                           {
                                // Hide quantity text if not applicable
                                ghostQuantityText.text = ""; // Clear text
                                ghostQuantityText.gameObject.SetActive(false);
-                                Debug.Log("DragAndDropManager: Hiding ghost quantity text.", this);
                           }
                      }
-
-                     Debug.Log($"DragAndDropManager: Started drag for item '{itemBeingDragged.details.Name}' (Qty: {itemBeingDragged.quantity}) from slot {sourceSlotIndex} in inventory '{sourceInventory.Id}'.");
 
                     // --- CONCEPTUAL MOVE TO SOURCE GHOST SLOT & CLEAR ORIGINAL SLOT ---
                     // Clear the original slot in the source inventory's data
@@ -202,8 +197,6 @@ namespace Systems.Inventory
         {
             if (itemBeingDragged == null) return;
 
-            Debug.Log($"DragAndDropManager: End drag for item '{itemBeingDragged.details?.Name ?? "Unknown"}' at position {eventData.position}.", this);
-
             // Hide the ghost visual immediately
             if (ghostItemImage != null) ghostItemImage.gameObject.SetActive(false);
              if (ghostQuantityText != null) ghostQuantityText.gameObject.SetActive(false); // Hide quantity too
@@ -216,8 +209,6 @@ namespace Systems.Inventory
                 Inventory targetInventory = targetSlotUI.ParentInventory;
                 int targetSlotIndex = targetSlotUI.SlotIndex;
 
-                 Debug.Log($"DragAndDropManager: Drop detected over slot {targetSlotIndex} in inventory '{targetInventory.Id}'.");
-
                 // Ensure target index is within the physical slot range of the target inventory
                 // Combiner's PhysicalSlotCount is needed here. We have access via targetInventory.Combiner.PhysicalSlotCount
                 if (targetSlotIndex >= 0 && targetSlotIndex < targetInventory.Combiner.PhysicalSlotCount)
@@ -228,7 +219,6 @@ namespace Systems.Inventory
                      {
                          // --- Call the ObservableArray's HandleDrop method ---
                          // Pass the source array and original index
-                         Debug.Log($"DragAndDropManager: Calling HandleDrop on target inventory '{targetInventory.Id}'. Target Index: {targetSlotIndex}. Source Original Index: {sourceSlotIndex}.");
                          targetObservableArray.HandleDrop(itemBeingDragged, targetSlotIndex, sourceInventory.InventoryState, sourceSlotIndex);
                      }
                      else
@@ -248,9 +238,11 @@ namespace Systems.Inventory
             else
             {
                 // --- No Valid Drop Target Found (Dropped outside any inventory slots) ---
-                Debug.Log("DragAndDropManager: Drop detected outside any valid inventory slots. Returning item to source.");
                 ReturnItemToSource();
             }
+
+            OnDragDropCompleted?.Invoke();
+            Debug.Log($"DragAndDropManager: Drag/Drop transaction completed. Triggering OnDragDropCompleted event.");
 
             // --- Clean up drag state ---
             itemBeingDragged = null;
@@ -272,7 +264,6 @@ namespace Systems.Inventory
                 InventorySlotUI slotUI = result.gameObject.GetComponent<InventorySlotUI>();
                 if (slotUI != null)
                 {
-                    Debug.Log($"DragAndDropManager: Raycast hit InventorySlotUI on {result.gameObject.name} at screen position {screenPosition}.", result.gameObject);
                     // Ensure the hit slot belongs to a valid inventory
                      if (slotUI.ParentInventory != null)
                      {
@@ -306,7 +297,6 @@ namespace Systems.Inventory
                 ObservableArray<Item> sourceObservableArray = sourceInventory.InventoryState;
                 if (sourceObservableArray != null)
                 {
-                     Debug.Log($"DragAndDropManager: Returning item '{itemBeingDragged.details?.Name ?? "Unknown"}' to source slot {sourceSlotIndex} in inventory '{sourceInventory.Id}'.");
 
                      // Call HandleDrop on the *source* array, targeting the original slot.
                      // The HandleDrop method handles the internal logic (putting it back, potentially clearing ghost).

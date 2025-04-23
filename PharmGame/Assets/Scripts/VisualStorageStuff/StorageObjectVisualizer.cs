@@ -1,15 +1,18 @@
 using UnityEngine;
 using System.Collections.Generic;
-using Systems.Inventory; // Needed for InventoryClass, ItemDetails, and likely ArrayChangeInfo
+using Systems.Inventory;
 using System.Linq;
 using InventoryClass = Systems.Inventory.Inventory; // Your alias
 using VisualStorage; // Your namespace for StorageVisuals and ShelfSlotArrangement
+using System; // Needed for Action
+using Utils.Pooling;
 
 namespace VisualStorage // Your namespace
 {
     /// <summary>
     /// Manages the visual representation of items on storage shelves based on the linked Inventory component.
-    /// Reacts to inventory changes and populates ShelfSlots with item prefabs.
+    /// Reacts to inventory changes and populates ShelfSlots with item prefabs using incremental updates
+    /// and decoupled item-to-prefab mapping, utilizing object pooling.
     /// </summary>
     [RequireComponent(typeof(InventoryClass))]
     public class StorageObjectVisualizer : MonoBehaviour
@@ -20,21 +23,28 @@ namespace VisualStorage // Your namespace
         [Tooltip("Drag the Shelf GameObjects belonging to this storage unit here, ordered by filling priority.")]
         [SerializeField] private List<Shelf> shelves;
 
-        [Tooltip("Map ItemDetails ScriptableObjects to their corresponding 3D item prefab GameObjects.")]
-        [SerializeField] private List<ItemPrefabMapping> itemPrefabMappings;
+        // --- Item Mapping Fields ---
+        [Tooltip("Assign the ScriptableObject containing item to prefab mappings.")]
+        [SerializeField] private ItemVisualMappingSO itemVisualMappingAsset; // Assign the SO asset in the inspector
+        private ItemVisualLookup itemVisualLookup; // Instance of the lookup helper
+        // ---------------------------
 
-        private Dictionary<ItemDetails, GameObject> itemPrefabsDictionary;
+
+        // Reference to the DragAndDropManager for subscribing to completion event
+        private DragAndDropManager dragAndDropManager;
+
+        // Reference to the PoolingManager for getting and returning visual items
+        private PoolingManager poolingManager; // Added reference to PoolingManager
 
         // Store the total number of available ShelfSlots
         private int totalAvailableShelfSlots;
 
-        [System.Serializable]
-        public struct ItemPrefabMapping
-        {
-            public ItemDetails itemDetails;
-            public GameObject prefab3D;
-        }
+        // --- Track currently displayed visual items ---
+        private List<CurrentlyPlacedVisualItem> currentlyPlacedVisualItems = new List<CurrentlyPlacedVisualItem>();
+        // --------------------------------------------
 
+
+        // ItemPrefabMapping struct is now defined in ItemVisualMappingSO.cs
 
         private void Awake()
         {
@@ -63,29 +73,37 @@ namespace VisualStorage // Your namespace
             }
 
 
-            itemPrefabsDictionary = new Dictionary<ItemDetails, GameObject>();
-            if (itemPrefabMappings != null)
+            // --- Item Mapping Lookup Setup ---
+            if (itemVisualMappingAsset != null)
             {
-                foreach (var mapping in itemPrefabMappings)
-                {
-                     if (mapping.itemDetails != null && mapping.prefab3D != null)
-                     {
-                          if (!itemPrefabsDictionary.ContainsKey(mapping.itemDetails))
-                          {
-                              itemPrefabsDictionary.Add(mapping.itemDetails, mapping.prefab3D);
-                          }
-                          else
-                          {
-                              Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Duplicate ItemDetails mapping found for '{mapping.itemDetails.Name}'. Using the first one.", this);
-                          }
-                     }
-                     else
-                     {
-                          Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Item Prefab Mapping has null ItemDetails or Prefab for slot.", this);
-                     }
-                }
+                itemVisualLookup = new ItemVisualLookup(itemVisualMappingAsset);
+                Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Initialized ItemVisualLookup using '{itemVisualMappingAsset.name}'.");
             }
-            else Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Item Prefab Mappings list is null!", this);
+            else
+            {
+                Debug.LogError($"StorageObjectVisualizer ({gameObject.name}): Item Visual Mapping Asset is not assigned!", this);
+                 enabled = false; // Cannot function without mappings
+                 return; // Stop Awake if mappings are missing
+            }
+            // ------------------------------------
+
+
+            // Get the DragAndDropManager instance
+            dragAndDropManager = DragAndDropManager.Instance;
+            if (dragAndDropManager == null)
+            {
+                Debug.LogError($"StorageObjectVisualizer ({gameObject.name}): DragAndDropManager instance not found! Delayed updates will not work as expected.", this);
+            }
+
+            // --- Get the PoolingManager instance ---
+            poolingManager = PoolingManager.Instance;
+             if (poolingManager == null)
+             {
+                  Debug.LogError($"StorageObjectVisualizer ({gameObject.name}): PoolingManager instance not found! Object pooling will not be used. Please add a PoolingManager to your scene.", this);
+                  // Decide fallback behavior: continue using Instantiate/Destroy or disable?
+                  // For now, we'll add null checks for poolingManager calls.
+             }
+            // ---------------------------------------
 
 
             Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Awake completed.");
@@ -93,72 +111,86 @@ namespace VisualStorage // Your namespace
 
         private void OnEnable()
         {
-            // Subscribe to inventory changes
-            if (targetInventory != null && targetInventory.InventoryState != null)
+            // Subscribe to drag/drop completion event for delayed updates
+            if (dragAndDropManager != null)
             {
-                targetInventory.InventoryState.AnyValueChanged += OnInventoryStateChanged;
-                Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Subscribed to InventoryState.AnyValueChanged.");
-
-                // Trigger an initial update on enable to visualize the starting inventory
-                 OnInventoryStateChanged(new ArrayChangeInfo<Item>(ArrayChangeType.InitialLoad, targetInventory.InventoryState.GetCurrentArrayState()));
+                dragAndDropManager.OnDragDropCompleted += OnDragDropCompleted;
+                Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Subscribed to DragAndDropManager.OnDragDropCompleted.");
             }
+            else
+            {
+                 Debug.LogError($"StorageObjectVisualizer ({gameObject.name}): DragAndDropManager not available in OnEnable. Cannot subscribe to completion event.");
+                 // Fallback: Subscribe to AnyValueChanged if DragAndDropManager is missing.
+                 if (targetInventory != null && targetInventory.InventoryState != null)
+                 {
+                    targetInventory.InventoryState.AnyValueChanged += OnInventoryStateChangedFallback;
+                    Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Subscribed to InventoryState.AnyValueChanged as fallback.");
+                 }
+            }
+
+             // Trigger an initial update on enable to visualize the starting inventory
+             ForceVisualUpdate();
         }
 
         private void OnDisable()
         {
-            // Unsubscribe from inventory changes
-            if (targetInventory != null && targetInventory.InventoryState != null)
+            // Unsubscribe from drag/drop completion event
+            if (dragAndDropManager != null)
             {
-                targetInventory.InventoryState.AnyValueChanged -= OnInventoryStateChanged;
-                Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Unsubscribed from InventoryState.AnyValueChanged.");
+                dragAndDropManager.OnDragDropCompleted -= OnDragDropCompleted;
+                Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Unsubscribed from DragAndDropManager.OnDragDropCompleted.");
             }
+             else
+             {
+                 // Unsubscribe fallback
+                  if (targetInventory != null && targetInventory.InventoryState != null)
+                 {
+                    targetInventory.InventoryState.AnyValueChanged -= OnInventoryStateChangedFallback;
+                    Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Unsubscribed from InventoryState.AnyValueChanged fallback.");
+                 }
+             }
+
+             // Clean up any remaining visuals when disabled (e.g., scene changes) by returning to pool
+             ReturnAllVisualItemsToPool(); // Use a new method to return tracked items to pool
         }
 
          private void OnDestroy()
          {
-             OnDisable();
-              // Clean up any instantiated item prefabs when the visualizer is destroyed.
-              if (shelves != null)
-              {
-                  foreach (var shelf in shelves)
-                  {
-                       if (shelf != null && shelf.ShelfSlots != null)
-                       {
-                           foreach (var slot in shelf.ShelfSlots)
-                           {
-                                if (slot != null && slot.CurrentItemPrefab != null)
-                                {
-                                     Destroy(slot.CurrentItemPrefab);
-                                }
-                           }
-                       }
-                  }
-              }
-              Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Destroyed. Cleaned up visual items.");
+             OnDisable(); // Ensure unsubscription
+              // Clean up any instantiated item prefabs that might still be tracked if not done in OnDisable
+              ReturnAllVisualItemsToPool(); // Ensure cleanup by returning to pool
+              Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Destroyed. Returned visual items to pool.");
          }
 
 
-        /// <summary>
-        /// Event handler called when the linked inventory's state changes.
-        /// This is the main trigger for updating the visual display.
-        /// Implements the core item placement algorithm.
-        /// </summary>
-        private void OnInventoryStateChanged(ArrayChangeInfo<Item> changeInfo)
+        // Event handler for DragAndDropManager completion
+        private void OnDragDropCompleted()
         {
-            Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Inventory state changed. Updating visual display.");
+            Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Received OnDragDropCompleted event. Forcing visual update.");
+            ForceVisualUpdate();
+        }
 
-            // --- Phase 1: Clear Current Visuals ---
-            ClearAllVisualItems();
-            // -------------------------------------
+        // Fallback event handler if DragAndDropManager is not available
+        private void OnInventoryStateChangedFallback(ArrayChangeInfo<Item> changeInfo) // Corrected ArrayChangeInfo namespace
+        {
+             Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Inventory state changed (via AnyValueChanged fallback). Forcing visual update.");
+             ForceVisualUpdate();
+        }
 
-            // --- Phase 2: Core Mapping and Placement Algorithm ---
-            Debug.Log("StorageObjectVisualizer: Running item placement algorithm...");
 
-            // --- Step 4a: Get Current Inventory State ---
+        /// <summary>
+        /// Performs the core visual update logic: determines desired placements and
+        /// updates the visual display incrementally using object pooling.
+        /// </summary>
+        private void ForceVisualUpdate()
+        {
+            Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Forcing visual update based on current inventory state.");
+
+            // --- Phase 1: Determine Desired Visual Placements ---
+            // ... (Logic to get inventory state, identify instances, proportional selection,
+            // and prioritized block finding remains the same, populating finalDesiredPlacements) ...
+
             Item[] currentInventoryItems = targetInventory.InventoryState.GetCurrentArrayState();
-            // -------------------------------------------
-
-            // --- Step 4b: Identify and Order Item Instances ---
             List<ItemInstanceInfo> itemInstances = new List<ItemInstanceInfo>();
             Dictionary<int, int> occupiedInventorySlotQuantities = new Dictionary<int, int>();
 
@@ -177,323 +209,448 @@ namespace VisualStorage // Your namespace
                 }
             }
 
-            // --- Step 4c: Order Item Instances ---
-            itemInstances = itemInstances.OrderBy(instance => instance.OriginalInventorySlotIndex).ToList();
-            Debug.Log($"StorageObjectVisualizer: Found {itemInstances.Count} total item instances in inventory.");
-            // ------------------------------------
+            List<ItemInstanceInfo> orderedItemInstances = itemInstances.OrderBy(instance => instance.OriginalInventorySlotIndex).ToList();
+
+            bool shelvesArePotentiallyFull = orderedItemInstances.Count >= totalAvailableShelfSlots;
+            int totalVisualSlotsToFill = totalAvailableShelfSlots;
+            int targetVisualCount = shelvesArePotentiallyFull ? totalVisualSlotsToFill : orderedItemInstances.Count;
 
 
-            // --- Determine which instances to place visually (Step 4f - Selection) ---
             List<ItemInstanceInfo> instancesToPlaceVisually;
-            bool shelvesArePotentiallyFull = itemInstances.Count > totalAvailableShelfSlots; // Simplified check
 
             if (shelvesArePotentiallyFull)
             {
-                Debug.Log($"StorageObjectVisualizer: Shelves are potentially full. Implementing proportional distribution logic...");
-
                 instancesToPlaceVisually = new List<ItemInstanceInfo>();
+                int totalQuantity = occupiedInventorySlotQuantities.Sum(kvp => kvp.Value);
 
-                // Rule: At least one instance per occupied inventory slot must be displayed (if possible)
-                int occupiedSlotCount = occupiedInventorySlotQuantities.Count;
-                int totalVisualSlotsToAllocate = Mathf.Min(totalAvailableShelfSlots, itemInstances.Count);
-
-                int instancesAddedForBaseline = 0;
-                foreach(var kvp in occupiedInventorySlotQuantities)
+                if (totalQuantity > 0)
                 {
-                    int inventorySlotIndex = kvp.Key;
-                    ItemInstanceInfo? firstInstanceInSlot = itemInstances.FirstOrDefault(inst => inst.OriginalInventorySlotIndex == inventorySlotIndex);
-
-                    if(firstInstanceInSlot.HasValue && instancesAddedForBaseline < totalVisualSlotsToAllocate)
+                    Dictionary<int, float> targetVisualCountPerSlot = new Dictionary<int, float>();
+                    foreach(var kvp in occupiedInventorySlotQuantities)
                     {
-                        instancesToPlaceVisually.Add(firstInstanceInSlot.Value);
-                        instancesAddedForBaseline++;
+                        targetVisualCountPerSlot.Add(kvp.Key, (float)kvp.Value / totalQuantity * totalVisualSlotsToFill);
+                    }
+
+                    List<(int inventorySlotIndex, float remainder)> remainderSlots = new List<(int, float)>();
+
+                    foreach(var kvp in targetVisualCountPerSlot)
+                    {
+                        int inventorySlotIndex = kvp.Key;
+                        float targetCount = kvp.Value;
+                        int integerPart = Mathf.FloorToInt(targetCount);
+                        float remainder = targetCount - integerPart;
+
+                        var instancesFromSlot = orderedItemInstances
+                            .Where(inst => inst.OriginalInventorySlotIndex == inventorySlotIndex)
+                            .Take(integerPart)
+                            .ToList();
+
+                         instancesToPlaceVisually.AddRange(instancesFromSlot);
+
+                        if (remainder > 0)
+                        {
+                            remainderSlots.Add((inventorySlotIndex, remainder));
+                        }
+                    }
+
+                    remainderSlots = remainderSlots.OrderByDescending(r => r.remainder).ToList();
+
+                    int remainingSlotsToAllocate = totalVisualSlotsToFill - instancesToPlaceVisually.Count;
+
+                    if (remainingSlotsToAllocate > 0 && remainderSlots.Count > 0)
+                    {
+                        int currentRemainderCandidateIndex = 0;
+
+                        while (remainingSlotsToAllocate > 0 && currentRemainderCandidateIndex < remainderSlots.Count)
+                        {
+                             int inventorySlotIndex = remainderSlots[currentRemainderCandidateIndex].inventorySlotIndex;
+                              int currentlySelectedFromSlot = instancesToPlaceVisually.Count(inst => inst.OriginalInventorySlotIndex == inventorySlotIndex);
+
+                             ItemInstanceInfo? nextInstance = orderedItemInstances
+                                 .Where(inst => inst.OriginalInventorySlotIndex == inventorySlotIndex)
+                                 .Skip(currentlySelectedFromSlot)
+                                 .FirstOrDefault();
+
+                             if (nextInstance.HasValue)
+                             {
+                                 instancesToPlaceVisually.Add(nextInstance.Value);
+                                 remainingSlotsToAllocate--;
+                                 if (remainingSlotsToAllocate == 0) break;
+                             }
+                             else
+                             {
+                                  Debug.Log($"StorageObjectVisualizer: Inventory slot {inventorySlotIndex} has no more instances available for remainder allocation.");
+                              }
+                             currentRemainderCandidateIndex++;
+                             if (currentRemainderCandidateIndex >= remainderSlots.Count && remainingSlotsToAllocate > 0)
+                             {
+                                 currentRemainderCandidateIndex = 0;
+                                 Debug.Log("StorageObjectVisualizer: Cycling back through remainder slots to allocate remaining visual slots.");
+                             }
+                        }
                     }
                 }
-
-                int remainingVisualSlotsToAllocate = totalVisualSlotsToAllocate - instancesAddedForBaseline;
-                if (remainingVisualSlotsToAllocate > 0 && occupiedSlotCount > 0)
-                {
-                     Debug.Log($"StorageObjectVisualizer: Distributing {remainingVisualSlotsToAllocate} remaining visual slots proportionally.");
-
-                     int totalQuantity = occupiedInventorySlotQuantities.Sum(kvp => kvp.Value);
-                     if (totalQuantity > 0)
-                     {
-                         List<ItemInstanceInfo> instancesAvailableForProportional = itemInstances
-                             .Where(inst => !instancesToPlaceVisually.Contains(inst))
-                             .ToList();
-
-                         Dictionary<int, int> targetAdditionalInstancesPerSlot = new Dictionary<int, int>();
-                          foreach(var kvp in occupiedInventorySlotQuantities)
-                          {
-                              float quantityRatio = (float)kvp.Value / totalQuantity;
-                              int targetAdditional = Mathf.FloorToInt(quantityRatio * remainingVisualSlotsToAllocate);
-                              targetAdditionalInstancesPerSlot.Add(kvp.Key, targetAdditional);
-                          }
-
-                          // Handle remainder slots
-                          int currentTotalAdditionalAssigned = targetAdditionalInstancesPerSlot.Sum(kvp => kvp.Value);
-                          int remainderSlots = remainingVisualSlotsToAllocate - currentTotalAdditionalAssigned;
-                          if (remainderSlots > 0)
-                          {
-                               // Simple distribution of remainders to slots with largest quantities first
-                               var sortedSlotsByQuantity = occupiedInventorySlotQuantities.OrderByDescending(kvp => kvp.Value).ToList();
-                                for(int i = 0; i < remainderSlots && i < sortedSlotsByQuantity.Count; i++)
-                                {
-                                    targetAdditionalInstancesPerSlot[sortedSlotsByQuantity[i].Key]++;
-                                }
-                          }
-
-
-                          // Select the additional instances based on calculated targets
-                          foreach(var kvp in targetAdditionalInstancesPerSlot)
-                          {
-                              int inventorySlotIndex = kvp.Key;
-                              int additionalToSelect = kvp.Value;
-
-                              var availableForSlot = instancesAvailableForProportional
-                                  .Where(inst => inst.OriginalInventorySlotIndex == inventorySlotIndex)
-                                  .ToList();
-
-                              for(int i = 0; i < additionalToSelect && i < availableForSlot.Count; i++)
-                              {
-                                  instancesToPlaceVisually.Add(availableForSlot[i]);
-                              }
-                          }
-                     }
-                     else Debug.LogWarning("StorageObjectVisualizer: Total quantity is zero, cannot perform proportional distribution based on quantity.");
-                }
             }
-            else // Shelves are NOT full - all instances are candidates for placement
+            else
             {
-                 Debug.Log("StorageObjectVisualizer: Shelves are not full. Attempting to place all item instances.");
-                 instancesToPlaceVisually = itemInstances;
+                 instancesToPlaceVisually = orderedItemInstances;
             }
-            // Sort the final list of instances selected for display by their original inventory slot index (again)
-            instancesToPlaceVisually = instancesToPlaceVisually.OrderBy(instance => instance.OriginalInventorySlotIndex).ToList();
-             Debug.Log($"StorageObjectVisualizer: Final list of instances selected for visual display: {instancesToPlaceVisually.Count}");
-        // --------------------------------------------------------------
 
+            // Map selected instances to shelf slots (Placement Pass)
+            List<ItemInstancePlacement> finalDesiredPlacements = new List<ItemInstancePlacement>();
+            List<ShelfSlot> placementPassAvailableSlots = new List<ShelfSlot>(totalAvailableShelfSlots);
 
-        // --- Step 4e & 4f (cont.): Map Selected Instances to Shelf Slots ---
-        List<ItemInstancePlacement> finalDesiredPlacements = new List<ItemInstancePlacement>();
-        List<ShelfSlot> remainingAvailableSlots = new List<ShelfSlot>(); // Slots available *during* this placement cycle
-
-        // Collect all available slots from all shelves initially (they are all available after ClearAllVisualItems)
-         if (shelves != null)
-         {
-             foreach(var shelf in shelves)
-             {
-                 if (shelf != null && shelf.ShelfSlots != null)
-                 {
-                      foreach(var slot in shelf.ShelfSlots)
-                      {
-                          if (slot != null) // Check for null slots in the list
-                          {
-                               // Add all slots initially, the block finding will check availability
-                              remainingAvailableSlots.Add(slot);
-                          }
-                      }
-                 }
-                 else if (shelf != null) Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Shelf '{shelf.gameObject.name}' is null or its ShelfSlots list is null during available slot collection.", shelf.gameObject);
-             }
-         }
-         else Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Shelves list is null during available slot collection.");
-
-        Debug.Log($"StorageObjectVisualizer: Initially collected {remainingAvailableSlots.Count} available slots.");
-
-        // Now, iterate through the selected instances and find a block for each in the remaining available slots
-        foreach (var instance in instancesToPlaceVisually)
-        {
-            GetShelfItemDimensions(instance.ItemDetails, out int neededRows, out int neededColumns);
-
-            Debug.Log($"StorageObjectVisualizer: Processing instance from inventory slot {instance.OriginalInventorySlotIndex} ({instance.ItemDetails.Name}). Needs {neededRows}x{neededColumns} block.");
-
-            if (neededRows <= 0 || neededColumns <= 0) continue; // Skip invalid dimensions
-
-            List<ShelfSlot> foundSlotBlock = null;
-            bool placed = false;
-
-            // --- Implement the block-finding logic within the Visualizer ---
-            // Iterate through shelves in order, then through slots on each shelf in order,
-            // considering each slot as a potential start of a block.
             if (shelves != null)
             {
-                 foreach (var shelf in shelves)
-                 {
-                     if (shelf == null || shelf.ShelfSlots == null) continue;
-
-                     foreach (var potentialStartSlot in shelf.ShelfSlots) // Iterate through slots on the shelf
-                     {
-                         if (potentialStartSlot == null) continue;
-
-                         Debug.Log($"StorageObjectVisualizer: Considering potential start slot: '{potentialStartSlot.gameObject.name}' (Grid: {potentialStartSlot.RowIndex},{potentialStartSlot.ColumnIndex}). Is available? {remainingAvailableSlots.Contains(potentialStartSlot)}.");
-                         // Check if this potential start slot is currently available in the remaining list
-                          if (!remainingAvailableSlots.Contains(potentialStartSlot)) continue;
-
-                         // Assume the potential start slot's grid coordinates represent the top-left of the block
-                         int startRow = potentialStartSlot.RowIndex;
-                         int startColumn = potentialStartSlot.ColumnIndex;
-
-                         bool blockIsAvailable = true;
-                         List<ShelfSlot> currentBlock = new List<ShelfSlot>();
-
-                         // Check the block of slots required by the item's dimensions
-                         for (int r = 0; r < neededRows; r++)
-                         {
-                             for (int c = 0; c < neededColumns; c++)
-                             {
-                                 int currentRow = startRow + r;
-                                 int currentColumn = startColumn + c;
-
-                                 // Find the slot at these coordinates on this shelf
-                                 ShelfSlot currentSlot = shelf.GetSlot(currentRow, currentColumn);
-
-                            if (currentSlot == null)
-                            {
-                                Debug.Log($"StorageObjectVisualizer: Block check: Slot at calculated grid ({currentRow},{currentColumn}) on Shelf '{shelf.gameObject.name}' is null in GetSlot result.");
-                            }
-                            else
-                            {
-                                Debug.Log($"StorageObjectVisualizer: Block check: Checking slot '{currentSlot.gameObject.name}' (Grid: {currentSlot.RowIndex},{currentSlot.ColumnIndex}) found via GetSlot for calculated grid ({currentRow},{currentColumn}). Is in remaining available list? {remainingAvailableSlots.Contains(currentSlot)}.");
-                            }
-
-                                 // Check if the slot is valid AND is in the list of remaining available slots
-                                 if (currentSlot == null || !remainingAvailableSlots.Contains(currentSlot))
-                                 {
-                                     blockIsAvailable = false; // Slot is null or not available
-                                     break;
-                                 }
-
-                                 currentBlock.Add(currentSlot); // Add the available slot to the current block
-                             }
-                             if (!blockIsAvailable) break; // Break inner loop if block is not available
-                         }
-
-                         // If the entire block is available and matches the needed size
-                         if (blockIsAvailable && currentBlock.Count == neededRows * neededColumns)
-                         {
-                             foundSlotBlock = currentBlock; // Found a block
-                             placed = true;
-                             Debug.Log($"StorageObjectVisualizer: Found suitable block for instance from inventory slot {instance.OriginalInventorySlotIndex} ({instance.ItemDetails.Name}) starting at '{potentialStartSlot.gameObject.name}' (Grid: {potentialStartSlot.RowIndex},{potentialStartSlot.ColumnIndex}) on Shelf '{shelf.gameObject.name}'. Block contains {foundSlotBlock.Count} slots. First slot in block: '{foundSlotBlock[0]?.gameObject.name}'.");
-
-                             // Remove the used slots from the global remaining list
-                             foreach(var usedSlot in foundSlotBlock)
-                             {
-                                 if (remainingAvailableSlots.Contains(usedSlot))
-                                 {
-                                     remainingAvailableSlots.Remove(usedSlot);
-                                 }
-                                 else
-                                 {
-                                     Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Attempted to remove slot from remainingAvailableSlots that was not present! Slot: ({usedSlot.RowIndex},{usedSlot.ColumnIndex}) on Shelf '{shelf.gameObject.name}'.", usedSlot);
-                                 }
-                             }
-
-                             // Debug.Log($"StorageObjectVisualizer: Placed instance from slot {instance.OriginalInventorySlotIndex} ({instance.ItemDetails.Name}) in block starting at ({potentialStartSlot.RowIndex},{potentialStartSlot.ColumnIndex}) on Shelf '{shelf.gameObject.name}'.");
-
-                             break; // Move to the next item instance once placed
-                         }
-                         else
-                         {
-                              currentBlock.Clear(); // Clear the partial block
-                         }
-                     }
-                     if (placed) break; // Move to the next item instance once placed on *any* shelf
-                 }
-             }
-            // --- End of block-finding logic ---
-
-
-             if (placed)
-             {
-                  finalDesiredPlacements.Add(new ItemInstancePlacement(instance, foundSlotBlock));
-             }
-             else
-             {
-                 Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Item instance from slot {instance.OriginalInventorySlotIndex} ({instance.ItemDetails.Name}) could not be placed visually even after selection for display. Remaining slots: {remainingAvailableSlots.Count}. This might indicate a fragmentation issue or mismatch between calculated needed slots and available blocks.", instance.ItemDetails);
-             }
-        }
-         // The 'finalDesiredPlacements' list now holds the final plan for what should be displayed and where.
-         Debug.Log($"StorageObjectVisualizer: Finished placement algorithm. Determined {finalDesiredPlacements.Count} final desired placements.");
-
-        // --- Step 4g: Update Visuals ---
-        // Now compare the 'finalDesiredPlacements' to the *actual* current state of the ShelfSlots
-        // and perform instantiate/destroy/move prefabs.
-
-        // The ClearAllVisualItems at the start destroyed everything.
-        // We now just need to instantiate based on 'finalDesiredPlacements'.
-
-        Debug.Log($"StorageObjectVisualizer: Instantiating visual items based on final desired placements ({finalDesiredPlacements.Count}).");
-
-        // Instantiate prefabs for all final desired placements
-        foreach (var placement in finalDesiredPlacements)
-        {
-             if (placement.ShelfSlotBlock.Count > 0)
-             {
-                  ShelfSlot startSlot = placement.ShelfSlotBlock[0];
-                  GameObject requiredPrefab = GetItemPrefab(placement.ItemInstanceInfo.ItemDetails);
-
-                  if (startSlot != null && requiredPrefab != null)
-                  {
-                       // Instantiate the prefab at the start slot's transform, parented to the start slot
-                       GameObject instantiatedPrefab = Instantiate(requiredPrefab, startSlot.SlotTransform.position, startSlot.SlotTransform.rotation, startSlot.SlotTransform);
-
-                       // Mark ALL slots in the block as occupied by this SAME prefab instance
-                        foreach(var blockSlot in placement.ShelfSlotBlock)
-                        {
-                            if (blockSlot != null)
-                            {
-                                // Note: Only the start slot needs the actual prefab transform.
-                                // Other slots in the block are logically occupied by the same item.
-                                blockSlot.Occupy(instantiatedPrefab);
-                            }
-                        }
-                        // Optional: Add a component to instantiatedPrefab to link it back to ItemDetails
-                        // (useful for future incremental updates or interaction with visualized items)
-                        // Example: instantiatedPrefab.AddComponent<VisualizedItem>().ItemDetails = placement.ItemInstanceInfo.ItemDetails;
-                  }
-                  else
-                  {
-                       Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Cannot instantiate prefab for final placement. Start slot is null ({startSlot == null}) or Required Prefab is null ({requiredPrefab == null}).");
-                  }
-             }
-             else
-             {
-                 Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Final desired placement has an empty ShelfSlotBlock list.");
-             }
-        }
-
-         Debug.Log($"StorageObjectVisualizer: Visual update complete. Total visual items placed: {finalDesiredPlacements.Count}.");
-    }
-
-        /// <summary>
-        /// Destroys all currently displayed item prefabs and vacates all ShelfSlots.
-        /// Called at the start of the visual update process.
-        /// </summary>
-        private void ClearAllVisualItems()
-        {
-             Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Clearing all visual items from shelves.");
-             if (shelves != null)
-             {
-                 foreach (var shelf in shelves)
+                 foreach(var shelf in shelves)
                  {
                      if (shelf != null && shelf.ShelfSlots != null)
                      {
-                         foreach (var slot in shelf.ShelfSlots)
-                         {
-                             if (slot != null && slot.CurrentItemPrefab != null)
-                             {
-                                 Destroy(slot.CurrentItemPrefab);
-                             }
-                             if (slot != null) slot.Vacate();
-                         }
+                          foreach(var slot in shelf.ShelfSlots)
+                          {
+                              if (slot != null)
+                              {
+                                   placementPassAvailableSlots.Add(slot);
+                              }
+                          }
                      }
-                     else if (shelf != null) Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Shelf '{shelf.gameObject.name}' is null or its ShelfSlots list is null during clearing.", shelf.gameObject);
+                      else if (shelf != null) Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Shelf '{shelf.gameObject.name}' is null or its ShelfSlots list is null during placement pass slot collection.", shelf.gameObject);
                  }
-             }
-             else Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Shelves list is null during clearing.");
+            }
+                  else {Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Shelves list is null during placement pass slot collection.");
+            }
 
-             Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Finished clearing visual items.");
+            int successfullyPlacedInPass = 0;
+
+            foreach (var instance in instancesToPlaceVisually)
+            {
+                GetShelfItemDimensions(instance.ItemDetails, out int neededRows, out int neededColumns);
+
+                if (neededRows <= 0 || neededColumns <= 0)
+                {
+                    Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Selected instance from inventory slot {instance.OriginalInventorySlotIndex} has invalid dimensions ({neededRows}x{neededColumns}). Skipping placement attempt for this instance.");
+                    continue;
+                }
+
+                List<ShelfSlot> foundSlotBlock = null;
+                bool foundBlockForThisInstance = false;
+
+                // --- Block-finding logic with Prioritized Shelf Search ---
+                if (shelves != null && shelves.Count > 0)
+                {
+                    int preferredShelfIndex = instance.OriginalInventorySlotIndex % shelves.Count;
+                    var shelfIndicesToSearch = Enumerable.Range(0, shelves.Count).Select(i => (preferredShelfIndex + i) % shelves.Count);
+
+                    foreach (int currentShelfIndex in shelfIndicesToSearch)
+                    {
+                        Shelf currentShelf = shelves[currentShelfIndex];
+
+                        if (currentShelf == null || currentShelf.ShelfSlots == null) continue;
+
+                        foreach (var potentialStartSlot in currentShelf.ShelfSlots)
+                        {
+                            if (potentialStartSlot == null || !placementPassAvailableSlots.Contains(potentialStartSlot)) continue;
+
+                            int startRow = potentialStartSlot.RowIndex;
+                            int startColumn = potentialStartSlot.ColumnIndex;
+
+                            bool blockIsAvailable = true;
+                            List<ShelfSlot> currentBlock = new List<ShelfSlot>();
+
+                            for (int r = 0; r < neededRows; r++)
+                            {
+                                for (int c = 0; c < neededColumns; c++)
+                                {
+                                    int currentRow = startRow + r;
+                                    int currentColumn = startColumn + c;
+
+                                     if (currentRow >= currentShelf.Rows || currentColumn >= currentShelf.Columns)
+                                     {
+                                         blockIsAvailable = false;
+                                         break;
+                                     }
+
+                                    ShelfSlot currentSlot = currentShelf.GetSlot(currentRow, currentColumn);
+
+                                    if (currentSlot == null || !placementPassAvailableSlots.Contains(currentSlot))
+                                    {
+                                        blockIsAvailable = false;
+                                        break;
+                                    }
+                                    currentBlock.Add(currentSlot);
+                                }
+                                if (!blockIsAvailable) break;
+                            }
+
+                            if (blockIsAvailable && currentBlock.Count == neededRows * neededColumns)
+                            {
+                                foundSlotBlock = currentBlock;
+                                foundBlockForThisInstance = true;
+
+                                 foreach(var usedSlot in foundSlotBlock)
+                                 {
+                                     if (placementPassAvailableSlots.Contains(usedSlot))
+                                     {
+                                         placementPassAvailableSlots.Remove(usedSlot);
+                                     }
+                                     else
+                                     {
+                                         Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Attempted to remove slot from placementPassAvailableSlots that was not present after finding block! Slot: ({usedSlot.RowIndex},{usedSlot.ColumnIndex}) on Shelf '{currentShelf.gameObject.name}'.", usedSlot);
+                                     }
+                                 }
+
+                                break; // Found block on this shelf, move to next instance
+                            }
+                             else
+                            {
+                                 currentBlock.Clear();
+                            }
+                        }
+                        if (foundBlockForThisInstance) break; // Found block across shelves, move to next instance
+                    }
+                }
+                // --- End of Block-finding logic ---
+
+
+                 // --- Add to Final Desired Placements if a block was found ---
+                 if (foundBlockForThisInstance)
+                 {
+                      // This instance successfully found a block, add it to the desired list for comparison.
+                      finalDesiredPlacements.Add(new ItemInstancePlacement(instance, foundSlotBlock));
+                      successfullyPlacedInPass++; // Track successful placements within this pass
+                 }
+                 else
+                 {
+                     Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Proportionally selected instance from inventory slot {instance.OriginalInventorySlotIndex} ({instance.ItemDetails.Name}) could NOT find an available block after checking all shelves (fragmentation?). Remaining slots: {placementPassAvailableSlots.Count}.");
+                 }
+            }
+            Debug.Log($"StorageObjectVisualizer: Finished placement pass. Determined {finalDesiredPlacements.Count} final desired placements (out of {instancesToPlaceVisually.Count} selected). Total successfully placed in pass: {successfullyPlacedInPass}.");
+
+
+            // --- Phase 2: Incremental Visual Update using Pooling ---
+            Debug.Log($"StorageObjectVisualizer: Performing incremental visual update.");
+
+            List<CurrentlyPlacedVisualItem> nextPlacedVisualItems = new List<CurrentlyPlacedVisualItem>();
+
+            List<ItemInstancePlacement> itemsToCreate = new List<ItemInstancePlacement>();
+            List<CurrentlyPlacedVisualItem> itemsToDestroy = new List<CurrentlyPlacedVisualItem>();
+
+            HashSet<ItemInstancePlacement> desiredPlacementsSet = new HashSet<ItemInstancePlacement>(finalDesiredPlacements);
+            HashSet<CurrentlyPlacedVisualItem> currentlyPlacedSet = new HashSet<CurrentlyPlacedVisualItem>(currentlyPlacedVisualItems);
+
+
+            // Identify items to destroy (currently placed items that are not in the desired state)
+            foreach (var placedItem in currentlyPlacedVisualItems)
+            {
+                 bool isStillDesiredAtSameLocation = false;
+                 if (desiredPlacementsSet.Any(desired => placedItem.MatchesDesiredPlacement(desired)))
+                 {
+                     isStillDesiredAtSameLocation = true;
+                 }
+
+                 if (!isStillDesiredAtSameLocation)
+                 {
+                     itemsToDestroy.Add(placedItem);
+                 }
+            }
+
+            // Identify items to create (desired placements that are not currently placed)
+            foreach (var desiredPlacement in finalDesiredPlacements)
+            {
+                 bool isAlreadyPlacedMatching = false;
+                 if (currentlyPlacedSet.Any(placed => placed.MatchesDesiredPlacement(desiredPlacement)))
+                 {
+                     isAlreadyPlacedMatching = true;
+                 }
+
+                 if (!isAlreadyPlacedMatching)
+                 {
+                     itemsToCreate.Add(desiredPlacement);
+                 }
+            }
+
+
+            // --- Execute Changes ---
+
+            // Destroy/Return Items to Pool
+            foreach (var itemToDestroy in itemsToDestroy)
+            {
+                Debug.Log($"StorageObjectVisualizer: Returning visual item for Inv Slot {itemToDestroy.ItemInstanceInfo.OriginalInventorySlotIndex} ({itemToDestroy.ItemInstanceInfo.ItemDetails.Name}) to pool.");
+                if (itemToDestroy.VisualGameObject != null && poolingManager != null) // Check poolingManager
+                {
+                     // --- RETURN TO POOL ---
+                     poolingManager.ReturnPooledObject(itemToDestroy.VisualGameObject);
+                     // --------------------
+                }
+                 else if (itemToDestroy.VisualGameObject != null && poolingManager == null)
+                 {
+                      Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): PoolingManager is null. Destroying item instead of returning to pool.", itemToDestroy.VisualGameObject);
+                      Destroy(itemToDestroy.VisualGameObject); // Fallback destroy
+                 }
+
+                // Also need to vacate the ShelfSlots it occupied
+                if (itemToDestroy.OccupiedSlots != null)
+                {
+                     foreach(var slot in itemToDestroy.OccupiedSlots)
+                     {
+                          if (slot != null) slot.Vacate(); // Make the slot available again visually
+                     }
+                 }
+            }
+             Debug.Log($"StorageObjectVisualizer: Returned {itemsToDestroy.Count} visual items to pool (or destroyed).");
+
+            // Create/Get Items from Pool
+            List<CurrentlyPlacedVisualItem> newlyCreatedItems = new List<CurrentlyPlacedVisualItem>(); // Temporary list for newly created/gotten items
+
+            foreach (var placementToCreate in itemsToCreate)
+            {
+                 Debug.Log($"StorageObjectVisualizer: Getting visual item from pool for Inv Slot {placementToCreate.ItemInstanceInfo.OriginalInventorySlotIndex} ({placementToCreate.ItemInstanceInfo.ItemDetails.Name}).");
+                 if (placementToCreate.ShelfSlotBlock.Count > 0)
+                 {
+                      ShelfSlot startSlot = placementToCreate.ShelfSlotBlock[0];
+                      // Use ItemVisualLookup to get the prefab reference
+                       GameObject requiredPrefab = itemVisualLookup?.GetItemPrefab(placementToCreate.ItemInstanceInfo.ItemDetails);
+
+
+                      GameObject instantiatedPrefab = null;
+
+                       if (startSlot != null && requiredPrefab != null && poolingManager != null) // Check poolingManager
+                       {
+                            // --- GET FROM POOL ---
+                            instantiatedPrefab = poolingManager.GetPooledObject(requiredPrefab);
+                            // -------------------
+
+                            if (instantiatedPrefab != null)
+                            {
+                                // Position, rotate, and parent the object gotten from the pool
+                                instantiatedPrefab.transform.SetParent(startSlot.SlotTransform, false); // Parent to the start slot's transform
+                                instantiatedPrefab.transform.localPosition = Vector3.zero; // Reset local position
+                                instantiatedPrefab.transform.localRotation = Quaternion.identity; // Reset local rotation
+
+
+                                // Mark ALL slots in the block as occupied by this SAME prefab instance
+                                foreach(var blockSlot in placementToCreate.ShelfSlotBlock)
+                                {
+                                    if (blockSlot != null)
+                                    {
+                                        blockSlot.Occupy(instantiatedPrefab); // Link the visual object to the slot
+                                    }
+                                }
+
+                                // Add the newly placed item to a temporary list
+                                 newlyCreatedItems.Add(new CurrentlyPlacedVisualItem(
+                                    placementToCreate.ItemInstanceInfo,
+                                    instantiatedPrefab,
+                                    placementToCreate.ShelfSlotBlock
+                                 ));
+                            }
+                            else
+                            {
+                                Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Failed to get pooled object for prefab '{requiredPrefab.name}'.");
+                            }
+
+                       }
+                       else if (startSlot != null && requiredPrefab != null && poolingManager == null)
+                       {
+                            Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): PoolingManager is null. Instantiating item instead of pooling.", requiredPrefab);
+                             // Fallback instantiate if poolingManager is null
+                             instantiatedPrefab = Instantiate(requiredPrefab, startSlot.SlotTransform.position, startSlot.SlotTransform.rotation, startSlot.SlotTransform);
+
+                             if (instantiatedPrefab != null)
+                             {
+                                  // Mark ALL slots in the block as occupied by this SAME prefab instance
+                                   foreach(var blockSlot in placementToCreate.ShelfSlotBlock)
+                                   {
+                                       if (blockSlot != null)
+                                       {
+                                           blockSlot.Occupy(instantiatedPrefab);
+                                       }
+                                   }
+
+                                  // Note: Fallback instantiated items are NOT tracked by PooledObjectInfo,
+                                  // so they will be Destroyed by the fallback in ReturnAllVisualItemsToPool.
+                                   Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Fallback instantiated item will not be pooled on return.", instantiatedPrefab);
+
+
+                                   // Add the newly placed item to a temporary list (tracking it even if not pooled)
+                                    newlyCreatedItems.Add(new CurrentlyPlacedVisualItem(
+                                       placementToCreate.ItemInstanceInfo,
+                                       instantiatedPrefab,
+                                       placementToCreate.ShelfSlotBlock
+                                    ));
+                             }
+                       }
+                       else
+                       {
+                            Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Cannot get/instantiate prefab for desired placement. Start slot is null ({startSlot == null}) or Required Prefab is null ({requiredPrefab == null}).");
+                       }
+                 }
+                 else
+                 {
+                     Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Desired placement has an empty ShelfSlotBlock list.");
+                 }
+            }
+             Debug.Log($"StorageObjectVisualizer: Created/Got {itemsToCreate.Count} visual items.");
+
+
+            // --- Update Tracking List ---
+            // The next state is the items that were kept + the items that were newly created/gotten.
+            nextPlacedVisualItems = new List<CurrentlyPlacedVisualItem>();
+
+            // Add items that were kept (iterate through the original list, exclude those marked for destruction)
+            foreach (var placedItem in currentlyPlacedVisualItems)
+            {
+                 // Check if this placed item is in the list of items to destroy
+                 if(!itemsToDestroy.Contains(placedItem))
+                 {
+                      nextPlacedVisualItems.Add(placedItem); // If it was NOT marked for destruction, keep it for the next state
+                 }
+            }
+             Debug.Log($"StorageObjectVisualizer: Kept {nextPlacedVisualItems.Count} visual items.");
+
+            // Add newly created/gotten items
+            nextPlacedVisualItems.AddRange(newlyCreatedItems);
+
+            // Update the main tracking list
+            currentlyPlacedVisualItems = nextPlacedVisualItems;
+
+            Debug.Log($"StorageObjectVisualizer: Incremental update complete. Total visual items currently tracked: {currentlyPlacedVisualItems.Count}.");
+        }
+
+        /// <summary>
+        /// Returns all currently tracked visual items to the object pool (or destroys them if pooling is not available).
+        /// Used for cleanup on disable/destroy.
+        /// </summary>
+        private void ReturnAllVisualItemsToPool() // Renamed method
+        {
+            Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Returning all tracked visual items to pool.");
+            // Iterate through a copy or backwards to avoid issues while modifying the list
+            foreach(var placedItem in currentlyPlacedVisualItems.ToList()) // Use ToList() to iterate over a copy
+            {
+                if (placedItem.VisualGameObject != null)
+                {
+                    if (poolingManager != null) // Check poolingManager
+                    {
+                         // --- RETURN TO POOL ---
+                         poolingManager.ReturnPooledObject(placedItem.VisualGameObject);
+                         // --------------------
+                    }
+                    else
+                    {
+                         Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): PoolingManager is null. Destroying item instead of returning to pool.", placedItem.VisualGameObject);
+                         Destroy(placedItem.VisualGameObject); // Fallback destroy
+                    }
+                }
+                 if (placedItem.OccupiedSlots != null)
+                 {
+                     foreach(var slot in placedItem.OccupiedSlots)
+                     {
+                          if (slot != null) slot.Vacate(); // Make the slot available again visually
+                     }
+                 }
+            }
+            currentlyPlacedVisualItems.Clear();
+             Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Finished returning all tracked visual items to pool (or destroying).");
         }
 
 
@@ -534,71 +691,83 @@ namespace VisualStorage // Your namespace
         }
 
         /// <summary>
-        /// Helper method to get item prefab for a given ItemDetails (using the dictionary).
+        /// Helper method to get item prefab for a given ItemDetails (using the ItemVisualLookup).
         /// </summary>
         private GameObject GetItemPrefab(ItemDetails itemDetails)
         {
-             if (itemDetails != null && itemPrefabsDictionary != null && itemPrefabsDictionary.TryGetValue(itemDetails, out GameObject prefab))
+             if (itemVisualLookup == null)
              {
-                 return prefab;
+                 Debug.LogError($"StorageObjectVisualizer ({gameObject.name}): ItemVisualLookup is not initialized!");
+                 return null;
              }
-             else if (itemDetails != null)
-             {
-                  Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): No 3D prefab mapping found for ItemDetails: {itemDetails.Name}.", itemDetails);
-             }
-            return null;
+             return itemVisualLookup.GetItemPrefab(itemDetails);
         }
 
-        // --- Helper Structs for the Placement Algorithm ---
+        // --- Helper Structs for the Placement Algorithm and Tracking ---
 
         /// <summary>
         /// Represents a single item instance logically existing in the inventory.
         /// Stores ItemDetails and its original inventory slot index.
+        /// Implements IEquatable for clearer comparison.
         /// </summary>
-        private struct ItemInstanceInfo
+        private struct ItemInstanceInfo : IEquatable<ItemInstanceInfo> // Implement IEquatable for clearer comparison
         {
             public ItemDetails ItemDetails { get; }
             public int OriginalInventorySlotIndex { get; }
-            // Optional: public int InstanceIndexInSlot; // If needed for specific ordering within stacks
+            // You might need a unique identifier for the instance if ItemDetails and SlotIndex aren't enough
+            // e.g., if you can have multiple non-stackable items of the same type originating from the same slot
+            // but representing distinct instances (less common with standard inventory arrays).
+            // public int InstanceUniqueId; // Add this if needed
 
-            public ItemInstanceInfo(ItemDetails details, int inventorySlotIndex, int instanceIndex)
+            public ItemInstanceInfo(ItemDetails details, int inventorySlotIndex, int instanceIndex) // Kept instanceIndex for potential future use or debugging
             {
                 ItemDetails = details;
                 OriginalInventorySlotIndex = inventorySlotIndex;
-                // InstanceIndexInSlot = instanceIndex; // Not used in sorting yet
+                // InstanceUniqueId = ... generate a unique ID here if needed ...;
             }
 
-            // Need Equals and GetHashCode to compare instances if using Contains() or similar
+            // Implement IEquatable for type-safe comparison
+            public bool Equals(ItemInstanceInfo other)
+            {
+                // Compare by ItemDetails and OriginalInventorySlotIndex.
+                // Using ReferenceEquals check for ItemDetails might be safer if ItemDetails are ScriptableObjects
+                 return ReferenceEquals(ItemDetails, other.ItemDetails) && // Compare ScriptableObject references
+                       OriginalInventorySlotIndex == other.OriginalInventorySlotIndex;
+                       // && (InstanceUniqueId == other.InstanceUniqueId); // Include if using unique ID
+            }
+
             public override bool Equals(object obj)
             {
                 if (obj is ItemInstanceInfo other)
                 {
-                    // Compare by ItemDetails and OriginalInventorySlotIndex.
-                    // If InstanceIndexInSlot was used, include it here.
-                    return ItemDetails == other.ItemDetails &&
-                           OriginalInventorySlotIndex == other.OriginalInventorySlotIndex;
+                    return Equals(other); // Use the type-safe Equals
                 }
                 return false;
             }
 
             public override int GetHashCode()
             {
-                 // Combine hash codes. Use a prime number multiplier.
                  unchecked // Overflow is fine
                  {
                      int hash = 17;
-                     hash = hash * 23 + (ItemDetails != null ? ItemDetails.GetHashCode() : 0);
+                     // Use GetInstanceID() for ScriptableObjects to get a unique hash per asset instance
+                     hash = hash * 23 + (ItemDetails != null ? ItemDetails.GetInstanceID() : 0);
                      hash = hash * 23 + OriginalInventorySlotIndex.GetHashCode();
-                     // if using InstanceIndexInSlot, add it: hash = hash * 23 + InstanceIndexInSlot.GetHashCode();
+                     // if using InstanceUniqueId, add it: hash = hash * 23 + InstanceUniqueId.GetHashCode();
                      return hash;
                  }
             }
+
+             public static bool operator ==(ItemInstanceInfo left, ItemInstanceInfo right) => left.Equals(right);
+             public static bool operator !=(ItemInstanceInfo left, ItemInstanceInfo right) => !(left == right);
         }
 
         /// <summary>
         /// Represents the desired visual placement of an item instance onto a block of ShelfSlots.
+        /// Links an item instance to the specific slots it should occupy.
+        /// Implements IEquatable for comparison.
         /// </summary>
-        private struct ItemInstancePlacement
+        private struct ItemInstancePlacement : IEquatable<ItemInstancePlacement> // Implement IEquatable
         {
             public ItemInstanceInfo ItemInstanceInfo { get; }
             public List<ShelfSlot> ShelfSlotBlock { get; } // The block of slots this instance should occupy
@@ -608,6 +777,118 @@ namespace VisualStorage // Your namespace
                 ItemInstanceInfo = instanceInfo;
                 ShelfSlotBlock = slotBlock;
             }
+
+             // Implement IEquatable for type-safe comparison
+             public bool Equals(ItemInstancePlacement other)
+             {
+                 // ItemInstanceInfo must match
+                 if (!ItemInstanceInfo.Equals(other.ItemInstanceInfo))
+                 {
+                     return false;
+                 }
+
+                 // Slot blocks must match exactly (same slots in the same order)
+                 // Use SequenceEqual for ordered list comparison
+                 if (ShelfSlotBlock == null && other.ShelfSlotBlock == null) return true;
+                 if (ShelfSlotBlock == null || other.ShelfSlotBlock == null) return false;
+
+                 return ShelfSlotBlock.SequenceEqual(other.ShelfSlotBlock);
+             }
+
+             public override bool Equals(object obj)
+             {
+                 if (obj is ItemInstancePlacement other)
+                 {
+                     return Equals(other);
+                 }
+                 return false;
+             }
+
+             public override int GetHashCode()
+             {
+                  unchecked
+                  {
+                      int hash = ItemInstanceInfo.GetHashCode();
+                      // Hashing lists is tricky and can be slow. SequenceEqual is used for comparison.
+                      // If this struct is used as a dictionary key, a proper list hash code would be needed,
+                      // potentially based on slot references/IDs in a consistent order.
+                      // For now, just hash the ItemInstanceInfo as primary key.
+                      return hash;
+                  }
+             }
+
+             public static bool operator ==(ItemInstancePlacement left, ItemInstancePlacement right) => left.Equals(right);
+             public static bool operator !=(ItemInstancePlacement left, ItemInstancePlacement right) => !(left == right);
+        }
+
+        /// <summary>
+        /// Represents an item instance that is currently visually placed on the shelves.
+        /// Links the item instance info to the actual instantiated GameObject and the slots it occupies.
+        /// Implements IEquatable for comparison.
+        /// </summary>
+        private struct CurrentlyPlacedVisualItem : IEquatable<CurrentlyPlacedVisualItem>
+        {
+            public ItemInstanceInfo ItemInstanceInfo { get; }
+            public GameObject VisualGameObject { get; } // Reference to the instantiated prefab
+            public List<ShelfSlot> OccupiedSlots { get; } // The slots this visual item occupies
+
+            public CurrentlyPlacedVisualItem(ItemInstanceInfo instanceInfo, GameObject visualGameObject, List<ShelfSlot> occupiedSlots)
+            {
+                ItemInstanceInfo = instanceInfo;
+                VisualGameObject = visualGameObject;
+                OccupiedSlots = occupiedSlots;
+            }
+
+            // Helper to check if this placed item matches a desired placement
+             public bool MatchesDesiredPlacement(ItemInstancePlacement desiredPlacement)
+             {
+                 // Check if the item instance info matches
+                 if (!ItemInstanceInfo.Equals(desiredPlacement.ItemInstanceInfo))
+                 {
+                     return false;
+                 }
+
+                 // Check if the occupied slots match (order matters for a specific placement)
+                 if (OccupiedSlots == null && desiredPlacement.ShelfSlotBlock == null) return true;
+                 if (OccupiedSlots == null || desiredPlacement.ShelfSlotBlock == null) return false;
+
+                 return OccupiedSlots.SequenceEqual(desiredPlacement.ShelfSlotBlock); // Use SequenceEqual for ordered list comparison
+             }
+
+            // Implement IEquatable for type-safe comparison
+            public bool Equals(CurrentlyPlacedVisualItem other)
+            {
+                // Compare all relevant fields for equality
+                // Note: Comparing VisualGameObject by reference is important for tracking the specific instantiated object
+                return ItemInstanceInfo.Equals(other.ItemInstanceInfo) &&
+                       VisualGameObject == other.VisualGameObject && // Compare GameObject references
+                       (OccupiedSlots == null && other.OccupiedSlots == null || (OccupiedSlots != null && other.OccupiedSlots != null && OccupiedSlots.SequenceEqual(other.OccupiedSlots))); // Compare slot lists
+            }
+
+            public override bool Equals(object obj)
+            {
+                if (obj is CurrentlyPlacedVisualItem other)
+                {
+                    return Equals(other);
+                }
+                return false;
+            }
+
+            public override int GetHashCode()
+            {
+                 unchecked
+                 {
+                     int hash = ItemInstanceInfo.GetHashCode();
+                     hash = hash * 23 + (VisualGameObject != null ? VisualGameObject.GetHashCode() : 0);
+                     // Hashing lists is tricky and can be slow. Use SequenceEqual for comparison.
+                     // If this struct is used as a dictionary key, a proper list hash code would be needed.
+                     return hash;
+                 }
+            }
+
+             public static bool operator ==(CurrentlyPlacedVisualItem left, CurrentlyPlacedVisualItem right) => left.Equals(right);
+             public static bool operator !=(CurrentlyPlacedVisualItem left, CurrentlyPlacedVisualItem right) => !(left == right);
+
         }
     }
-}
+}   

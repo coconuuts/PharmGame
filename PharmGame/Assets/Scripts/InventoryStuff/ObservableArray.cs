@@ -286,33 +286,36 @@ namespace Systems.Inventory
             }
         }
 
-        // Helper method for performing the swap logic during a drop
-        private void PerformSwap(T itemToDrop, int targetIndex, T targetItem, ObservableArray<T> sourceArray, int sourceOriginalIndex)
-        {
-             Debug.Log($"ObservableArray ({typeof(T).Name}): Performing swap between item being dropped and item at target slot {targetIndex}.");
+/// <summary>
+/// Helper method for performing the swap logic during a drop.
+/// Manages moving the dropped item to the target and the target item back to the source's original slot.
+/// Crucially, clears the source ghost slot after the swap is finalized.
+/// </summary>
+private void PerformSwap(T itemToDrop, int targetIndex, T targetItem, ObservableArray<T> sourceArray, int sourceOriginalIndex)
+{
+    Debug.Log($"ObservableArray ({typeof(T).Name}): Performing swap between item being dropped ('{itemToDrop?.details?.Name ?? "null"}') and item at target slot {targetIndex} ('{targetItem?.details?.Name ?? "null"}'). Source Original Index: {sourceOriginalIndex}.");
 
-             // Place the item being dropped into the target slot
-             SetItemAtIndex(itemToDrop, targetIndex); // Triggers SlotUpdated for target
+    // Place the item being dropped into the target slot
+    SetItemAtIndex(itemToDrop, targetIndex); // Triggers SlotUpdated for target array
 
-             // Put the item that was originally in the target slot back into the source's ORIGINAL slot
-             // This clears the source ghost slot as part of the process if sourceOriginalIndex is not the ghost index.
-             // Handle cross-inventory swap: targetItem goes back to sourceOriginalIndex in sourceArray.
-             sourceArray.SetItemAtIndex(targetItem, sourceOriginalIndex); // Triggers SlotUpdated for source original
+    // Put the item that was originally in the target slot back into the source's ORIGINAL slot
+    // Note: If sourceArray == this and sourceOriginalIndex == targetIndex, this is an in-place swap.
+    // If sourceArray == this and sourceOriginalIndex != targetIndex, it's a move within the same array.
+    // If sourceArray != this, it's a cross-inventory swap/move.
+    sourceArray.SetItemAtIndex(targetItem, sourceOriginalIndex); // Triggers SlotUpdated for source original slot
 
-             // The item was moved from the source ghost slot (Length-1) to targetIndex.
-             // The item that was at targetIndex is moved to sourceOriginalIndex.
-             // The ghost slot should now be empty if sourceOriginalIndex != Length-1.
-             // If sourceOriginalIndex was the ghost slot (meaning we dragged from the ghost),
-             // then targetItem goes to the ghost slot, which is not typical D&D, but the logic handles it.
-             // Let's explicitly clear the ghost slot just in case, although SetItemAtIndex(targetItem, sourceOriginalIndex)
-             // on the source array should cover it unless sourceOriginalIndex == sourceArray.Length - 1.
-             // sourceArray.SetItemAtIndex(default, sourceArray.Length - 1); // This seems redundant if the above covers it.
+    // *** ADD THIS LINE TO EXPLICITLY CLEAR THE SOURCE GHOST SLOT ***
+    // This is essential to prevent the dragged item from being counted in two places.
+    // The dragged item was placed in the source ghost slot in StartDrag.
+    // We must clear that temporary location now that the item is in its final spot.
+    int sourceGhostSlotIndex = sourceArray.Length - 1;
+    sourceArray.SetItemAtIndex(default, sourceGhostSlotIndex); // Clear item from source ghost slot
+    Debug.Log($"ObservableArray ({typeof(T).Name}): Cleared source ghost slot {sourceGhostSlotIndex} after swap.");
 
-             // Let's ensure the ghost slot is empty in the source array after a successful drop/swap
-             // unless the item being dropped was only partially stacked.
-             // The current logic in HandleDrop correctly clears the ghost slot (sourceArray.SetItemAtIndex(null, sourceArray.Length - 1))
-             // when the itemToDrop quantity reaches <= 0 (fully stacked or swapped). This seems correct.
-        }
+    // Now that the transaction is internally complete for these arrays,
+    // the OnDragDropCompleted event will fire from the DragAndDropManager,
+    // triggering the visual update based on the finalized state.
+}
 
         /// <summary>
         /// Provides read access to the current state of the internal item array.

@@ -319,6 +319,7 @@ public class MenuManager : MonoBehaviour
     private void HandleInPauseMenuEntry(InteractionResponse response)
     {
         InMenu();
+        Time.timeScale = 1f;
         interactionManager?.DisableRaycast();
 
         if (CameraManager.Instance != null)
@@ -538,7 +539,6 @@ public class MenuManager : MonoBehaviour
     // --- Helper Method ---
     private void InMenu()
     {
-        Time.timeScale = 0f;
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
     }
