@@ -26,7 +26,7 @@ public class OpenInventory : MonoBehaviour, IInteractable
     {
          if (PromptEditor.Instance != null)
          {
-             PromptEditor.Instance.DisplayPrompt(transform, InteractionPrompt, computerTextPromptOffset, computerTextPromptRotationOffset); // Assuming prompt offsets are part of the interactable now
+             PromptEditor.Instance.DisplayPrompt(transform, InteractionPrompt, inventoryTextPromptOffset, inventoryTextPromptRotationOffset); // Assuming prompt offsets are part of the interactable now
          }
          else
          {
@@ -91,6 +91,6 @@ public class OpenInventory : MonoBehaviour, IInteractable
     // Assuming computerTextPromptOffset and computerTextPromptRotationOffset are defined elsewhere or were a copy-paste error.
     // If they are specific to the computer, remove them from OpenInventory or handle them generically.
      [Header("Prompt Settings")] // Assuming prompt settings are common, move these up if needed
-     public Vector3 computerTextPromptOffset = Vector3.zero; // Consider renaming or removing
-     public Vector3 computerTextPromptRotationOffset = Vector3.zero; // Consider renaming or removing
+     public Vector3 inventoryTextPromptOffset = Vector3.zero; // Consider renaming or removing
+     public Vector3 inventoryTextPromptRotationOffset = Vector3.zero; // Consider renaming or removing
 }

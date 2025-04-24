@@ -119,7 +119,6 @@ namespace Systems.Inventory
         // --- Handle Game State Changes to manage selection highlight visibility ---
         private void HandleGameStateChanged(MenuManager.GameState newState)
         {
-             Debug.Log($"InventorySelector: Game state changed to {newState}.");
              // If entering Playing state, apply the selection highlight to the current index
              if (newState == MenuManager.GameState.Playing)
              {
@@ -179,7 +178,6 @@ namespace Systems.Inventory
              // and by this method when selection changes *within* the Playing state.
              if (selectedIndex != previousSelectedIndex)
              {
-                 Debug.Log($"InventorySelector: Selected index changed from {previousSelectedIndex} to {selectedIndex}.");
                   // Only update highlight visually if currently in Playing state
                  if (MenuManager.Instance.currentState == MenuManager.GameState.Playing)
                  {

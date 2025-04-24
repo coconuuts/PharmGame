@@ -22,6 +22,10 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
     [Tooltip("Placeholder for the number of items the customer is buying.")]
     [SerializeField] private int testTargetClickCount = 5; // For testing purposes
 
+    [Header("Prompt Settings")] // Assuming prompt settings are common, move these up if needed
+     public Vector3 registerTextPromptOffset = Vector3.zero; // Consider renaming or removing
+     public Vector3 registerTextPromptRotationOffset = Vector3.zero; // Consider renaming or removing
+
 
     public string InteractionPrompt => interactionPrompt;
 
@@ -43,7 +47,7 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
     {
          if (PromptEditor.Instance != null)
          {
-             PromptEditor.Instance.DisplayPrompt(transform, InteractionPrompt, Vector3.zero, Vector3.zero); // Use default offsets or add fields if needed
+             PromptEditor.Instance.DisplayPrompt(transform, InteractionPrompt, registerTextPromptOffset, registerTextPromptRotationOffset); // Use default offsets or add fields if needed
          }
          else Debug.LogWarning($"CashRegisterInteractable ({gameObject.name}): PromptEditor.Instance is null. Cannot display prompt.");
     }

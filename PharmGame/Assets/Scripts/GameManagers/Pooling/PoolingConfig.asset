@@ -21,3 +21,7 @@ MonoBehaviour:
     initialSize: 200
     maxSize: 1000
     canGrow: 1
+  - prefab: {fileID: 4394407753789290286, guid: 488534cc76898354d8320c55d1770728, type: 3}
+    initialSize: 10
+    maxSize: 30
+    canGrow: 1

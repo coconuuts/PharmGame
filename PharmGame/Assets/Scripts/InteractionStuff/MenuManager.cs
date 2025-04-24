@@ -33,6 +33,7 @@ public class MenuManager : MonoBehaviour
     public GameObject player;
     public string cameraTag = "MainCamera";
     private PlayerInteractionManager interactionManager;
+    private PlayerMovement playerMovement;
     [Tooltip("Drag the player's toolbar InventorySelector GameObject here.")]
     [SerializeField] private InventorySelector playerToolbarInventorySelector;
 
@@ -92,6 +93,10 @@ public class MenuManager : MonoBehaviour
         {
              interactionManager = player.GetComponent<PlayerInteractionManager>();
              if (interactionManager == null) Debug.LogError("MenuManager: Player GameObject does not have a PlayerInteractionManager component!");
+
+             playerMovement = player.GetComponent<PlayerMovement>();
+             if (playerMovement == null) Debug.LogWarning("MenuManager: Player GameObject does not have a PlayerMovement component! Player movement control will not work.", player);
+             
         }
         else
         {
@@ -253,6 +258,7 @@ public class MenuManager : MonoBehaviour
     private void HandlePlayingStateEntry(InteractionResponse response)
     {
         Time.timeScale = 1f;
+        playerMovement.moveSpeed = 7f;
         interactionManager?.EnableRaycast();
 
         if (CameraManager.Instance != null)
@@ -541,6 +547,7 @@ public class MenuManager : MonoBehaviour
     {
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
+        playerMovement.moveSpeed = 0f;
     }
 
         public void OpenPauseMenu()
