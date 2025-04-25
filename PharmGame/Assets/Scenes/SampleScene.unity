@@ -21127,7 +21127,7 @@ MonoBehaviour:
   interactionPrompt: Use Cash Register (E)
   registerTextPromptOffset: {x: 0, y: 0.3, z: -0.2}
   registerTextPromptRotationOffset: {x: 0, y: 0, z: 0}
-  economyManager: {fileID: 0}
+  economyManager: {fileID: 99645954}
 --- !u!1 &2567454922698281842
 GameObject:
   m_ObjectHideFlags: 0

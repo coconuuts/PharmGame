@@ -138,7 +138,7 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
         // -----------------------------------------
 
         // --- Get the customer's purchase list and validate ---
-        List<(ItemDetails details, int quantity)> itemsToScan = currentWaitingCustomer.GetItemsToBuy();
+        List<(ItemDetails details, int quantity)> itemsToScan = currentWaitingCustomer.Shopper.GetItemsToBuy();
 
         if (itemsToScan == null || itemsToScan.Sum(item => item.quantity) <= 0)
         {
