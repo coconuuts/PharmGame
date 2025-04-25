@@ -3,10 +3,28 @@ using System.Collections.Generic;
 using Utils.Pooling; // Required for PoolingManager
 using Game.NPC; // Required for CustomerAI component
 using System.Collections; // Required for Coroutines
-using Systems.Inventory; // Required to pass the store inventory reference in Phase 2
+using Systems.Inventory; // Required for Inventory reference
+using Random = UnityEngine.Random; // Specify UnityEngine.Random
 
 namespace CustomerManagement
 {
+    /// <summary>
+    /// Represents a location in the store where customers can browse,
+    /// linked to the specific inventory at that location.
+    /// </summary>
+    [System.Serializable] // Make it serializable so it appears in the Inspector
+    public struct BrowseLocation // --- CORRECTED NAME: BrowseLocation ---
+    {
+        [Tooltip("The Transform point where the customer will stand to browse.")]
+        public Transform browsePoint;
+
+        [Tooltip("The Inventory component associated with this Browse location (e.g., on the shelves).")]
+        public Inventory inventory;
+
+        // Optional: Could add other info like priority, item types found here, etc.
+    }
+
+
     /// <summary>
     /// Manages the spawning, pooling, and overall flow of customer NPCs in the store.
     /// </summary>
@@ -29,22 +47,20 @@ namespace CustomerManagement
         [Header("Navigation Points")]
         [Tooltip("Points where customers will enter the store.")]
         [SerializeField] private List<Transform> spawnPoints;
-        [Tooltip("Points near shelves where customers will browse.")]
-        [SerializeField] private List<Transform> BrowsePoints;
+        // --- Replaced List<Transform> BrowsePoints and Inventory storeInventory ---
+        [Tooltip("List of Browse locations, pairing a point with its associated inventory.")]
+        // --- CORRECTED NAME AND TYPE: List<BrowseLocation> BrowseLocations ---
+        [SerializeField] private List<BrowseLocation> BrowseLocations;
+        // -------------------------------------------------------------------------
         [Tooltip("Point where customers will wait at the cash register.")]
         [SerializeField] private Transform registerPoint; // Assuming one register point for simplicity
         [Tooltip("Points where customers will exit the store.")]
         [SerializeField] private List<Transform> exitPoints;
 
 
-        [Header("System References")]
-        [Tooltip("Reference to the main store Inventory.")]
-        [SerializeField] private Inventory storeInventory; // Reference to pass to CustomerAI (Phase 2)
-
-
         // --- Internal State ---
         private PoolingManager poolingManager;
-        private List<CustomerAI> activeCustomers = new List<CustomerAI>(); // Track active customers
+        private List<Game.NPC.CustomerAI> activeCustomers = new List<Game.NPC.CustomerAI>(); // Track active customers (explicit namespace use here)
 
 
         private void Awake()
@@ -74,10 +90,20 @@ namespace CustomerManagement
             // Validate essential references
             if (npcPrefabs == null || npcPrefabs.Count == 0) Debug.LogError("CustomerManager: No NPC prefabs assigned!");
             if (spawnPoints == null || spawnPoints.Count == 0) Debug.LogWarning("CustomerManager: No spawn points assigned!");
-            if (BrowsePoints == null || BrowsePoints.Count == 0) Debug.LogWarning("CustomerManager: No Browse points assigned!");
+            // --- Updated validation for BrowseLocations ---
+            if (BrowseLocations == null || BrowseLocations.Count == 0) Debug.LogError("CustomerManager: No Browse locations assigned!");
+             else
+             {
+                  // Optional: Validate each Browse location entry
+                  foreach(var location in BrowseLocations)
+                  {
+                       if (location.browsePoint == null) Debug.LogWarning("CustomerManager: A Browse location has a null browse point!");
+                       if (location.inventory == null) Debug.LogWarning($"CustomerManager: Browse location '{location.browsePoint?.name}' has a null inventory reference!");
+                  }
+             }
+            // ----------------------------------------------
             if (registerPoint == null) Debug.LogWarning("CustomerManager: Register point not assigned!");
             if (exitPoints == null || exitPoints.Count == 0) Debug.LogWarning("CustomerManager: No exit points assigned!");
-             if (storeInventory == null) Debug.LogError("CustomerManager: Store Inventory reference is not assigned! NPCs cannot shop.");
 
 
             Debug.Log("CustomerManager: Awake completed.");
@@ -94,9 +120,7 @@ namespace CustomerManagement
             if (Instance == this)
             {
                 Instance = null;
-                // Clean up any remaining active customers if necessary (e.g., return to pool on scene unload)
-                // The PoolingManager also handles destroying pooled objects, but active ones need handling too.
-                // This might be handled by OnDisable/OnDestroy in CustomerAI signalling the manager.
+                // Clean up any remaining active customers if necessary
                  StopAllCoroutines(); // Stop spawning
             }
             Debug.Log("CustomerManager: OnDestroy completed.");
@@ -108,9 +132,10 @@ namespace CustomerManagement
         /// </summary>
         public void SpawnCustomer()
         {
-            if (poolingManager == null || npcPrefabs == null || npcPrefabs.Count == 0 || spawnPoints == null || spawnPoints.Count == 0 || activeCustomers.Count >= maxCustomersInStore)
+            // --- Corrected field name: BrowseLocations ---
+            if (poolingManager == null || npcPrefabs == null || npcPrefabs.Count == 0 || spawnPoints == null || spawnPoints.Count == 0 || activeCustomers.Count >= maxCustomersInStore || BrowseLocations == null || BrowseLocations.Count == 0)
             {
-                // Conditions not met for spawning (e.g., no pooling manager, no prefabs, no spawn points, max customers reached)
+                // Conditions not met for spawning
                 // Debug.Log("CustomerManager: Cannot spawn customer (conditions not met).");
                 return;
             }
@@ -119,12 +144,12 @@ namespace CustomerManagement
             GameObject npcPrefabToSpawn = npcPrefabs[Random.Range(0, npcPrefabs.Count)];
 
             // Get a customer instance from the pool
-            // Initial pool size for this prefab will be determined by PoolingConfigSO or defaults
             GameObject customerObject = poolingManager.GetPooledObject(npcPrefabToSpawn);
 
             if (customerObject != null)
             {
-                CustomerAI customerAI = customerObject.GetComponent<CustomerAI>();
+                // Using fully qualified name Game.NPC.CustomerAI just to be extra clear
+                Game.NPC.CustomerAI customerAI = customerObject.GetComponent<Game.NPC.CustomerAI>();
                 if (customerAI != null)
                 {
                     // Select a random spawn point
@@ -135,9 +160,8 @@ namespace CustomerManagement
                     customerObject.transform.rotation = chosenSpawnPoint.rotation;
 
 
-                    // --- Initialize the CustomerAI (will be expanded in later phases) ---
-                    // Provide necessary references and starting points.
-                    customerAI.Initialize(this, chosenSpawnPoint.position);
+                    // --- Initialize the CustomerAI ---
+                    customerAI.Initialize(this, chosenSpawnPoint.position); // Initialize with manager and start pos
 
                     // Add to our list of active customers
                     activeCustomers.Add(customerAI);
@@ -147,7 +171,6 @@ namespace CustomerManagement
                 else
                 {
                     Debug.LogError($"CustomerManager: Pooled object '{customerObject.name}' does not have a CustomerAI component!", customerObject);
-                    // Return the object back to the pool if it's malformed
                      poolingManager.ReturnPooledObject(customerObject);
                 }
             }
@@ -157,7 +180,7 @@ namespace CustomerManagement
              }
         }
 
-        /// <summary>
+/// <summary>
         /// Returns a customer GameObject back to the object pool.
         /// Should be called by the CustomerAI when it's done.
         /// </summary>
@@ -166,21 +189,31 @@ namespace CustomerManagement
         {
             if (customerObject == null || poolingManager == null) return;
 
-            CustomerAI customerAI = customerObject.GetComponent<CustomerAI>();
+            // Using fully qualified name Game.NPC.CustomerAI
+            Game.NPC.CustomerAI customerAI = customerObject.GetComponent<Game.NPC.CustomerAI>();
             if (customerAI != null)
             {
                  // Remove from our list of active customers
                  activeCustomers.Remove(customerAI);
                  Debug.Log($"CustomerManager: Returning customer '{customerObject.name}' to pool. Total active: {activeCustomers.Count}");
+
+                 // --- FIX: Added the call to return the object to the pool ---
+                 poolingManager.ReturnPooledObject(customerObject);
+                 // --------------------------------------------------------
             }
              else
              {
                   Debug.LogWarning($"CustomerManager: Attempted to return GameObject '{customerObject.name}' without CustomerAI component.", customerObject);
+                  // If it has pooledObjectInfo, return it anyway, otherwise destroy
+                  if(customerObject.GetComponent<PooledObjectInfo>() != null)
+                  {
+                       poolingManager.ReturnPooledObject(customerObject); // This was already here as a fallback
+                  }
+                  else
+                  {
+                       Destroy(customerObject);
+                  }
              }
-
-
-            // Return the object to the pool
-            poolingManager.ReturnPooledObject(customerObject);
         }
 
         /// <summary>
@@ -197,19 +230,20 @@ namespace CustomerManagement
             }
         }
 
-        // --- Public methods for CustomerAI to request destinations (Phase 1 Step 4) ---
+        // --- Public methods for CustomerAI to request navigation/system info ---
 
         /// <summary>
-        /// Gets a random Browse point transform.
+        /// Gets a random Browse location (point and associated inventory).
         /// </summary>
-        public Transform GetRandomBrowsePoint()
+        public BrowseLocation? GetRandomBrowseLocation() // --- CORRECTED RETURN TYPE: BrowseLocation? ---
         {
-            if (BrowsePoints == null || BrowsePoints.Count == 0)
+            // --- Corrected field name: BrowseLocations ---
+            if (BrowseLocations == null || BrowseLocations.Count == 0)
             {
-                Debug.LogWarning("CustomerManager: No Browse points assigned!");
-                return null; // Or return a default point
+                Debug.LogWarning("CustomerManager: No Browse locations assigned!");
+                return null; // Return null for nullable struct
             }
-            return BrowsePoints[Random.Range(0, BrowsePoints.Count)];
+            return BrowseLocations[Random.Range(0, BrowseLocations.Count)];
         }
 
          /// <summary>
@@ -233,15 +267,9 @@ namespace CustomerManagement
              if (exitPoints == null || exitPoints.Count == 0)
              {
                  Debug.LogWarning("CustomerManager: No exit points assigned!");
-                 return null; // Or return a default point
+                 return null;
              }
              return exitPoints[Random.Range(0, exitPoints.Count)];
-         }
-
-         // Add method to get store inventory in Phase 2
-         public Inventory GetStoreInventory()
-         {
-             return storeInventory;
          }
     }
 }

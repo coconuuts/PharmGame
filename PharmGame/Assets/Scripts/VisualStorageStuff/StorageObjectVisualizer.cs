@@ -111,54 +111,60 @@ namespace VisualStorage // Your namespace
 
         private void OnEnable()
         {
-            // Subscribe to drag/drop completion event for delayed updates
+             // --- Always subscribe to the ObservableArray's change event ---
+             // This ensures visual updates for ANY change to the inventory data,
+             // including those made by NPC shopping logic.
+             if (targetInventory != null && targetInventory.InventoryState != null)
+             {
+                  targetInventory.InventoryState.AnyValueChanged += HandleInventoryStateChangedEvent;
+                  Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Subscribed to InventoryState.AnyValueChanged.");
+             }
+             else Debug.LogError($"StorageObjectVisualizer ({gameObject.name}): Cannot subscribe to InventoryState.AnyValueChanged. Inventory or InventoryState is null.", this);
+            // -------------------------------------------------------------
+
+
+            // Keep the drag/drop subscription if DragAndDropManager is available.
+            // This might be useful for ensuring a final update after a complex drag sequence.
             if (dragAndDropManager != null)
             {
                 dragAndDropManager.OnDragDropCompleted += OnDragDropCompleted;
                 Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Subscribed to DragAndDropManager.OnDragDropCompleted.");
             }
-            else
-            {
-                 Debug.LogError($"StorageObjectVisualizer ({gameObject.name}): DragAndDropManager not available in OnEnable. Cannot subscribe to completion event.");
-                 // Fallback: Subscribe to AnyValueChanged if DragAndDropManager is missing.
-                 if (targetInventory != null && targetInventory.InventoryState != null)
-                 {
-                    targetInventory.InventoryState.AnyValueChanged += OnInventoryStateChangedFallback;
-                    Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Subscribed to InventoryState.AnyValueChanged as fallback.");
-                 }
-            }
+            // Removed the 'else' block with the fallback subscription
 
-             // Trigger an initial update on enable to visualize the starting inventory
+
+            // Trigger an initial update on enable to visualize the starting inventory
+            // This also happens when the GameObject is first created/activated from the pool
              ForceVisualUpdate();
         }
 
         private void OnDisable()
         {
+             // --- Always unsubscribe from the ObservableArray's change event ---
+             if (targetInventory != null && targetInventory.InventoryState != null)
+             {
+                  targetInventory.InventoryState.AnyValueChanged -= HandleInventoryStateChangedEvent;
+                  Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Unsubscribed from InventoryState.AnyValueChanged.");
+             }
+            // -----------------------------------------------------------------
+
+
             // Unsubscribe from drag/drop completion event
             if (dragAndDropManager != null)
             {
                 dragAndDropManager.OnDragDropCompleted -= OnDragDropCompleted;
                 Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Unsubscribed from DragAndDropManager.OnDragDropCompleted.");
             }
-             else
-             {
-                 // Unsubscribe fallback
-                  if (targetInventory != null && targetInventory.InventoryState != null)
-                 {
-                    targetInventory.InventoryState.AnyValueChanged -= OnInventoryStateChangedFallback;
-                    Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Unsubscribed from InventoryState.AnyValueChanged fallback.");
-                 }
-             }
+            // Removed the 'else' block with the fallback unsubscription
 
-             // Clean up any remaining visuals when disabled (e.g., scene changes) by returning to pool
-             ReturnAllVisualItemsToPool(); // Use a new method to return tracked items to pool
+
+            // Clean up any remaining visuals when disabled (e.g., scene changes, returning to pool)
+             ReturnAllVisualItemsToPool();
         }
 
          private void OnDestroy()
          {
              OnDisable(); // Ensure unsubscription
-              // Clean up any instantiated item prefabs that might still be tracked if not done in OnDisable
-              ReturnAllVisualItemsToPool(); // Ensure cleanup by returning to pool
               Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Destroyed. Returned visual items to pool.");
          }
 
@@ -171,7 +177,7 @@ namespace VisualStorage // Your namespace
         }
 
         // Fallback event handler if DragAndDropManager is not available
-        private void OnInventoryStateChangedFallback(ArrayChangeInfo<Item> changeInfo) // Corrected ArrayChangeInfo namespace
+        private void HandleInventoryStateChangedEvent(ArrayChangeInfo<Item> changeInfo) // Corrected ArrayChangeInfo namespace
         {
              Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Inventory state changed (via AnyValueChanged fallback). Forcing visual update.");
              ForceVisualUpdate();

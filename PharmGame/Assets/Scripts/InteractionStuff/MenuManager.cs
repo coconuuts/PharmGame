@@ -403,7 +403,7 @@ public class MenuManager : MonoBehaviour
              if (MinigameManager.Instance != null) // Check if MinigameManager instance exists
              {
                   // Pass the target click count from the response
-                  MinigameManager.Instance.StartMinigame(minigameResponse.TargetClickCount); // Call the StartMinigame method
+                  MinigameManager.Instance.StartMinigame(minigameResponse.ItemsToScan, minigameResponse.CashRegisterInteractable); // Call the StartMinigame method
              }
              else Debug.LogError("MenuManager: MinigameManager Instance is null! Cannot start minigame.");
              // --------------------------------------------

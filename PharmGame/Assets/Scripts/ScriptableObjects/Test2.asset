@@ -23,3 +23,5 @@ MonoBehaviour:
   Description: yoo
   prefab3D: {fileID: 5873640265792693031, guid: d3a99bf08e077074b9ff2b0ada0e8995, type: 3}
   shelfArrangement: 0
+  isOverTheCounter: 1
+  price: 10

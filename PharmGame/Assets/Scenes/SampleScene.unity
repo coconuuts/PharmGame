@@ -953,6 +953,7 @@ GameObject:
   - component: {fileID: 99645951}
   - component: {fileID: 99645952}
   - component: {fileID: 99645953}
+  - component: {fileID: 99645954}
   m_Layer: 0
   m_Name: GameManager
   m_TagString: Untagged
@@ -1022,6 +1023,19 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   fpsText: {fileID: 1593679078}
   updateInterval: 0.5
+--- !u!114 &99645954
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 99645949}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d8bd96a1c7f038848bb107f92eaf29ed, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  startingCurrency: 0
 --- !u!1 &105677563 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 6892696334404131044, guid: 8202459e60c16e64a96afbd191a02aa8, type: 3}
@@ -1458,7 +1472,7 @@ GameObject:
   - component: {fileID: 129581017}
   - component: {fileID: 129581016}
   m_Layer: 0
-  m_Name: StorageShelf2
+  m_Name: StorageShelf3
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -4090,65 +4104,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   rowIndex: 0
   columnIndex: 9
---- !u!1 &407574129
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 407574131}
-  - component: {fileID: 407574130}
-  m_Layer: 0
-  m_Name: 'CustomerManager '
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &407574130
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 407574129}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2106c22177653644d9cbf0f9c84a3d62, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  npcPrefabs:
-  - {fileID: 4394407753789290286, guid: 488534cc76898354d8320c55d1770728, type: 3}
-  maxCustomersInStore: 3
-  minSpawnInterval: 5
-  maxSpawnInterval: 15
-  spawnPoints:
-  - {fileID: 600981058}
-  BrowsePoints:
-  - {fileID: 1836321414}
-  - {fileID: 705695927}
-  - {fileID: 2146437546}
-  registerPoint: {fileID: 1401424429}
-  exitPoints:
-  - {fileID: 1837450462}
-  storeInventory: {fileID: 1128287721}
---- !u!4 &407574131
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 407574129}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -2.31579, y: 3.039059, z: 4.4636636}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &410087039
 GameObject:
   m_ObjectHideFlags: 0
@@ -6781,6 +6736,68 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   rowIndex: 0
   columnIndex: 4
+--- !u!1 &763258579
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 763258581}
+  - component: {fileID: 763258580}
+  m_Layer: 0
+  m_Name: NPCmanager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &763258580
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 763258579}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2106c22177653644d9cbf0f9c84a3d62, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  npcPrefabs:
+  - {fileID: 4394407753789290286, guid: 488534cc76898354d8320c55d1770728, type: 3}
+  maxCustomersInStore: 1
+  minSpawnInterval: 5
+  maxSpawnInterval: 10
+  spawnPoints:
+  - {fileID: 600981058}
+  BrowseLocations:
+  - browsePoint: {fileID: 1836321414}
+    inventory: {fileID: 1128287721}
+  - browsePoint: {fileID: 705695927}
+    inventory: {fileID: 2133537265}
+  - browsePoint: {fileID: 2146437546}
+    inventory: {fileID: 129581019}
+  registerPoint: {fileID: 1401424429}
+  exitPoints:
+  - {fileID: 1837450462}
+--- !u!4 &763258581
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 763258579}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -4.8191805, y: -4.3828187, z: -6.301187}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 1263039298}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &765084589
 GameObject:
   m_ObjectHideFlags: 0
@@ -9610,8 +9627,8 @@ Transform:
   m_Children:
   - {fileID: 5210417247496019769}
   - {fileID: 1128287718}
-  - {fileID: 129581015}
   - {fileID: 2133537261}
+  - {fileID: 129581015}
   - {fileID: 7209123290192192941}
   - {fileID: 4513996840698145506}
   - {fileID: 2294869332792313695}
@@ -12272,8 +12289,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1263039297}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -5.8401823, y: 0.6775005, z: -2.0459936}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -1.0210018, y: 5.060319, z: 4.2551937}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -12281,7 +12298,7 @@ Transform:
   - {fileID: 2118038638}
   - {fileID: 583708118}
   - {fileID: 1837450462}
-  m_Father: {fileID: 0}
+  m_Father: {fileID: 763258581}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1263836069
 GameObject:
@@ -19542,7 +19559,7 @@ GameObject:
   - component: {fileID: 2133537263}
   - component: {fileID: 2133537262}
   m_Layer: 0
-  m_Name: StorageShelf1 (1)
+  m_Name: StorageShelf2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -20265,7 +20282,7 @@ GameObject:
   - component: {fileID: 2564988366592900892}
   m_Layer: 0
   m_Name: cashRegister
-  m_TagString: Untagged
+  m_TagString: CashRegister
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -21106,10 +21123,11 @@ MonoBehaviour:
   minigameCameraViewPoint: {fileID: 1005732921}
   cameraMoveDuration: 0.25
   minigameUIRoot: {fileID: 1483777330}
+  interactionTriggerCollider: {fileID: 2564988366592900891}
   interactionPrompt: Use Cash Register (E)
-  testTargetClickCount: 10
   registerTextPromptOffset: {x: 0, y: 0.3, z: -0.2}
   registerTextPromptRotationOffset: {x: 0, y: 0, z: 0}
+  economyManager: {fileID: 0}
 --- !u!1 &2567454922698281842
 GameObject:
   m_ObjectHideFlags: 0
@@ -23850,7 +23868,7 @@ BoxCollider:
   m_Enabled: 1
   serializedVersion: 3
   m_Size: {x: 0.29705098, y: 0.050311632, z: 1.3821899}
-  m_Center: {x: -0.05, y: 0.025155816, z: 0}
+  m_Center: {x: -0.05, y: -0.81, z: 0}
 --- !u!33 &8169353196926395383
 MeshFilter:
   m_ObjectHideFlags: 0
@@ -23920,7 +23938,7 @@ BoxCollider:
   m_Enabled: 1
   serializedVersion: 3
   m_Size: {x: 0.29705098, y: 0.050311632, z: 1.3821899}
-  m_Center: {x: -0.05, y: 0.025155816, z: 0}
+  m_Center: {x: -0.05, y: -0.81, z: 0}
 --- !u!23 &8227081112324458635
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -24182,7 +24200,7 @@ BoxCollider:
   m_Enabled: 1
   serializedVersion: 3
   m_Size: {x: 0.29705098, y: 0.050311632, z: 1.3821899}
-  m_Center: {x: -0.05, y: 0.025155816, z: 0}
+  m_Center: {x: -0.05, y: -0.81, z: 0}
 --- !u!1 &8628707087375357998
 GameObject:
   m_ObjectHideFlags: 0
@@ -24446,8 +24464,7 @@ SceneRoots:
   - {fileID: 257548374}
   - {fileID: 7972450836261178367}
   - {fileID: 1009796057}
-  - {fileID: 407574131}
-  - {fileID: 1263039298}
+  - {fileID: 763258581}
   - {fileID: 29837263}
   - {fileID: 99645950}
   - {fileID: 602333543}

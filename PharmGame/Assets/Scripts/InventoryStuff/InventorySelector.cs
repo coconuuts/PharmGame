@@ -220,7 +220,6 @@ namespace Systems.Inventory
              {
                   // Call the new ApplySelectionHighlight method
                   slotUIs[newIndex].ApplySelectionHighlight();
-                  Debug.Log($"InventorySelector: Selection highlight applied to slot {newIndex}.");
              }
              else
              {

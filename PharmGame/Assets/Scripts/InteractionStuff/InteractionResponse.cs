@@ -1,16 +1,26 @@
 using UnityEngine;
 using InventoryClass = Systems.Inventory.Inventory;
+using Systems.Inventory; // Needed for ItemDetails
+using System.Collections.Generic; // Needed for List
+using System.Linq;
 
+// Assuming this is within your Systems.Interaction namespace file (e.g., InteractionResponses.cs)
 namespace Systems.Interaction
 {
-    public abstract class InteractionResponse {}
+    public abstract class InteractionResponse {
+        // Add an InteractionResult enum and base constructor if needed
+        // public enum InteractionResult { None, OpenInventory, EnterComputer, ToggleLight, StartMinigame }
+        // public InteractionResult ResultType { get; protected set; }
+        // public InteractionResponse(InteractionResult resultType) { ResultType = resultType; }
+        // If not using a base constructor, remove ": base(...)" from derived constructors
+    }
 
     public class OpenInventoryResponse : InteractionResponse
     {
         public InventoryClass InventoryComponent { get; }
         public GameObject InventoryUIRoot { get; }
 
-        public OpenInventoryResponse(InventoryClass inventoryComponent, GameObject inventoryUIRoot)
+        public OpenInventoryResponse(InventoryClass inventoryComponent, GameObject inventoryUIRoot) // : base(InteractionResult.OpenInventory) // Add if using base constructor
         {
             InventoryComponent = inventoryComponent;
             InventoryUIRoot = inventoryUIRoot;
@@ -23,37 +33,25 @@ namespace Systems.Interaction
     /// </summary>
     public class EnterComputerResponse : InteractionResponse
     {
-        // REMOVED: Camera target position, rotation, duration fields
-        // public Vector3 CameraTargetPosition { get; }
-        // public Quaternion CameraTargetRotation { get; }
-        // public float CameraMoveDuration { get; }
-
-        public Transform CameraTargetView { get; } // ADDED field to hold the target Transform
+        public Transform CameraTargetView { get; }
+        public float CameraMoveDuration { get; }
         public GameObject ComputerUIRoot { get; }
         public ComputerInteractable ComputerInteractable { get; }
 
-        // MODIFIED constructor to accept Transform and duration
-        public EnterComputerResponse(Transform cameraTargetView, float cameraMoveDuration, GameObject computerUIRoot, ComputerInteractable computerInteractable) // MODIFIED PARAMETERS
+        public EnterComputerResponse(Transform cameraTargetView, float cameraMoveDuration, GameObject computerUIRoot, ComputerInteractable computerInteractable) // : base(InteractionResult.EnterComputer) // Add if using base constructor
         {
-            CameraTargetView = cameraTargetView; // Assign the Transform
-            // CameraMoveDuration = cameraMoveDuration; // We can use duration from the Transform's settings or a default in CameraManager
-
-            // Let's use the duration directly in the response, as different computer views might have different animation times.
-             CameraMoveDuration = cameraMoveDuration; // Keep duration in the response
-
-
+            CameraTargetView = cameraTargetView;
+            CameraMoveDuration = cameraMoveDuration;
             ComputerUIRoot = computerUIRoot;
             ComputerInteractable = computerInteractable;
         }
-         // Add CameraMoveDuration property back if needed
-        public float CameraMoveDuration { get; } // ADDED Property
     }
 
     public class ToggleLightResponse : InteractionResponse
     {
         public LightSwitch LightSwitch { get; }
 
-        public ToggleLightResponse(LightSwitch lightSwitch)
+        public ToggleLightResponse(LightSwitch lightSwitch) // : base(InteractionResult.ToggleLight) // Add if using base constructor
         {
             LightSwitch = lightSwitch;
         }
@@ -63,22 +61,37 @@ namespace Systems.Interaction
     /// Response indicating that a minigame should be started.
     /// Contains data needed for camera movement, UI activation, minigame setup, and a reference to the interactable.
     /// </summary>
-    public class StartMinigameResponse : InteractionResponse
+    public class StartMinigameResponse : InteractionResponse // Inherits from InteractionResponse
     {
         public Transform CameraTargetView { get; }
         public float CameraMoveDuration { get; }
         public GameObject MinigameUIRoot { get; }
+        // Keep TargetClickCount property, but it will be calculated from the ItemsToScan list
         public int TargetClickCount { get; }
-        public CashRegisterInteractable CashRegisterInteractable { get; } // ADD THIS FIELD
+        public CashRegisterInteractable CashRegisterInteractable { get; } // Reference back to the register
 
-        // MODIFIED constructor to accept CashRegisterInteractable instance
-        public StartMinigameResponse(Transform cameraTargetView, float cameraMoveDuration, GameObject minigameUIRoot, int targetClickCount, CashRegisterInteractable cashRegisterInteractable) // ADD cashRegisterInteractable PARAM
+        // --- ADDED: Field to store the list of items to scan ---
+        public List<(ItemDetails details, int quantity)> ItemsToScan { get; }
+        // -----------------------------------------------------
+
+        /// <summary>
+        /// Constructor for StartMinigameResponse.
+        /// </summary>
+        /// <param name="cameraTargetView">The transform for the minigame camera view.</param>
+        /// <param name="cameraMoveDuration">The duration for the camera movement.</param>
+        /// <param name="minigameUIRoot">The root GameObject for the minigame UI.</param>
+        /// <param name="itemsToScan">The list of items the customer is purchasing.</param>
+        /// <param name="cashRegisterInteractable">Reference to the initiating CashRegisterInteractable.</param>
+        // --- Modified Constructor: Accept the item list instead of just the count ---
+        public StartMinigameResponse(Transform cameraTargetView, float cameraMoveDuration, GameObject minigameUIRoot, List<(ItemDetails details, int quantity)> itemsToScan, CashRegisterInteractable cashRegisterInteractable) // : base(InteractionResult.StartMinigame) // Add if using base constructor
         {
             CameraTargetView = cameraTargetView;
             CameraMoveDuration = cameraMoveDuration;
             MinigameUIRoot = minigameUIRoot;
-            TargetClickCount = targetClickCount;
-            CashRegisterInteractable = cashRegisterInteractable; // Assign the instance
+            ItemsToScan = itemsToScan; // Assign the item list
+            // Calculate TargetClickCount from the assigned list for MinigameManager
+            TargetClickCount = ItemsToScan != null ? ItemsToScan.Sum(item => item.quantity) : 0;
+            CashRegisterInteractable = cashRegisterInteractable; // Assign the register instance
         }
     }
 }

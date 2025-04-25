@@ -31,6 +31,13 @@ namespace Systems.Inventory
         [Tooltip("How this item prefab occupies ShelfSlot grid spaces.")]
         public ShelfSlotArrangement shelfArrangement = ShelfSlotArrangement.OneByOne; // ADD THIS FIELD
 
+        [Header("Customer & Sale Info")] // Optional header for organization
+        [Tooltip("Can this item be legally bought by customers?")]
+        public bool isOverTheCounter;
+
+        [Tooltip("The price of this item when sold to a customer.")]
+        public float price = 5.0f;
+
         // --- Editor-Specific Logic ---
 
         private void OnValidate()

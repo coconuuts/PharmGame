@@ -1,13 +1,15 @@
 using UnityEngine;
 using System.Collections.Generic;
-using Systems.Interaction;
-using System.Linq; // Needed for Linq methods like .ToList() or .Contains()
+using Systems.Interaction; // Needed for InteractionResponse types (although not used directly here, common pattern)
+using System.Linq; // Needed for Linq methods like .ToList() or .Contains(), Sum()
+using Systems.Inventory; // Needed for ItemDetails
+using Systems.Economy; // Needed for EconomyManager
 
-namespace Systems.Minigame
+namespace Systems.Minigame // Your Minigame namespace
 {
     public class MinigameManager : MonoBehaviour
     {
-        // ... (Existing fields remain)
+        // ... (Existing fields remain, check against your current script)
         public static MinigameManager Instance { get; private set; }
 
         [Header("Grid References")]
@@ -21,15 +23,18 @@ namespace Systems.Minigame
         [Tooltip("The maximum number of barcodes visible on the grid at any given time.")]
         [SerializeField] private int maxVisibleBarcodes = 3;
 
-        private int targetClickCount;
+        // --- MODIFIED: Fields to store customer's purchase and the initiating register ---
+        private List<(ItemDetails details, int quantity)> currentItemsToScan; // Store the list of items the customer bought
+        private CashRegisterInteractable initiatingRegister; // Store the reference to the register that started this minigame
+        // ------------------------------------------------------------------------------
+
+        private int targetClickCount; // This will now be derived from currentItemsToScan
         private int clicksMade;
         private int barcodesCurrentlyVisible;
 
         private List<int> availableSlotIndices;
 
-        // --- ADDED FIELD TO TRACK LAST CLICKED SLOT ---
-        private int lastClickedSlotIndex = -1; // Stores the index of the most recently clicked slot
-        // ---------------------------------------------
+        private int lastClickedSlotIndex = -1;
 
 
         private void Awake()
@@ -52,6 +57,9 @@ namespace Systems.Minigame
             }
             else { Debug.LogError("MinigameManager: Grid Slots list is not assigned in the Inspector!", this); enabled = false; }
 
+             // Initialize the item list
+             currentItemsToScan = new List<(ItemDetails details, int quantity)>();
+
         }
 
         private void OnDestroy()
@@ -59,13 +67,31 @@ namespace Systems.Minigame
             if (Instance == this) Instance = null;
         }
 
-        public void StartMinigame(int targetClicks)
+        /// <summary>
+        /// Starts the minigame with the given list of items to be scanned.
+        /// Called by the MenuManager based on a StartMinigameResponse.
+        /// </summary>
+        /// <param name="itemsToScan">The list of items the customer is buying.</param>
+        /// <param name="register">The CashRegisterInteractable that initiated this minigame.</param>
+        // --- MODIFIED: Accept list of items and initiating register ---
+        public void StartMinigame(List<(ItemDetails details, int quantity)> itemsToScan, CashRegisterInteractable register)
         {
              if (gridSlots == null || gridSlots.Count == 0) { Debug.LogError("MinigameManager: Cannot start minigame - gridSlots list is empty or null."); return; }
              if (possibleBarcodeSprites == null || possibleBarcodeSprites.Count == 0) { Debug.LogError("MinigameManager: Cannot start minigame - possibleBarcodeSprites list is empty or null."); return; }
+             if (itemsToScan == null || itemsToScan.Count == 0) { Debug.LogWarning("MinigameManager: Cannot start minigame - itemsToScan list is null or empty."); return; }
+             if (register == null) { Debug.LogError("MinigameManager: Cannot start minigame - initiating register is null."); return; }
 
-            Debug.Log($"MinigameManager: Starting minigame with target clicks: {targetClicks}.");
-            targetClickCount = targetClicks;
+
+            // Store the customer's purchase list and the initiating register
+            currentItemsToScan = new List<(ItemDetails details, int quantity)>(itemsToScan); // Store a copy
+            initiatingRegister = register;
+
+            // --- Calculate target clicks from the item list ---
+            targetClickCount = currentItemsToScan.Sum(item => item.quantity);
+            // --------------------------------------------------
+
+            Debug.Log($"MinigameManager: Starting minigame with target clicks (total quantity): {targetClickCount}. Items to scan: {currentItemsToScan.Count} distinct types.");
+
             clicksMade = 0;
             barcodesCurrentlyVisible = 0;
             lastClickedSlotIndex = -1; // Reset last clicked slot index
@@ -81,6 +107,10 @@ namespace Systems.Minigame
             }
         }
 
+        /// <summary>
+        /// Resets the minigame state and clears the grid.
+        /// Called by the MenuManager upon exiting the minigame state.
+        /// </summary>
         public void ResetMinigame()
         {
             Debug.Log("MinigameManager: Resetting minigame state.");
@@ -88,6 +118,12 @@ namespace Systems.Minigame
             clicksMade = 0;
             barcodesCurrentlyVisible = 0;
             lastClickedSlotIndex = -1; // Reset last clicked slot index
+
+            // --- Clear stored purchase list and register reference ---
+            if (currentItemsToScan != null) currentItemsToScan.Clear();
+            initiatingRegister = null;
+            // ------------------------------------------------------
+
             ClearGrid();
         }
 
@@ -113,22 +149,24 @@ namespace Systems.Minigame
         /// </summary>
         private void SpawnBarcode()
         {
-             // --- Create a temporary list of available indices, excluding the last clicked slot ---
-             List<int> spawnableSlotIndices = new List<int>(availableSlotIndices); // Copy the main list
+             // Only spawn if there are still clicks needed
+             if (clicksMade >= targetClickCount)
+             {
+                 Debug.LogWarning("MinigameManager: Not spawning barcode - target clicks already met or exceeded.");
+                 return;
+             }
+
+             List<int> spawnableSlotIndices = new List<int>(availableSlotIndices);
 
              if (lastClickedSlotIndex != -1 && spawnableSlotIndices.Contains(lastClickedSlotIndex))
              {
-                  // If the last clicked slot index is valid and in the temporary list, remove it
                   spawnableSlotIndices.Remove(lastClickedSlotIndex);
-                  Debug.Log($"MinigameManager: Excluding last clicked slot {lastClickedSlotIndex} from spawn options.");
              }
-             // -----------------------------------------------------------------------------------
-
 
              if (spawnableSlotIndices.Count == 0)
              {
                  Debug.LogWarning("MinigameManager: Cannot spawn barcode - no suitable empty slots available.");
-                 return; // No suitable empty slots
+                 return;
              }
             if (possibleBarcodeSprites == null || possibleBarcodeSprites.Count == 0)
             {
@@ -136,28 +174,19 @@ namespace Systems.Minigame
                  return;
             }
 
-             // Select a random index from the TEMPORARY list
             int randomIndex = UnityEngine.Random.Range(0, spawnableSlotIndices.Count);
-            int slotIndexToUse = spawnableSlotIndices[randomIndex]; // Get index from temp list
+            int slotIndexToUse = spawnableSlotIndices[randomIndex];
 
+            availableSlotIndices.Remove(slotIndexToUse); // Remove from the MAIN available list
 
-            // Remove the selected index from the MAIN available list
-            // This is important so it's no longer considered available for future spawns until cleared
-            availableSlotIndices.Remove(slotIndexToUse); // Remove from the main list
-
-
-            // Get the corresponding BarcodeSlot using the actual index
             BarcodeSlot slotToSpawnIn = gridSlots[slotIndexToUse];
+            Sprite randomSprite = possibleBarcodeSprites[UnityEngine.Random.Range(0, possibleBarcodeSprites.Count)];
 
-             // Select a random barcode sprite
-             Sprite randomSprite = possibleBarcodeSprites[UnityEngine.Random.Range(0, possibleBarcodeSprites.Count)];
-
-             // Set the sprite on the slot
             if (slotToSpawnIn != null)
             {
                 slotToSpawnIn.SetSprite(randomSprite);
-                barcodesCurrentlyVisible++; // Increment count of visible barcodes
-                 Debug.Log($"MinigameManager: Spawned barcode in slot {slotIndexToUse}. Visible: {barcodesCurrentlyVisible}. Available slots: {availableSlotIndices.Count}");
+                barcodesCurrentlyVisible++;
+                 Debug.Log($"MinigameManager: Spawned barcode in slot {slotIndexToUse}. Visible: {barcodesCurrentlyVisible}. Available slots: {availableSlotIndices.Count}. Clicks made: {clicksMade}/{targetClickCount}");
             }
             else
             {
@@ -165,102 +194,153 @@ namespace Systems.Minigame
             }
         }
 
-        /// <summary>
+/// <summary>
         /// Called by a BarcodeSlot when it is clicked.
         /// Processes the click, checks win condition, and spawns new barcodes if needed.
         /// </summary>
         /// <param name="clickedSlot">The BarcodeSlot that was clicked.</param>
         public void BarcodeClicked(BarcodeSlot clickedSlot)
         {
-             if (clickedSlot == null || clickedSlot.IsEmpty) // Also check if slot is empty (shouldn't happen due to click logic, but safe)
+             if (clickedSlot == null || clickedSlot.IsEmpty)
              {
                  Debug.LogWarning("MinigameManager: BarcodeClicked called with null or empty slot.");
                  return;
              }
 
-             // Get the index of the clicked slot BEFORE clearing it
              int clickedSlotIndex = gridSlots.IndexOf(clickedSlot);
              if (clickedSlotIndex == -1)
              {
                   Debug.LogError("MinigameManager: Could not find clicked slot in gridSlots list!", this);
-                  return; // Cannot process click if slot not found
+                  return;
              }
 
-             Debug.Log($"MinigameManager: Barcode clicked in slot: {clickedSlot.gameObject.name} (Index: {clickedSlotIndex})");
-
-            // Process the click
-            clickedSlot.ClearSprite(); // Make the clicked sprite disappear
-            barcodesCurrentlyVisible--; // Decrement the count of visible barcodes
-            clicksMade++; // Increment the total clicks made
-
-            // --- Update last clicked slot index ---
-            lastClickedSlotIndex = clickedSlotIndex; // Store the index of the slot just clicked
-            Debug.Log($"MinigameManager: Last clicked slot index set to: {lastClickedSlotIndex}");
-            // -------------------------------------
-
-
-             // Add the clicked slot's index back to the available list (it's now empty)
-             // Ensure it's not already in the list before adding (shouldn't be, but safe)
-             if (!availableSlotIndices.Contains(clickedSlotIndex))
+             // Only process click if game is not already won
+             if (clicksMade < targetClickCount)
              {
-                  availableSlotIndices.Add(clickedSlotIndex);
-                  Debug.Log($"MinigameManager: Slot {clickedSlotIndex} made available.");
+                Debug.Log($"MinigameManager: Barcode clicked in slot: {clickedSlot.gameObject.name} (Index: {clickedSlotIndex})");
+
+                clickedSlot.ClearSprite();
+                barcodesCurrentlyVisible--;
+                clicksMade++;
+
+                lastClickedSlotIndex = clickedSlotIndex;
+                Debug.Log($"MinigameManager: Last clicked slot index set to: {lastClickedSlotIndex}");
+
+                 if (!availableSlotIndices.Contains(clickedSlotIndex))
+                 {
+                      availableSlotIndices.Add(clickedSlotIndex);
+                      Debug.Log($"MinigameManager: Slot {clickedSlotIndex} made available.");
+                 }
+                 else
+                 {
+                      Debug.LogWarning($"MinigameManager: Slot {clickedSlotIndex} was already in the available list after clicking?", this);
+                 }
+
+                Debug.Log($"MinigameManager: Clicks Made: {clicksMade} / {targetClickCount}. Visible barcodes: {barcodesCurrentlyVisible}. Available slots: {availableSlotIndices.Count}");
+
+                // --- Check Win Condition ---
+                // Check if this click resulted in reaching the target count
+                if (clicksMade == targetClickCount) // Trigger win only at the exact count
+                {
+                    Debug.Log("MinigameManager: Target clicks reached exactly.");
+                    CheckWinCondition(); // Handle win logic
+                }
+                // --- Check if we need to spawn more barcodes ---
+                // Spawn if:
+                // 1. There are still clicks remaining (clicksMade < targetClickCount)
+                // 2. We haven't reached the max visible barcodes yet (barcodesCurrentlyVisible < maxVisibleBarcodes)
+                // 3. There are enough *remaining items* to justify spawning another barcode
+                //    (i.e., the number of *unclicked* items is > the number of currently visible barcodes)
+                //    (targetClickCount - clicksMade) > barcodesCurrentlyVisible
+                else if (barcodesCurrentlyVisible < maxVisibleBarcodes && (targetClickCount - clicksMade) > barcodesCurrentlyVisible)
+                {
+                     // Before spawning, check if there's actually an available slot excluding the last clicked one
+                     List<int> spawnableSlotIndices = new List<int>(availableSlotIndices);
+                      if (lastClickedSlotIndex != -1 && spawnableSlotIndices.Contains(lastClickedSlotIndex))
+                      {
+                          spawnableSlotIndices.Remove(lastClickedSlotIndex);
+                      }
+
+                      if (spawnableSlotIndices.Count > 0)
+                      {
+                           Debug.Log("MinigameManager: Spawning another barcode...");
+                           SpawnBarcode(); // Spawn another barcode
+                      }
+                      else
+                      {
+                           Debug.LogWarning("MinigameManager: Cannot spawn barcode - not enough suitable empty slots available to maintain max visible count.");
+                      }
+                }
+                 else
+                 {
+                      Debug.Log("MinigameManager: Not spawning barcode (Conditions not met).");
+                 }
              }
              else
              {
-                  Debug.LogWarning($"MinigameManager: Slot {clickedSlotIndex} was already in the available list after clicking?", this);
-             }
-
-
-            Debug.Log($"MinigameManager: Clicks Made: {clicksMade} / {targetClickCount}. Visible barcodes: {barcodesCurrentlyVisible}. Available slots: {availableSlotIndices.Count}");
-
-
-            // --- Check Win Condition ---
-            if (clicksMade >= targetClickCount) // Use >= in case of logic errors, but ideally should be ==
-            {
-                Debug.Log("MinigameManager: Win condition met or exceeded!");
-                // Trigger win logic only if exactly target clicks are made? Or just >= ?
-                // Let's use == for a precise win. If clicksMade > targetClickCount, it's a potential failure/overclick.
-                if (clicksMade == targetClickCount)
-                {
-                     CheckWinCondition(); // Handle win logic
-                }
-                else
-                {
-                     Debug.LogWarning($"MinigameManager: Clicks Made ({clicksMade}) exceeded target ({targetClickCount}). Potential overclick/failure?", this);
-                     // TODO: Handle overclicking/failure state if needed
-                     // For now, it just won't trigger the win condition if it's >
-                }
-            }
-            // --- Check if we need to spawn more barcodes (Issue 1 fix) ---
-            // Only spawn if:
-            // 1. Game is not yet won (clicksMade < targetClickCount)
-            // 2. We need more barcodes than are currently visible to reach the target count
-            // 3. The number of currently visible barcodes is less than the maximum allowed
-            else if (clicksMade < targetClickCount && barcodesCurrentlyVisible < maxVisibleBarcodes && (targetClickCount - clicksMade) > barcodesCurrentlyVisible)
-            {
-                 Debug.Log("MinigameManager: Spawning another barcode...");
-                 SpawnBarcode(); // Spawn another barcode
-            }
-             else
-             {
-                  Debug.Log("MinigameManager: Not spawning barcode (Conditions not met).");
+                  Debug.LogWarning($"MinigameManager: Barcode clicked in slot {clickedSlotIndex}, but clicksMade ({clicksMade}) is already >= targetClickCount ({targetClickCount}). Click ignored.");
              }
         }
 
         /// <summary>
-        /// Handles the actions when the minigame is won.
+        /// Handles the actions when the minigame is won (target clicks are made).
         /// </summary>
         private void CheckWinCondition()
         {
-            // Ensure we only trigger win logic if the exact target clicks are made
-            if (clicksMade == targetClickCount)
+            // This method should only be called when clicksMade == targetClickCount (or >= depending on exact win logic)
+             if (clicksMade >= targetClickCount)
             {
-                Debug.Log("MinigameManager: Minigame WON!");
+                Debug.Log($"MinigameManager: Minigame WON! Clicks Made: {clicksMade}. Target: {targetClickCount}.");
 
-                // TODO: Trigger success feedback (sound, particles, etc.)
+                // Ensure all barcodes are cleared visually if any are left (might happen with complex logic)
+                ClearGrid(); // Clear any remaining visible barcodes and reset slots
+
+
+                // --- Calculate Total Payment ---
+                float totalPayment = 0f;
+                 if (currentItemsToScan != null)
+                 {
+                     foreach (var item in currentItemsToScan)
+                     {
+                         if (item.details != null)
+                         {
+                              totalPayment += item.details.price * item.quantity;
+                         }
+                         else
+                         {
+                             Debug.LogWarning($"MinigameManager: ItemDetails is null for an item in the purchase list. Cannot calculate price for this item.", this);
+                         }
+                     }
+                 }
+                 Debug.Log($"MinigameManager: Calculated total payment: {totalPayment}");
+                // -----------------------------
+
+                // --- Process Payment (Add to Player's Currency) ---
+                 if (EconomyManager.Instance != null)
+                 {
+                     EconomyManager.Instance.AddCurrency(totalPayment);
+                 }
+                 else
+                 {
+                      Debug.LogError("MinigameManager: EconomyManager Instance is null! Cannot process payment.", this);
+                 }
+                // --------------------------------------------------
+
+
+                // --- Notify the Initiating Register ---
+                 if (initiatingRegister != null)
+                 {
+                      initiatingRegister.OnMinigameCompleted(totalPayment); // Call the completion method on the register
+                 }
+                 else
+                 {
+                      Debug.LogError("MinigameManager: Initiating register reference is null! Cannot notify completion.", this);
+                 }
+                // --------------------------------------
+
 
                 // Tell the MenuManager to exit the minigame state and return to Playing
+                // This also calls ResetMinigame via the exit action
                 if (MenuManager.Instance != null)
                 {
                     MenuManager.Instance.SetState(MenuManager.GameState.Playing, null); // Exit minigame state
