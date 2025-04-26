@@ -53,54 +53,124 @@ public class CustomerBrowseLogic : BaseCustomerStateLogic
 
          // --- Simulate Shopping Call ---
          Debug.Log($"{customerAI.gameObject.name}: Finished Browse time. Simulating shopping now.");
+         bool boughtItemsFromThisShelf = false;
+
          // Access the Shopper component and the inventory via customerAI.CurrentTargetLocation
          if (customerAI.Shopper != null && customerAI.CurrentTargetLocation.HasValue && customerAI.CurrentTargetLocation.Value.inventory != null)
          {
-              customerAI.Shopper.SimulateShopping(customerAI.CurrentTargetLocation.Value.inventory);
+              boughtItemsFromThisShelf = customerAI.Shopper.SimulateShopping(customerAI.CurrentTargetLocation.Value.inventory);
          }
          else
          {
               Debug.LogWarning($"CustomerAI ({customerAI.gameObject.name}): Cannot simulate shopping. Shopper or Inventory reference is null!", this);
+              boughtItemsFromThisShelf = false;
          }
+
+         if (boughtItemsFromThisShelf)
+          {
+          // If items were bought from this shelf, reset the counter
+          customerAI.Shopper.ResetConsecutiveShelvesCount();
+          }
+          else
+          {
+          // If no items were bought from this shelf, increment the counter
+          customerAI.Shopper.IncrementConsecutiveShelvesCount(); // <-- USE THE NEW METHOD
+          }
+
+          // --- Check if the customer is impatient due to not finding items ---
+          // Access the counter via customerAI.Shopper
+          if (customerAI.Shopper != null && customerAI.Shopper.GetConsecutiveShelvesCount() >= 3) // <-- Access directly or add a getter if preferred
+          {
+          Debug.Log($"{customerAI.gameObject.name}: Visited 3 consecutive shelves without finding items. Exiting.", this);
+          customerAI.SetState(CustomerState.Exiting); // Trigger the exit
+          yield break; // Exit the coroutine immediately
+          }
          // -----------------------------
 
 
          // --- Decide Next Step After Browse and Shopping ---
          // Access Shopper properties via customerAI.Shopper
-         bool finishedShoppingTrip = customerAI.Shopper != null && (customerAI.Shopper.HasItems || customerAI.Shopper.DistinctItemCount >= Random.Range(customerAI.Shopper.MinItemsToBuy, customerAI.Shopper.MaxItemsToBuy + 1));
+          bool finishedShoppingTrip = customerAI.Shopper != null && (customerAI.Shopper.HasItems || customerAI.Shopper.DistinctItemCount >= Random.Range(customerAI.Shopper.MinItemsToBuy, customerAI.Shopper.MaxItemsToBuy + 1));
 
-         if (finishedShoppingTrip)
-         {
-              Debug.Log($"CustomerAI ({customerAI.gameObject.name}): Finished shopping trip. Total quantity to buy: {customerAI.Shopper?.TotalQuantityToBuy}. Distinct items: {customerAI.Shopper?.DistinctItemCount}.", this);
-              customerAI.SetState(CustomerState.MovingToRegister); // Done shopping, go to register
-         }
-         else
-         {
-              // Not done shopping, move to another Browse location
-              Debug.Log($"CustomerAI ({customerAI.gameObject.name}): Shopping not complete, looking for next Browse location.");
+          if (finishedShoppingTrip)
+          {
+          Debug.Log($"CustomerAI ({customerAI.gameObject.name}): Finished shopping trip. Total quantity to buy: {customerAI.Shopper?.TotalQuantityToBuy}. Distinct items: {customerAI.Shopper?.DistinctItemCount}.", customerAI.gameObject);
 
-              // Get a new browse location from CustomerManager via customerAI.Manager
+          // --- Check if the register is occupied ---
+          if (customerAI.Manager != null && customerAI.Manager.IsRegisterOccupied())
+          {
+               Debug.Log($"CustomerAI ({customerAI.gameObject.name}): Register is occupied. Attempting to join queue.");
+               // Try to join the queue via CustomerManager
+               if (customerAI.Manager.TryJoinQueue(customerAI, out Transform assignedSpot, out int spotIndex))
+               {
+                    // Successfully joined the queue
+                    customerAI.CurrentTargetLocation = new BrowseLocation { browsePoint = assignedSpot, inventory = null }; // Store the assigned queue spot as target
+                    customerAI.AssignedQueueSpotIndex = spotIndex; // Store the assigned spot index
+                    customerAI.SetState(CustomerState.Queue); // Transition to the Queue state
+               }
+               else
+               {
+                    // Queue is full, cannot join
+                    Debug.LogWarning($"CustomerAI ({customerAI.gameObject.name}): Register is occupied and queue is full! Exiting empty-handed (fallback).");
+                    // Fallback: Exit the store empty-handed if cannot join queue
+                    customerAI.SetState(CustomerState.Exiting); // Transition to Exiting state
+               }
+          }
+          else
+          {
+               // Register is not occupied, proceed directly to the register
+               Debug.Log($"CustomerAI ({customerAI.gameObject.name}): Register is free. Moving to register.");
+               // The existing logic to find the register point and set state happens in MovingToRegisterLogic.OnEnter
+               // We just need to transition to that state.
+               customerAI.SetState(CustomerState.MovingToRegister); // Transition to MovingToRegister
+          }
+          }
+          else // Not finished shopping trip
+          {
+               Debug.Log($"CustomerAI ({customerAI.gameObject.name}): Shopping not complete, looking for next Browse location.");
+               
+               // Get a new browse location from CustomerManager via customerAI.Manager
               BrowseLocation? nextBrowseLocation = customerAI.Manager?.GetRandomBrowseLocation();
 
-              if (nextBrowseLocation.HasValue && nextBrowseLocation.Value.browsePoint != null)
-              {
-                   customerAI.CurrentTargetLocation = nextBrowseLocation; // Update the target location on AI
-                   customerAI.SetState(CustomerState.Entering); // Transition to entering state to move to the new browse point
-              }
-              else // No more Browse locations available
-              {
-                   Debug.LogWarning($"CustomerAI ({customerAI.gameObject.name}): No more Browse locations available or valid!");
-                   if (customerAI.Shopper != null && customerAI.Shopper.HasItems)
-                   {
-                        Debug.Log($"CustomerAI ({customerAI.gameObject.name}): No more places to browse, heading to register with {customerAI.Shopper.DistinctItemCount} items.");
-                        customerAI.SetState(CustomerState.MovingToRegister); // Go to register with items collected so far
-                   }
-                   else
-                   {
-                        Debug.Log($"CustomerAI ({customerAI.gameObject.name}): No more places to browse and no items collected. Exiting.");
-                        customerAI.SetState(CustomerState.Exiting); // Exit empty-handed
-                   }
-              }
+               if (nextBrowseLocation.HasValue && nextBrowseLocation.Value.browsePoint != null)
+               {
+                    customerAI.CurrentTargetLocation = nextBrowseLocation; // Update the target location on AI
+                    customerAI.SetState(CustomerState.Entering); // Transition to entering state to move to the new browse point
+               }
+               else // No more Browse locations available
+               {
+                    Debug.LogWarning($"CustomerAI ({customerAI.gameObject.name}): No more Browse locations available or valid!");
+                    // If they have items but can't browse more AND register is occupied, try queue
+                    if (customerAI.Shopper != null && customerAI.Shopper.HasItems && customerAI.Manager != null && customerAI.Manager.IsRegisterOccupied())
+                    {
+                         Debug.Log($"CustomerAI ({customerAI.gameObject.name}): No more places to browse, register is occupied, attempting to join queue with items.");
+                         // Try to join the queue as above
+                         if (customerAI.Manager.TryJoinQueue(customerAI, out Transform assignedSpot, out int spotIndex))
+                         {
+                              customerAI.CurrentTargetLocation = new BrowseLocation { browsePoint = assignedSpot, inventory = null };
+                              customerAI.AssignedQueueSpotIndex = spotIndex;
+                              customerAI.SetState(CustomerState.Queue);
+                         }
+                         else
+                         {
+                              Debug.LogWarning($"CustomerAI ({customerAI.gameObject.name}): No more places to browse, register occupied, queue full! Exiting with items (fallback).");
+                              // Fallback: Exit even with items if queue is full
+                              customerAI.SetState(CustomerState.Exiting);
+                         }
+                    }
+                    else if (customerAI.Shopper != null && customerAI.Shopper.HasItems)
+                    {
+                         // No more places to browse, register is free, go to register with items
+                         Debug.Log($"CustomerAI ({customerAI.gameObject.name}): No more places to browse and has items. Heading to register.");
+                         customerAI.SetState(CustomerState.MovingToRegister);
+                    }
+                    else
+                    {
+                         // No more places to browse and no items
+                         Debug.Log($"CustomerAI ({customerAI.gameObject.name}): No more places to browse and no items collected. Exiting.");
+                         customerAI.SetState(CustomerState.Exiting); // Exit empty-handed
+                    }
+               }
          }
          Debug.Log($"{customerAI.gameObject.name}: BrowseRoutine finished.");
     }

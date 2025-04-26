@@ -49,7 +49,6 @@ namespace Systems.Inventory
             if (inventoryState != null)
             {
                 inventoryState.AnyValueChanged += HandleInventoryChange;
-                Debug.Log($"Visualizer ({gameObject.name}): Subscribed to new state.", this);
                 inventoryState.TriggerInitialLoadEvent(); // Call the specific initial load trigger
             }
              else
@@ -64,7 +63,6 @@ namespace Systems.Inventory
         {
              // This method now works because slotUIComponents is declared
              if (changeInfo == null) return;
-             Debug.Log($"Visualizer ({gameObject.name}): HandleInventoryChange called. Type: {changeInfo.Type}, Index: {changeInfo.Index}, TargetIndex: {changeInfo.TargetIndex}.", this);
 
              // Added null check for slotUIComponents before accessing Count
              if (slotUIComponents == null)
@@ -153,7 +151,6 @@ namespace Systems.Inventory
                      break;
 
                  default:
-                     Debug.LogWarning($"Visualizer ({gameObject.name}): Received unhandled ArrayChangeType: {changeInfo.Type}", this);
                      break;
              }
         }

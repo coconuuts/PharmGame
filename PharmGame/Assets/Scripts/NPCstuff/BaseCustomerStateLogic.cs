@@ -46,11 +46,7 @@ public abstract class BaseCustomerStateLogic : MonoBehaviour // Inherit from Mon
     /// Use for time-based actions or delays.
     /// </summary>
     /// <returns>IEnumerator for the coroutine.</returns>
-    public virtual IEnumerator StateCoroutine()
-    {
-        // Default implementation yields once and finishes
-        yield break;
-    }
+    public abstract IEnumerator StateCoroutine();
 
     /// <summary>
     /// Called when the Customer AI exits this state.

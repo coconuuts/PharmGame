@@ -24,6 +24,15 @@ public class CustomerMovingToRegisterLogic : BaseCustomerStateLogic
                 customerAI.NavMeshAgent.SetDestination(registerTarget.position);
                 customerAI.NavMeshAgent.isStopped = false; // Start moving
                 Debug.Log($"CustomerAI ({customerAI.gameObject.name}): Set destination to register point: {registerTarget.position}.");
+
+                if (customerAI.Manager != null)
+                {
+                    customerAI.Manager.SignalCustomerAtRegister(customerAI); // <-- ADD THIS LINE
+                }
+                else
+                {
+                    Debug.LogError($"CustomerAI ({customerAI.gameObject.name}): CustomerManager reference is null when signalling customer at register!", this);
+                }
             }
             else
             {

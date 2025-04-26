@@ -23,6 +23,10 @@ GameObject:
   - component: {fileID: 609098336044407144}
   - component: {fileID: 4451966081823984530}
   - component: {fileID: 5498179477969603554}
+  - component: {fileID: -5364906412484342649}
+  - component: {fileID: -1029174117850813089}
+  - component: {fileID: 3917830541249518161}
+  - component: {fileID: 8995806596966719159}
   m_Layer: 0
   m_Name: NPC
   m_TagString: Untagged
@@ -174,7 +178,10 @@ MonoBehaviour:
   minItemsToBuy: 1
   maxItemsToBuy: 3
   minQuantityPerItem: 1
-  maxQuantityPerItem: 3
+  maxQuantityPerItem: 10
+  quantityMean: 5
+  quantityStandardDeviation: 1
+  inventoryNPC: {fileID: 0}
 --- !u!114 &6942888685399189785
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -271,3 +278,65 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 32ebc178f3925714eb6489e2038440d1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!114 &-5364906412484342649
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4394407753789290286}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 044aa0e0748b6264680bcb6550eba6ef, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &-1029174117850813089
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4394407753789290286}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 40f3446e65f63f247a4048e86b854f8f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!65 &3917830541249518161
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4394407753789290286}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 0.6, y: 2.013233, z: 0.49619246}
+  m_Center: {x: 0, y: 1.0074824, z: 0.056357086}
+--- !u!114 &8995806596966719159
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4394407753789290286}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 457e63e2bf9c82e42841d1be6cbd6709, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  inventoryUIRoot: {fileID: 0}
+  inventoryComponent: {fileID: 0}
+  interactionPrompt: Open Inventory (E)
+  inventoryTextPromptOffset: {x: 0, y: 0, z: 0}
+  inventoryTextPromptRotationOffset: {x: 0, y: 0, z: 0}

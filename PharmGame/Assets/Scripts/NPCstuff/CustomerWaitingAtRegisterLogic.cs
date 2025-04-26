@@ -6,12 +6,19 @@ public class CustomerWaitingAtRegisterLogic : BaseCustomerStateLogic
 {
     public override CustomerState HandledState => CustomerState.WaitingAtRegister;
 
-    // Initialize is handled by the base class
+    private float impatientTimer; // Tracks how long the customer has been waiting in this state
+    private float impatientDuration; // The random duration they will wait before becoming impatient
 
     public override void OnEnter()
     {
         base.OnEnter();
         Debug.Log($"{customerAI.gameObject.name}: Entering WaitingAtRegister state.");
+        // --- Impatience Timer Start ---
+        impatientDuration = Random.Range(10f, 15f); // Set a random duration
+        impatientTimer = 0f; // Reset the timer
+        Debug.Log($"{customerAI.gameObject.name}: Starting impatience timer for {impatientDuration:F2} seconds.", this); // Log timer start
+        // ------------------------------
+
 
         // Ensure NavMeshAgent is stopped upon reaching the register
         if (customerAI.NavMeshAgent != null && customerAI.NavMeshAgent.enabled)
@@ -50,8 +57,23 @@ public class CustomerWaitingAtRegisterLogic : BaseCustomerStateLogic
         // The StateCoroutine will handle rotation and waiting.
     }
 
-    // OnUpdate is likely not needed as the main logic is in the coroutine
-    // public override void OnUpdate() { base.OnUpdate(); }
+    // In CustomerWaitingAtRegisterLogic.cs, inside OnUpdate()
+    public override void OnUpdate()
+    {
+        base.OnUpdate(); // Call the base OnUpdate (currently empty)
+
+        // --- Impatience Timer Update and Check ---
+        impatientTimer += Time.deltaTime; // Increment the timer
+
+        if (impatientTimer >= impatientDuration) // Check if timer has reached the duration
+        {
+            Debug.Log($"{customerAI.gameObject.name}: IMPATIENT in WaitingAtRegister state after {impatientTimer:F2} seconds. Exiting.", this); // Log timeout
+            customerAI.SetState(CustomerState.Exiting); // Transition to the Exiting state
+            // No need for further logic in this Update cycle after setting state
+            return; // Exit the OnUpdate method early
+        }
+        // -------------------------------------------
+    }
 
 
     public override IEnumerator StateCoroutine()
@@ -88,6 +110,7 @@ public class CustomerWaitingAtRegisterLogic : BaseCustomerStateLogic
     {
         base.OnExit();
         Debug.Log($"{customerAI.gameObject.name}: Exiting WaitingAtRegister state.");
+        impatientTimer = 0f; // <-- RESET TIMER ON EXIT
         // Any cleanup specific to exiting waiting could go here
     }
 }

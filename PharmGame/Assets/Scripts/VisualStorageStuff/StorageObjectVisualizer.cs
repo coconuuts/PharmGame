@@ -117,7 +117,6 @@ namespace VisualStorage // Your namespace
              if (targetInventory != null && targetInventory.InventoryState != null)
              {
                   targetInventory.InventoryState.AnyValueChanged += HandleInventoryStateChangedEvent;
-                  Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Subscribed to InventoryState.AnyValueChanged.");
              }
              else Debug.LogError($"StorageObjectVisualizer ({gameObject.name}): Cannot subscribe to InventoryState.AnyValueChanged. Inventory or InventoryState is null.", this);
             // -------------------------------------------------------------
@@ -125,12 +124,11 @@ namespace VisualStorage // Your namespace
 
             // Keep the drag/drop subscription if DragAndDropManager is available.
             // This might be useful for ensuring a final update after a complex drag sequence.
+            dragAndDropManager = DragAndDropManager.Instance;
             if (dragAndDropManager != null)
             {
                 dragAndDropManager.OnDragDropCompleted += OnDragDropCompleted;
-                Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Subscribed to DragAndDropManager.OnDragDropCompleted.");
             }
-            // Removed the 'else' block with the fallback subscription
 
 
             // Trigger an initial update on enable to visualize the starting inventory
@@ -172,15 +170,24 @@ namespace VisualStorage // Your namespace
         // Event handler for DragAndDropManager completion
         private void OnDragDropCompleted()
         {
-            Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Received OnDragDropCompleted event. Forcing visual update.");
             ForceVisualUpdate();
         }
 
         // Fallback event handler if DragAndDropManager is not available
         private void HandleInventoryStateChangedEvent(ArrayChangeInfo<Item> changeInfo) // Corrected ArrayChangeInfo namespace
         {
-             Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Inventory state changed (via AnyValueChanged fallback). Forcing visual update.");
-             ForceVisualUpdate();
+            if (DragAndDropManager.Instance != null && DragAndDropManager.Instance.IsDragging)
+            {
+                // A drag is happening, ignore this intermediate change event.
+                // The visual update will be triggered by OnDragDropCompleted instead.
+                Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Inventory change detected during drag. Skipping visual update.");
+                return;
+            }
+
+            // If no drag is in progress, or DragAndDropManager is not available,
+            // treat this as a standard inventory change and update visuals.
+            Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Inventory change detected (no drag or D&D Manager missing). Forcing visual update.");
+            ForceVisualUpdate();
         }
 
 
@@ -190,8 +197,6 @@ namespace VisualStorage // Your namespace
         /// </summary>
         private void ForceVisualUpdate()
         {
-            Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Forcing visual update based on current inventory state.");
-
             // --- Phase 1: Determine Desired Visual Placements ---
             // ... (Logic to get inventory state, identify instances, proportional selection,
             // and prioritized block finding remains the same, populating finalDesiredPlacements) ...
@@ -291,7 +296,6 @@ namespace VisualStorage // Your namespace
                              if (currentRemainderCandidateIndex >= remainderSlots.Count && remainingSlotsToAllocate > 0)
                              {
                                  currentRemainderCandidateIndex = 0;
-                                 Debug.Log("StorageObjectVisualizer: Cycling back through remainder slots to allocate remaining visual slots.");
                              }
                         }
                     }
@@ -434,8 +438,6 @@ namespace VisualStorage // Your namespace
 
 
             // --- Phase 2: Incremental Visual Update using Pooling ---
-            Debug.Log($"StorageObjectVisualizer: Performing incremental visual update.");
-
             List<CurrentlyPlacedVisualItem> nextPlacedVisualItems = new List<CurrentlyPlacedVisualItem>();
 
             List<ItemInstancePlacement> itemsToCreate = new List<ItemInstancePlacement>();
@@ -510,7 +512,6 @@ namespace VisualStorage // Your namespace
 
             foreach (var placementToCreate in itemsToCreate)
             {
-                 Debug.Log($"StorageObjectVisualizer: Getting visual item from pool for Inv Slot {placementToCreate.ItemInstanceInfo.OriginalInventorySlotIndex} ({placementToCreate.ItemInstanceInfo.ItemDetails.Name}).");
                  if (placementToCreate.ShelfSlotBlock.Count > 0)
                  {
                       ShelfSlot startSlot = placementToCreate.ShelfSlotBlock[0];
@@ -596,8 +597,6 @@ namespace VisualStorage // Your namespace
                      Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Desired placement has an empty ShelfSlotBlock list.");
                  }
             }
-             Debug.Log($"StorageObjectVisualizer: Created/Got {itemsToCreate.Count} visual items.");
-
 
             // --- Update Tracking List ---
             // The next state is the items that were kept + the items that were newly created/gotten.
@@ -612,7 +611,6 @@ namespace VisualStorage // Your namespace
                       nextPlacedVisualItems.Add(placedItem); // If it was NOT marked for destruction, keep it for the next state
                  }
             }
-             Debug.Log($"StorageObjectVisualizer: Kept {nextPlacedVisualItems.Count} visual items.");
 
             // Add newly created/gotten items
             nextPlacedVisualItems.AddRange(newlyCreatedItems);
@@ -689,7 +687,6 @@ namespace VisualStorage // Your namespace
                     columns = 2;
                     break;
                  default:
-                     Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Unhandled ShelfSlotArrangement '{details.shelfArrangement}' for ItemDetails '{details.Name}'. Defaulting to 1x1.", details);
                      rows = 1;
                      columns = 1;
                      break;

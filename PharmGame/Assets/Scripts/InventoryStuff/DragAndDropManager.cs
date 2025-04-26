@@ -2,7 +2,7 @@ using UnityEngine;
 using Systems.Inventory;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
-using TMPro; // Needed for TextMeshProUGUI
+using TMPro;
 using System.Collections.Generic;
 using System;
 
@@ -21,6 +21,13 @@ namespace Systems.Inventory
 
         [Tooltip("The Text or TextMeshPro component for the quantity on the ghost visual.")]
         [SerializeField] private TextMeshProUGUI ghostQuantityText; // ADD THIS FIELD (Change to Text if not using TextMeshPro)
+
+        // --- NEW: Flag to indicate if a drag operation is currently in progress ---
+        public bool IsDragging { get; private set; } = false;
+
+        // --- NEW: Event broadcast when the drag state changes ---
+        public event Action<bool> OnDragStateChanged;
+
 
         private Item itemBeingDragged;
         private Inventory sourceInventory; // The inventory the item came from
@@ -71,9 +78,9 @@ namespace Systems.Inventory
             }
             else
             {
-                Debug.LogError("DragAndDropManager: Ghost Item Image is not assigned!", this);
-                enabled = false;
-                return;
+                 Debug.LogError("DragAndDropManager: Ghost Item Image is not assigned!", this);
+                 enabled = false;
+                 return;
             }
 
              // Ensure the ghost quantity text is initially hidden
@@ -93,6 +100,14 @@ namespace Systems.Inventory
             {
                 Instance = null;
             }
+
+            // --- NEW: Ensure state is reset and event is potentially invoked on destruction ---
+            if (IsDragging)
+            {
+                IsDragging = false;
+                OnDragStateChanged?.Invoke(false);
+            }
+             // -----------------------------------------------------------------------------
         }
 
 
@@ -102,7 +117,7 @@ namespace Systems.Inventory
         /// </summary>
         public void StartDrag(InventorySlotUI slotUI, PointerEventData eventData)
         {
-            if (itemBeingDragged != null) return;
+            if (itemBeingDragged != null) return; // Prevent starting a new drag if one is already active
 
             if (slotUI.ParentInventory == null || slotUI.SlotIndex < 0 || slotUI.SlotIndex >= slotUI.ParentInventory.Combiner.PhysicalSlotCount)
             {
@@ -127,6 +142,12 @@ namespace Systems.Inventory
                 sourceInventory = slotUI.ParentInventory;
                 sourceSlotIndex = slotUI.SlotIndex;
 
+                // --- NEW: Set dragging flag and broadcast event ---
+                IsDragging = true;
+                OnDragStateChanged?.Invoke(true);
+                Debug.Log("DragAndDropManager: Drag started. Broadcasted OnDragStateChanged(true).");
+                // -------------------------------------------------
+
                 // Visually represent the item being dragged
                 if (ghostItemImage != null && itemBeingDragged.details != null && itemBeingDragged.details.Icon != null)
                 {
@@ -140,30 +161,34 @@ namespace Systems.Inventory
                           // Only show quantity if maxStack > 1 and quantity > 1
                           if (itemBeingDragged.details.maxStack > 1 && itemBeingDragged.quantity > 1)
                           {
-                               ghostQuantityText.text = itemBeingDragged.quantity.ToString();
-                               ghostQuantityText.gameObject.SetActive(true);
+                              ghostQuantityText.text = itemBeingDragged.quantity.ToString();
+                              ghostQuantityText.gameObject.SetActive(true);
                           }
                           else
                           {
-                               // Hide quantity text if not applicable
-                               ghostQuantityText.text = ""; // Clear text
-                               ghostQuantityText.gameObject.SetActive(false);
+                              // Hide quantity text if not applicable
+                              ghostQuantityText.text = ""; // Clear text
+                              ghostQuantityText.gameObject.SetActive(false);
                           }
                      }
 
-                    // --- CONCEPTUAL MOVE TO SOURCE GHOST SLOT & CLEAR ORIGINAL SLOT ---
-                    // Clear the original slot in the source inventory's data
-                    sourceObservableArray.SetItemAtIndex(null, sourceSlotIndex);
-                    // Move the item instance to the source inventory's ghost data slot
-                     sourceObservableArray.SetItemAtIndex(itemBeingDragged, sourceObservableArray.Length - 1); // Length-1 is the ghost slot index
+                     // --- CONCEPTUAL MOVE TO SOURCE GHOST SLOT & CLEAR ORIGINAL SLOT ---
+                     // Clear the original slot in the source inventory's data
+                     sourceObservableArray.SetItemAtIndex(null, sourceSlotIndex);
+                     // Move the item instance to the source inventory's ghost data slot
+                      sourceObservableArray.SetItemAtIndex(itemBeingDragged, sourceObservableArray.Length - 1); // Length-1 is the ghost slot index
 
                 }
                 else
                 {
                     Debug.LogError("DragAndDropManager: Ghost item visual setup failed (Image or ItemDetails/Icon missing).", this);
+                    // --- NEW: Reset drag state if visual setup fails ---
                     itemBeingDragged = null;
                     sourceInventory = null;
                     sourceSlotIndex = -1;
+                    IsDragging = false; // Reset flag immediately
+                    OnDragStateChanged?.Invoke(false); // Broadcast state change
+                    // -----------------------------------------------------
                 }
             }
             else
@@ -178,14 +203,14 @@ namespace Systems.Inventory
         /// </summary>
         public void Drag(PointerEventData eventData)
         {
-            if (itemBeingDragged != null && ghostItemImage != null)
+             if (itemBeingDragged != null && ghostItemImage != null)
             {
-                ghostItemImage.transform.position = eventData.position;
-                 // Keep the quantity text in sync with the image's position
-                 if(ghostQuantityText != null)
-                 {
-                      ghostQuantityText.transform.position = eventData.position; // Assumes they are siblings or parented correctly
-                 }
+                 ghostItemImage.transform.position = eventData.position;
+                  // Keep the quantity text in sync with the image's position
+                  if(ghostQuantityText != null)
+                  {
+                       ghostQuantityText.transform.position = eventData.position; // Assumes they are siblings or parented correctly
+                  }
             }
         }
 
@@ -244,6 +269,12 @@ namespace Systems.Inventory
             OnDragDropCompleted?.Invoke();
             Debug.Log($"DragAndDropManager: Drag/Drop transaction completed. Triggering OnDragDropCompleted event.");
 
+            // --- NEW: Reset dragging flag and broadcast event AFTER drop logic ---
+            IsDragging = false;
+            OnDragStateChanged?.Invoke(false);
+            Debug.Log("DragAndDropManager: Drag ended. Broadcasted OnDragStateChanged(false).");
+            // -------------------------------------------------------------------
+
             // --- Clean up drag state ---
             itemBeingDragged = null;
             sourceInventory = null;
@@ -267,21 +298,25 @@ namespace Systems.Inventory
                     // Ensure the hit slot belongs to a valid inventory
                      if (slotUI.ParentInventory != null)
                      {
-                         return slotUI; // Found the target slot
+                          // --- IMPORTANT: Ignore raycasts hitting the ghost item itself ---
+                         // The ghost image has raycastTarget = false, but defensive check is good.
+                         if (result.gameObject == ghostItemImage.gameObject) continue;
+
+                          return slotUI; // Found the target slot
                      }
                      else
                      {
                           Debug.LogWarning($"DragAndDropManager: Raycast hit InventorySlotUI on {result.gameObject.name} but it has no ParentInventory assigned.", result.gameObject);
                      }
                 }
-                else
-                {
-                     // Optional: Log other hits for debugging raycast setup
-                     // Debug.Log($"DragAndDropManager: Raycast hit {result.gameObject.name} (not a slot).", result.gameObject);
-                }
+                 else
+                 {
+                      // Optional: Log other hits for debugging raycast setup
+                      // Debug.Log($"DragAndDropManager: Raycast hit {result.gameObject.name} (not a slot).", result.gameObject);
+                 }
             }
 
-            Debug.Log("DragAndDropManager: Raycast did not hit any valid InventorySlotUI with a parent inventory.");
+             // Debug.Log("DragAndDropManager: Raycast did not hit any valid InventorySlotUI with a parent inventory."); // Commented out to reduce spam
             return null; // No valid InventorySlotUI found at the drop position
         }
 
@@ -314,9 +349,5 @@ namespace Systems.Inventory
              }
              // Note: Drag state (itemBeingDragged, etc.) is cleared in EndDrag after this method returns.
         }
-
-        // TODO: Implement visualization for potential drop targets (e.g., highlighting slots)
-        // TODO: Handle cases where the item is dropped on a non-slot UI element within an inventory bounds
-        // TODO: Implement logic for dropping items into the game world outside any inventory UI
     }
 }

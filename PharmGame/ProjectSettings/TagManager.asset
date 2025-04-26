@@ -26,6 +26,8 @@ TagManager:
   - InteractionPrompt
   - InventoryItems
   - PlayerToolbarInventory
+  - NPCInventory
+  - NPC Grid
   layers:
   - Default
   - TransparentFX

@@ -21,6 +21,8 @@ namespace Game.NPC // Your NPC namespace
         Browse,              // Moving between/simulating Browse at shelves
         MovingToRegister,    // Moving towards the cash register
         WaitingAtRegister,   // Waiting for the player at the register
+        Queue,
+        SecondaryQueue,
         TransactionActive,   // Player is scanning items (minigame)
         Exiting,             // Moving towards an exit point
         ReturningToPool      // Signalling completion and waiting to be returned
@@ -42,6 +44,7 @@ namespace Game.NPC // Your NPC namespace
         // --- State Management ---
         private CustomerState currentState = CustomerState.Inactive;
         public CustomerState CurrentState { get { return currentState; } }
+        public CustomerState PreviousState { get; private set; } = CustomerState.Inactive;
         private float stateEntryTime;
 
         private Dictionary<CustomerState, BaseCustomerStateLogic> stateLogics;
@@ -65,6 +68,8 @@ namespace Game.NPC // Your NPC namespace
 
         private const float DestinationReachedThreshold = 0.5f;
         [SerializeField] public float rotationSpeed = 5f; // <-- Ensure this is public or internal if used in base class
+
+        public int AssignedQueueSpotIndex { get; internal set; } = -1;
         
 
         // --- Shopping Data (MOVED to CustomerShopper, CustomerAI accesses via Shopper) ---
@@ -192,6 +197,8 @@ namespace Game.NPC // Your NPC namespace
 
             Debug.Log($"CustomerAI ({gameObject.name}): <color=yellow>Transitioning from {currentState} to {newState}</color>", this); // Highlight state changes
 
+            PreviousState = currentState;
+
             // 1. Perform exit logic on the current state (if any)
             if (currentStateLogic != null)
             {
@@ -201,7 +208,6 @@ namespace Game.NPC // Your NPC namespace
             }
 
             // 2. Update the current state variable
-            CustomerState previousState = currentState; // Keep track of previous state if needed by OnEnter/Exit
             currentState = newState;
             stateEntryTime = Time.time; // Update state entry time
 
@@ -316,6 +322,20 @@ namespace Game.NPC // Your NPC namespace
 
 
             return false;
+        }
+
+        /// <summary>
+        /// Called by the CustomerManager to signal that this customer is next in line
+        /// and should proceed to the register.
+        /// </summary>
+        public void GoToRegisterFromQueue()
+        {
+            Debug.Log($"{gameObject.name}: Signalled by manager to go to the register from the queue.");
+            // Transition to the MovingToRegister state
+            SetState(CustomerState.MovingToRegister);
+
+            // Note: The OnExit for the Queue state will handle signaling the spot free.
+            // The OnEnter for MovingToRegister will find the register point and set the destination.
         }
 
 
