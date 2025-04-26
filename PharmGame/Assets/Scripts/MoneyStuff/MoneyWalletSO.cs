@@ -12,16 +12,16 @@ namespace GameEconomy // A namespace for economy-related systems
     {
         // --- Money Amounts ---
         [Tooltip("Amount of clean, legitimate cash.")]
-        public int cleanCash;
+        public float cleanCash;
 
         [Tooltip("Amount of dirty, untraceable cash from illicit activities.")]
-        public int dirtyCash;
+        public float dirtyCash;
         // ----------------------
 
         // --- Events for Tracking Changes ---
         // Useful for UI updates or other systems reacting to money changes.
-        public event Action<int> OnCleanCashChanged;
-        public event Action<int> OnDirtyCashChanged;
+        public event Action<float> OnCleanCashChanged;
+        public event Action<float> OnDirtyCashChanged;
         public event Action OnAnyCashChanged; // General event for any change
 
 
@@ -43,7 +43,25 @@ namespace GameEconomy // A namespace for economy-related systems
         /// Adds dirty cash to the wallet (e.g., from selling drugs).
         /// </summary>
         /// <param name="amount">The amount of dirty cash to add. Must be non-negative.</param>
-        public void AddDirtyCash(int amount)
+        public void AddCleanCash(float amount)
+        {
+            if (amount < 0)
+            {
+                Debug.LogWarning("MoneyWalletSO: Attempted to add a negative amount of dirty cash. Use Spend methods instead.");
+                return;
+            }
+            cleanCash += amount;
+            Debug.Log($"MoneyWalletSO: Added {amount} dirty cash. Total dirty: {cleanCash}");
+            // Trigger events
+            OnCleanCashChanged?.Invoke(cleanCash);
+            OnAnyCashChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// Adds dirty cash to the wallet (e.g., from selling drugs).
+        /// </summary>
+        /// <param name="amount">The amount of dirty cash to add. Must be non-negative.</param>
+        public void AddDirtyCash(float amount)
         {
             if (amount < 0)
             {
@@ -62,7 +80,7 @@ namespace GameEconomy // A namespace for economy-related systems
         /// </summary>
         /// <param name="amount">The amount of clean cash to spend. Must be non-negative.</param>
         /// <returns>True if successful, false if insufficient clean cash.</returns>
-        public bool SpendCleanCash(int amount)
+        public bool SpendCleanCash(float amount)
         {
             if (amount < 0)
             {
@@ -90,7 +108,7 @@ namespace GameEconomy // A namespace for economy-related systems
         /// </summary>
         /// <param name="amount">The amount of dirty cash to spend. Must be non-negative.</param>
         /// <returns>True if successful, false if insufficient dirty cash.</returns>
-        public bool SpendDirtyCash(int amount)
+        public bool SpendDirtyCash(float amount)
         {
             if (amount < 0)
             {
@@ -121,7 +139,7 @@ namespace GameEconomy // A namespace for economy-related systems
         /// <param name="amount">The amount of dirty cash to attempt to launder.</param>
         /// <param name="cost">The cost to launder the money.</param>
         /// <returns>True if laundering is successful, false otherwise (e.g., not enough dirty cash or cost).</returns>
-        public bool AttemptLaunder(int amount, int cost)
+        public bool AttemptLaunder(float amount, float cost)
         {
             if (amount < 0 || cost < 0)
             {
@@ -167,9 +185,9 @@ namespace GameEconomy // A namespace for economy-related systems
 
 
         // --- Getters for convenience ---
-        public int TotalCash => cleanCash + dirtyCash;
-        public int CleanCash => cleanCash;
-        public int DirtyCash => dirtyCash;
+        public float TotalCash => cleanCash + dirtyCash;
+        public float CleanCash => cleanCash;
+        public float DirtyCash => dirtyCash;
         // -------------------------------
     }
 }
