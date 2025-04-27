@@ -9,6 +9,10 @@ public class PromptEditor : MonoBehaviour
     private Quaternion initialPromptRotation;
     private TMP_Text promptText; // Reference to the shared prompt
 
+    [Tooltip("The screen-space GameObject containing the TMP_Text for NPC interaction prompts.")]
+    [SerializeField] private GameObject screenSpaceNPCPrompt; // Renamed for clarity
+
+
     private static PromptEditor instance; // Singleton instance
 
     private void Awake()
@@ -50,6 +54,12 @@ public class PromptEditor : MonoBehaviour
         else
         {
             Debug.LogWarning("PromptEditor: promptText is null in Start().  Make sure the InteractionPrompt tag is set and the object exists in the scene.");
+        }
+
+        if (screenSpaceNPCPrompt != null)
+        {
+             // Ensure the GameObject itself is inactive, not just the text component
+            screenSpaceNPCPrompt.SetActive(false);
         }
     }
 
@@ -105,6 +115,18 @@ public class PromptEditor : MonoBehaviour
                 Debug.LogError("PromptEditor Instance is null.  There needs to be one in the scene.");
             }
             return instance;
+        }
+    }
+
+        /// <summary>
+    /// Sets the active state and text of the SCREEN-SPACE NPC prompt.
+    /// </summary>
+    public void SetScreenSpaceNPCPromptActive(bool isActive)
+    {
+        if (screenSpaceNPCPrompt != null)
+        {
+            // Activate/Deactivate the parent GameObject
+            screenSpaceNPCPrompt.SetActive(isActive);
         }
     }
 }

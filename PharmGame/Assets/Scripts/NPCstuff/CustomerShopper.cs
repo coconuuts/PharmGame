@@ -77,7 +77,7 @@ public class CustomerShopper : MonoBehaviour
               Item[] availableItems = inventory.InventoryState.GetCurrentArrayState();
 
               List<ItemDetails> availableOtcItemDetails = availableItems
-                 .Where(item => item != null && item.details != null && item.quantity > 0 && item.details.isOverTheCounter)
+                 .Where(item => item != null && item.details != null && item.quantity > 0)
                  .Select(item => item.details)
                  .Distinct()
                  .ToList();

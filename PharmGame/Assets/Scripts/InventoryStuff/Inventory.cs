@@ -16,6 +16,12 @@ namespace Systems.Inventory
         [SerializeField] private FlexibleGridLayout flexibleGridLayout;
         [SerializeField] private Visualizer visualizer; // Ensure this is assigned/found
 
+        [Header("Item Filtering")] // Optional: A header for organization in the inspector
+        [SerializeField] private List<ItemLabel> allowedLabels = new List<ItemLabel>();
+        [Tooltip("If this list is empty, all item labels are allowed.")] // Clarify behavior
+        [SerializeField] private bool allowAllIfListEmpty = true; // Option to allow all if the list is left empty
+
+
         public SerializableGuid Id => id;
         public Combiner Combiner => combiner;
         public ObservableArray<Item> InventoryState => combiner?.InventoryState;
@@ -36,6 +42,10 @@ namespace Systems.Inventory
         {
             // Get component references
             if (combiner == null) combiner = GetComponent<Combiner>();
+            if (combiner != null)
+            {
+                combiner.ParentInventory = this; // Assign parent reference
+            }
             if (flexibleGridLayout == null) flexibleGridLayout = GetComponent<FlexibleGridLayout>();
             if (visualizer == null) visualizer = GetComponent<Visualizer>(); // Get Visualizer
 
@@ -137,6 +147,26 @@ namespace Systems.Inventory
              // Visualizer's OnDestroy handles its own unsubscription, which is cleaner.
         }
 
-        // ... rest of the script (e.g., TestAddSampleItem if you kept it)
+        /// <summary>
+        /// Checks if an item is allowed to be placed in this inventory based on its ItemLabel.
+        /// </summary>
+        public bool CanAddItem(Item item)
+        {
+            // Null checks for safety
+            if (item == null || item.details == null)
+            {
+                Debug.LogWarning($"Inventory ({gameObject.name}): Attempted to check null or detail-less item for filtering.");
+                return false; // Cannot add a null or detail-less item
+            }
+
+            // If the allowed list is null or empty and allowAllIfListEmpty is true, bypass filtering
+            if (allowedLabels == null || allowedLabels.Count == 0)
+            {
+                return allowAllIfListEmpty;
+            }
+
+            // Check if the item's label is in the allowed list
+            return allowedLabels.Contains(item.details.itemLabel);
+        }
     }
 }

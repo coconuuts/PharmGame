@@ -214,72 +214,89 @@ namespace Systems.Inventory
             }
         }
 
-        /// <summary>
-        /// Called by an InventorySlotUI when the pointer is released.
-        /// Handles the drop logic.
-        /// </summary>
-        public void EndDrag(PointerEventData eventData)
+public void EndDrag(PointerEventData eventData)
+{
+    if (itemBeingDragged == null) return;
+
+    // Hide the ghost visual immediately
+    if (ghostItemImage != null) ghostItemImage.gameObject.SetActive(false);
+    if (ghostQuantityText != null) ghostQuantityText.gameObject.SetActive(false); // Hide quantity too
+
+    InventorySlotUI targetSlotUI = FindTargetSlot(eventData.position);
+    bool dropSuccessfullyProcessed = false; // Flag to know if item ended up in a valid target or was returned
+
+    if (targetSlotUI != null && targetSlotUI.ParentInventory != null)
+    {
+        Inventory targetInventory = targetSlotUI.ParentInventory;
+        int targetSlotIndex = targetSlotUI.SlotIndex;
+
+        // Ensure target index is within the physical slot range of the target inventory
+        if (targetSlotIndex >= 0 && targetSlotIndex < targetInventory.Combiner.PhysicalSlotCount)
         {
-            if (itemBeingDragged == null) return;
-
-            // Hide the ghost visual immediately
-            if (ghostItemImage != null) ghostItemImage.gameObject.SetActive(false);
-             if (ghostQuantityText != null) ghostQuantityText.gameObject.SetActive(false); // Hide quantity too
-
-            // --- Determine the Drop Target ---
-            InventorySlotUI targetSlotUI = FindTargetSlot(eventData.position);
-
-            if (targetSlotUI != null && targetSlotUI.ParentInventory != null)
+            // --- Item Label Filtering Check ---
+            if (!targetInventory.CanAddItem(itemBeingDragged)) // Simplified check assuming targetInventory is not null here
             {
-                Inventory targetInventory = targetSlotUI.ParentInventory;
-                int targetSlotIndex = targetSlotUI.SlotIndex;
-
-                // Ensure target index is within the physical slot range of the target inventory
-                // Combiner's PhysicalSlotCount is needed here. We have access via targetInventory.Combiner.PhysicalSlotCount
-                if (targetSlotIndex >= 0 && targetSlotIndex < targetInventory.Combiner.PhysicalSlotCount)
-                {
-                    ObservableArray<Item> targetObservableArray = targetInventory.InventoryState;
-
-                     if (targetObservableArray != null)
-                     {
-                         // --- Call the ObservableArray's HandleDrop method ---
-                         // Pass the source array and original index
-                         targetObservableArray.HandleDrop(itemBeingDragged, targetSlotIndex, sourceInventory.InventoryState, sourceSlotIndex);
-                     }
-                     else
-                     {
-                         Debug.LogError($"DragAndDropManager: Target inventory {targetInventory.Id} has a null ObservableArray. Cannot handle drop.", targetInventory.gameObject);
-                         // Item remains in source ghost slot, will be returned to source original slot below
-                         ReturnItemToSource();
-                     }
-                }
-                else
-                {
-                     // Dropped over a valid inventory's UI element, but not a physical slot index (e.g., border, ghost slot, filler)
-                     Debug.Log($"DragAndDropManager: Drop detected over target inventory '{targetInventory.Id}' but outside valid physical slots ({targetInventory.Combiner.PhysicalSlotCount}). Target Index: {targetSlotIndex}. Returning item to source.");
-                     ReturnItemToSource();
-                }
+                ReturnItemToSource(); // Item returned to its original spot
+                dropSuccessfullyProcessed = true;
+                PlayerUIPopups.Instance.SetInvalidItemActive(true);
             }
             else
             {
-                // --- No Valid Drop Target Found (Dropped outside any inventory slots) ---
-                ReturnItemToSource();
+                // Filtering check passed, proceed with drop logic on target
+                ObservableArray<Item> targetObservableArray = targetInventory.InventoryState;
+
+                if (targetObservableArray != null)
+                {
+                    Debug.Log($"DragAndDropManager: Item '{itemBeingDragged.details?.Name ?? "Unknown"}' allowed in target inventory '{targetInventory.Id}'. Proceeding with HandleDrop.");
+                    targetObservableArray.HandleDrop(itemBeingDragged, targetSlotIndex, sourceInventory.InventoryState, sourceSlotIndex);
+                    dropSuccessfullyProcessed = true;
+                }
+                else
+                {
+                    Debug.LogError($"DragAndDropManager: Target inventory {targetInventory.Id} has a null ObservableArray. Cannot handle drop.", targetInventory.gameObject);
+                    // Drop not successfully handled by target
+                }
             }
-
-            OnDragDropCompleted?.Invoke();
-            Debug.Log($"DragAndDropManager: Drag/Drop transaction completed. Triggering OnDragDropCompleted event.");
-
-            // --- NEW: Reset dragging flag and broadcast event AFTER drop logic ---
-            IsDragging = false;
-            OnDragStateChanged?.Invoke(false);
-            Debug.Log("DragAndDropManager: Drag ended. Broadcasted OnDragStateChanged(false).");
-            // -------------------------------------------------------------------
-
-            // --- Clean up drag state ---
-            itemBeingDragged = null;
-            sourceInventory = null;
-            sourceSlotIndex = -1;
         }
+        else
+        {
+            // Dropped over a valid inventory's UI element, but not a physical slot index
+            Debug.Log($"DragAndDropManager: Drop detected over target inventory '{targetInventory.Id}' but outside valid physical slots ({targetInventory.Combiner.PhysicalSlotCount}). Target Index: {targetSlotIndex}. Returning item to source.");
+            ReturnItemToSource();
+            dropSuccessfullyProcessed = true;
+        }
+    }
+    // else: targetSlotUI was null (dropped outside any inventory UI) - handled below
+
+    // --- Handle cases where the drop was NOT successfully processed by a target slot ---
+    // This means targetSlotUI was null OR targetObservableArray was null
+    if (!dropSuccessfullyProcessed)
+    {
+         Debug.Log("DragAndDropManager: Drop target not found or invalid (e.g., dropped outside any slot). Returning item to source.");
+         ReturnItemToSource(); // Return the item to its source slot
+         dropSuccessfullyProcessed = true; // Ensure this path also flags as processed
+    }
+
+
+    // --- **** IMPORTANT: RESET DRAG STATE AND CLEANUP HERE **** ---
+    // Resetting these *before* potentially triggering completion events
+    // minimizes the window where a new drag could incorrectly start.
+    IsDragging = false;
+    OnDragStateChanged?.Invoke(false);
+    Debug.Log("DragAndDropManager: Drag ended. Broadcasted OnDragStateChanged(false).");
+
+    // Clean up drag state variables
+    itemBeingDragged = null;
+    sourceInventory = null;
+    sourceSlotIndex = -1;
+    // --- **** END RESET/CLEANUP **** ---
+
+
+    // Now trigger the completion event AFTER state is fully reset
+    OnDragDropCompleted?.Invoke();
+    Debug.Log($"DragAndDropManager: Drag/Drop transaction completed. Triggering OnDragDropCompleted event.");
+
+}
 
 
         // Helper method to find the InventorySlotUI the pointer is currently over.

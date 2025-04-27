@@ -11,6 +11,8 @@ public class InventoryTester : MonoBehaviour
 
     [Tooltip("Drag your 'Test2' ItemDetails ScriptableObject asset here.")]
     [SerializeField] private ItemDetails testItem2Details;
+        [Tooltip("Drag your 'Test2' ItemDetails ScriptableObject asset here.")]
+    [SerializeField] private ItemDetails testItem3Details;
 
     void Start()
     {
@@ -21,19 +23,6 @@ public class InventoryTester : MonoBehaviour
             enabled = false; // Disable the script if not set up
             return;
         }
-
-        // Optional: Check if ItemDetails assets are assigned (warnings, not errors)
-        if (testItem1Details == null)
-        {
-            Debug.LogWarning("InventoryTester: 'Test1' ItemDetails asset is not assigned in the inspector.", this);
-        }
-
-        if (testItem2Details == null)
-        {
-            Debug.LogWarning("InventoryTester: 'Test2' ItemDetails asset is not assigned in the inspector.", this);
-        }
-
-        Debug.Log("InventoryTester initialized. Press '1' to add Test1, '2' to add Test2.");
     }
 
     void Update()
@@ -86,6 +75,31 @@ public class InventoryTester : MonoBehaviour
                 {
                      // AddItem logs a warning inside Combiner if it fails, but this confirms it here too
                      Debug.LogWarning($"Failed to add {testItem2Details.Name}. Inventory might be full.");
+                }
+            }
+             else
+            {
+                 Debug.LogWarning("Cannot add Test2 item: Test2 ItemDetails asset not assigned in the Inspector.");
+            }
+        }
+                if (Input.GetKeyDown(KeyCode.F3))
+        {
+            if (testItem3Details != null)
+            {
+                // Create a new runtime Item instance
+                Item newItemInstance = testItem3Details.Create(1);
+
+                // Attempt to add the item instance
+                bool added = targetInventory.Combiner.AddItem(newItemInstance);
+
+                 if (added)
+                {
+                    Debug.Log($"Successfully added {testItem3Details.Name} to inventory.");
+                }
+                else
+                {
+                     // AddItem logs a warning inside Combiner if it fails, but this confirms it here too
+                     Debug.LogWarning($"Failed to add {testItem3Details.Name}. Inventory might be full.");
                 }
             }
              else

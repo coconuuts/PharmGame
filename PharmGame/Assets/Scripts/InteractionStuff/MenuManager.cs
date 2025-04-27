@@ -1,4 +1,4 @@
-using UnityEngine;
+    using UnityEngine;
 using System;
 using System.Collections.Generic;
 using InventoryClass = Systems.Inventory.Inventory;
@@ -36,6 +36,8 @@ public class MenuManager : MonoBehaviour
     private PlayerMovement playerMovement;
     [Tooltip("Drag the player's toolbar InventorySelector GameObject here.")]
     [SerializeField] private InventorySelector playerToolbarInventorySelector;
+    [SerializeField] private GameObject playerUI; 
+    [SerializeField] private GameObject playerToolbarUI; 
 
     // Fields to track the currently active UI and data for states like InInventory or InComputer
     private GameObject currentActiveUIRoot; // Renamed for generality
@@ -84,10 +86,21 @@ public class MenuManager : MonoBehaviour
          {
               Debug.Log("MenuManager: Player Toolbar Inventory Selector assigned in Inspector.", this);
          }
+         if (playerUI == null)
+         {
+            GameObject playerUI = GameObject.FindGameObjectWithTag("PlayerUI");
+         }
+        if (playerToolbarUI == null)
+         {
+            GameObject playerToolbarUI = GameObject.FindGameObjectWithTag("PlayerToolbar");
+         }
     }
+
 
     private void Start()
     {
+       playerUI.SetActive(true);
+       playerToolbarUI.SetActive(true);
         // --- GET REFERENCES ---
         if (player != null)
         {
@@ -260,6 +273,8 @@ public class MenuManager : MonoBehaviour
         Time.timeScale = 1f;
         playerMovement.moveSpeed = 7f;
         interactionManager?.EnableRaycast();
+        playerUI.SetActive(true);
+        playerToolbarUI.SetActive(true);
 
         if (CameraManager.Instance != null)
         {
@@ -325,6 +340,7 @@ public class MenuManager : MonoBehaviour
     private void HandleInPauseMenuEntry(InteractionResponse response)
     {
         InMenu();
+        playerToolbarUI.SetActive(false);
         Time.timeScale = 1f;
         interactionManager?.DisableRaycast();
 
@@ -347,6 +363,7 @@ public class MenuManager : MonoBehaviour
     private void HandleInComputerStateEntry(InteractionResponse response)
     {
         InMenu();
+        playerToolbarUI.SetActive(false);
         interactionManager?.DisableRaycast();
 
         if (response is EnterComputerResponse computerResponse)
@@ -375,6 +392,7 @@ public class MenuManager : MonoBehaviour
     private void HandleInMinigameStateEntry(InteractionResponse response)
     {
         InMenu();
+        playerToolbarUI.SetActive(false);
         interactionManager?.DisableRaycast();
 
         if (response is StartMinigameResponse minigameResponse)
@@ -548,6 +566,7 @@ public class MenuManager : MonoBehaviour
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
         playerMovement.moveSpeed = 0f;
+        playerUI.SetActive(false);
     }
 
         public void OpenPauseMenu()

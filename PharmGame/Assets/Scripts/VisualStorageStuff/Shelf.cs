@@ -34,15 +34,6 @@ namespace VisualStorage
                  Debug.LogWarning($"Shelf ({gameObject.name}): Number of assigned ShelfSlots ({shelfSlots.Count}) does not match declared grid size ({rows}x{columns} = {rows * columns}).", this);
                  // Decide how to handle this mismatch - could resize the list, log error, etc.
              }
-
-            // Optional: Set the ParentShelf reference on each slot
-            // if (shelfSlots != null)
-            // {
-            //     foreach (var slot in shelfSlots)
-            //     {
-            //          if (slot != null) slot.ParentShelf = this;
-            //     }
-            // }
         }
 
         /// <summary>

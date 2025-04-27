@@ -31,9 +31,9 @@ namespace Systems.Inventory
         [Tooltip("How this item prefab occupies ShelfSlot grid spaces.")]
         public ShelfSlotArrangement shelfArrangement = ShelfSlotArrangement.OneByOne; // ADD THIS FIELD
 
-        [Header("Customer & Sale Info")] // Optional header for organization
-        [Tooltip("Can this item be legally bought by customers?")]
-        public bool isOverTheCounter;
+        [Header("Item Classification")] // New Header for labels/categories
+        [Tooltip("The primary classification or label for this item.")]
+        public ItemLabel itemLabel = ItemLabel.None; // Use the enum field
 
         [Tooltip("The price of this item when sold to a customer.")]
         public float price = 5.0f;

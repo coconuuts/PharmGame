@@ -39,6 +39,8 @@ namespace Systems.Inventory
         /// </summary>
         public int PhysicalSlotCount { get; private set; }
 
+        public Inventory ParentInventory { get; internal set; }
+
         private void Awake()
         {
             InitializeInventoryData();
@@ -84,6 +86,12 @@ namespace Systems.Inventory
             {
                 Debug.LogWarning($"Combiner ({gameObject.name}): Attempted to add a null, detail-less, or zero/negative quantity item.");
                 return false;
+            }
+
+            if (ParentInventory != null && !ParentInventory.CanAddItem(itemToAdd))
+            {
+                Debug.LogWarning($"Combiner ({gameObject.name}): Item '{itemToAdd.details?.Name ?? "Unknown"}' with label '{itemToAdd.details?.itemLabel.ToString() ?? "None"}' is not allowed in this inventory.");
+                return false; // Item type not allowed, reject addition
             }
 
             // --- Phase 1: Attempt to stack with existing items ---
