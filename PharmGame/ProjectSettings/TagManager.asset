@@ -29,6 +29,9 @@ TagManager:
   - NPCInventory
   - NPC Grid
   - PlayerUI
+  - PlayerToolbar
+  - SearchNPCPrompt
+  - InvalidItem
   layers:
   - Default
   - TransparentFX

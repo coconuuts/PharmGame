@@ -1,427 +1,517 @@
+// PrescriptionTableManager.cs
 using UnityEngine;
-using Systems.Inventory;
+using Systems.Inventory; // Ensure this matches your Inventory system namespace
 using System;
 using System.Collections.Generic;
+using UnityEngine.UI; // Needed for the Button component
+using System.Linq; // Needed for FirstOrDefault, Sum, Where
 
-public class PrescriptionTableManager : MonoBehaviour
+namespace Prescription // Use the Prescription namespace
 {
-    [Header("Main Inventories")]
-    [SerializeField] private Inventory mainPrescriptiontableInventory; // The inventory this manager primarily monitors
-    [SerializeField] private Inventory toolbarInventory; // The character's main inventory (toolbar)
-
-    [Header("UI Roots")]
-    [SerializeField] private GameObject prescriptionTableInventoryUIRoot; // The overall UI root for this manager's interface
-    [SerializeField] private GameObject pillInventoryUIRoot;
-    [SerializeField] private GameObject liquidInventoryUIRoot;
-    [SerializeField] private GameObject inhalerInventoryUIRoot;
-    [SerializeField] private GameObject insulinInventoryUIRoot;
-
-    [Header("Specific Prescription Inventories")]
-    [SerializeField] private Inventory pillInventory; // The Inventory component for the pill prescription table
-    [SerializeField] private Inventory liquidInventory; // The Inventory component for the liquid prescription table
-    [SerializeField] private Inventory inhalerInventory; // The Inventory component for the inhaler prescription table
-    [SerializeField] private Inventory insulinInventory; // The Inventory component for the insulin prescription table
-
-    [Header("Process Button")] // New Header for the button UI
-    [SerializeField] private GameObject processButtonUIRoot; // The button UI GameObject to activate/deactivate
-
-    // Using Dictionaries to map ItemLabels to their corresponding specific UI roots and Inventory components
-    private Dictionary<ItemLabel, GameObject> specificUIRoots;
-    private Dictionary<ItemLabel, Inventory> specificInventories;
-
-    // To track the previous active state of the main UI root
-    private bool _wasPrescriptionTableUIRootActive;
-
-    // To track which specific ItemLabel was relevant in the main inventory in the previous state
-    private ItemLabel _previousRelevantLabel = ItemLabel.None;
-
-    // To keep a reference to the specific inventory we are currently monitoring for button state
-    private Inventory _currentlyMonitoredSpecificInventory; // New field
-
-    public void Awake()
-    {
-        // Initialize the dictionaries mapping relevant ItemLabels to their specific UI GameObjects and Inventory components
-        specificUIRoots = new Dictionary<ItemLabel, GameObject>
-        {
-            { ItemLabel.PillStock, pillInventoryUIRoot },
-            { ItemLabel.LiquidStock, liquidInventoryUIRoot },
-            { ItemLabel.InhalerStock, inhalerInventoryUIRoot },
-            { ItemLabel.InsulinStock, insulinInventoryUIRoot }
-        };
-
-        specificInventories = new Dictionary<ItemLabel, Inventory>
-        {
-            { ItemLabel.PillStock, pillInventory },
-            { ItemLabel.LiquidStock, liquidInventory },
-            { ItemLabel.InhalerStock, inhalerInventory },
-            { ItemLabel.InsulinStock, insulinInventory }
-        };
-
-        // Ensure all specific inventory UI roots are initially inactive
-        SetAllSpecificInventoryUIRootsActive(false);
-
-        // Ensure the process button is initially inactive
-        if (processButtonUIRoot != null)
-        {
-             processButtonUIRoot.SetActive(false);
-        }
-         else
-        {
-             Debug.LogWarning("PrescriptionTableManager: Process Button UI Root is not assigned! Please assign it in the inspector.", this);
-        }
-
-        _currentlyMonitoredSpecificInventory = null; // Initialize
-    }
-
-    private void Start()
-    {
-        // Subscribe to the main inventory state changes once it's likely initialized
-        if (mainPrescriptiontableInventory != null && mainPrescriptiontableInventory.InventoryState != null)
-        {
-            mainPrescriptiontableInventory.InventoryState.AnyValueChanged += OnMainInventoryStateChanged;
-        }
-        else
-        {
-            Debug.LogError("PrescriptionTableManager: mainPrescriptiontableInventory or its InventoryState is null. Cannot subscribe to events.", this);
-        }
-
-        // Initialize the previous state tracker for the overall UI root
-        if (prescriptionTableInventoryUIRoot != null)
-        {
-             _wasPrescriptionTableUIRootActive = prescriptionTableInventoryUIRoot.activeInHierarchy;
-        }
-        else
-        {
-             Debug.LogError("PrescriptionTableManager: prescriptionTableInventoryUIRoot is not assigned! Functionality will be limited.", this);
-             _wasPrescriptionTableUIRootActive = false; // Default to false if not assigned
-        }
-
-        // Perform initial UI update and handle item move/button state based on starting conditions
-        UpdateUIRootsAndHandleItemMoveAndButtonState();
-    }
-
-    private void Update()
-    {
-        // Monitor the active state of the main Prescription Table UI root
-        if (prescriptionTableInventoryUIRoot != null)
-        {
-            bool isCurrentlyActive = prescriptionTableInventoryUIRoot.activeInHierarchy; // Use activeInHierarchy
-
-            // Detect if the active state of the overall UI root has changed
-            if (_wasPrescriptionTableUIRootActive != isCurrentlyActive)
-            {
-                // The active state of the overall UI root has changed
-                Debug.Log($"Prescription Table UI Root changed state: {_wasPrescriptionTableUIRootActive} -> {isCurrentlyActive}", this);
-
-                // Call the central update method which handles UI state, item movement, and button state
-                UpdateUIRootsAndHandleItemMoveAndButtonState();
-
-                // Update the tracker for the next frame AFTER handling the change
-                _wasPrescriptionTableUIRootActive = isCurrentlyActive;
-            }
-            // else: State hasn't changed this frame.
-            // Inventory changes while the root is active are handled by OnMainInventoryStateChanged.
-            // Specific inventory changes (for button state) are handled by OnSpecificInventoryStateChanged.
-        }
-    }
-
-
-    private void OnDestroy()
-    {
-        // Unsubscribe from the main inventory event
-        if (mainPrescriptiontableInventory != null && mainPrescriptiontableInventory.InventoryState != null)
-        {
-            mainPrescriptiontableInventory.InventoryState.AnyValueChanged -= OnMainInventoryStateChanged;
-        }
-
-        // Unsubscribe from the currently monitored specific inventory event if any
-        if (_currentlyMonitoredSpecificInventory != null && _currentlyMonitoredSpecificInventory.InventoryState != null)
-        {
-            _currentlyMonitoredSpecificInventory.InventoryState.AnyValueChanged -= OnSpecificInventoryStateChanged;
-            Debug.Log($"PrescriptionTableManager: Unsubscribed from specific inventory state changes on destroy.", this);
-        }
-    }
-
-    // This method is called whenever the mainPrescriptiontableInventory's state changes
-    private void OnMainInventoryStateChanged(ArrayChangeInfo<Item> changeInfo)
-    {
-        // When the main inventory changes, trigger the central update logic.
-        // This logic will handle item movement, specific UI state updates, and button state updates.
-        Debug.Log($"Main Prescription Table Inventory changed state. Triggering update. Change Type: {changeInfo.Type}", this);
-        UpdateUIRootsAndHandleItemMoveAndButtonState();
-    }
-
     /// <summary>
-    /// Central method to update specific UI root active states, manage specific inventory subscriptions,
-    /// handle item movement back to toolbar, and update the process button state.
+    /// Manages the top-level UI state and orchestrates the Prescription system using events.
+    /// Activates/Deactivates specific inventories, button, and output UI based on overall UI root state.
+    /// Fires events when the process button is clicked.
     /// </summary>
-    private void UpdateUIRootsAndHandleItemMoveAndButtonState()
+    public class PrescriptionTableManager : MonoBehaviour
     {
-        // Rule 1: If the overall UI root is inactive, all specific UIs and the button must be inactive.
-        if (prescriptionTableInventoryUIRoot != null && !prescriptionTableInventoryUIRoot.activeInHierarchy)
+        [Header("Inventories")] // Consolidated Header
+        [SerializeField] private Inventory mainPrescriptiontableInventory; // The inventory this manager primarily monitors (for button checks)
+        [SerializeField] private Inventory toolbarInventory; // The character's main inventory (for UI close item return, if needed)
+        [SerializeField] private Inventory outputInventory; // The inventory where crafted items appear
+
+        [Header("UI Roots")]
+        [SerializeField] private GameObject prescriptionTableInventoryUIRoot; // The overall UI root for this manager's interface
+        [SerializeField] private GameObject pillInventoryUIRoot;
+        [SerializeField] private GameObject liquidInventoryUIRoot;
+        [SerializeField] private GameObject inhalerInventoryUIRoot;
+        [SerializeField] private GameObject insulinInventoryUIRoot;
+        [SerializeField] private GameObject outputInventoryUIRoot; // UI root for the output inventory
+
+
+        [Header("Specific Prescription Inventories")]
+        [SerializeField] private Inventory pillInventory; // The Inventory component for the pill prescription table
+        [SerializeField] private Inventory liquidInventory; // The Inventory component for the liquid prescription table
+        [SerializeField] private Inventory inhalerInventory; // The Inventory component for the inhaler prescription table
+        [SerializeField] private Inventory insulinInventory; // The Inventory component for the insulin prescription table
+
+        [Header("Process Button")]
+        [SerializeField] private GameObject processButtonUIRoot; // The button UI GameObject to activate/deactivate
+        private Button _processButton; // Reference to the Button component
+
+        [Header("Crafting Recipes")] // New Header for recipes
+        [Tooltip("Define the recipes mapping secondary ingredients to results and required main ingredients.")]
+        [SerializeField] private List<CraftingRecipe> craftingRecipes; // List of recipes defined in inspector
+        private Dictionary<ItemDetails, CraftingRecipe> _recipeMap; // Dictionary for quick lookup
+
+
+        [Header("Processors")]
+        [Tooltip("Assign all concrete PrescriptionProcessor scripts here.")]
+        [SerializeField] private List<PrescriptionProcessor> allProcessors; // List of all processor scripts assigned in inspector
+        // Processors are self-sufficient and listen to events. Manager initializes them.
+
+
+        // Using Dictionaries to map ItemLabels to their corresponding specific UI roots and Inventory components
+        private Dictionary<ItemLabel, GameObject> specificUIRoots;
+        private Dictionary<ItemLabel, Inventory> specificInventories;
+
+        // To track the previous active state of the main UI root for detecting changes
+        private bool _wasPrescriptionTableUIRootActive;
+
+        // _activeProcessorLabel is still useful in OnProcessButtonClick to find the main item/processor type.
+        // It no longer drives UI visibility directly.
+        private ItemLabel _activeProcessorLabel = ItemLabel.None;
+
+
+        // Fields related to monitoring specific inventory content for button state are removed:
+        // private Inventory _currentlyMonitoredSpecificInventory;
+        // private ItemLabel _previousRelevantLabel;
+
+
+        public void Awake()
         {
-            SetAllSpecificInventoryUIRootsActive(false);
-            SetProcessButtonActive(false); // Also turn off the button
-            // Reset states when the UI is closed
-            _previousRelevantLabel = ItemLabel.None;
-            // Unsubscribe from the specific inventory when the UI is closed
-            ManageSpecificInventorySubscription(null);
-            Debug.Log("Overall Prescription Table UI is inactive. Specific UIs and Button forced off. States reset.", this);
-            return; // Stop here, no further logic needed if the main UI is off
-        }
+             // Ensure the namespace is set correctly for all related scripts
+            // Note: This is handled by the 'namespace' keyword in each script file.
+            // Ensure your .asmdef files (if used) correctly reference each other and include the namespaces.
 
-        // Rule 2: If the overall UI root IS active, determine specific UI state based on main inventory content,
-        // handle potential item movement, manage specific inventory subscription, and update button state.
-
-        if (mainPrescriptiontableInventory == null || mainPrescriptiontableInventory.InventoryState == null)
-        {
-            Debug.LogError("PrescriptionTableManager: Cannot update UI roots or handle item move. mainPrescriptiontableInventory or its InventoryState is null.", this);
-            SetAllSpecificInventoryUIRootsActive(false); // Default to off if inventory is invalid
-            SetProcessButtonActive(false); // Also turn off button if inventory is invalid
-            _previousRelevantLabel = ItemLabel.None; // Reset state
-            ManageSpecificInventorySubscription(null); // Ensure no subscription if main inventory is invalid
-            return;
-        }
-
-        // --- Determine the CURRENT relevant label based on main inventory content ---
-        ItemLabel currentRelevantLabel = FindRelevantLabelInMainInventory(); // Use helper
-
-        // --- Handle Item Movement if the relevant item was removed from the main inventory ---
-        // Condition: Overall UI is active (checked above), previously a specific UI was relevant,
-        // and now a different specific UI is relevant or none is relevant.
-        if (_previousRelevantLabel != ItemLabel.None && specificInventories.ContainsKey(_previousRelevantLabel) && currentRelevantLabel != _previousRelevantLabel)
-        {
-            Debug.Log($"Relevant item changed in main inventory ({_previousRelevantLabel} -> {currentRelevantLabel}). Checking specific inventory for item move back to toolbar.", this);
-
-            Inventory specificInvToMoveFrom = specificInventories[_previousRelevantLabel];
-
-            // Check if the specific inventory exists and contains any items
-            if (specificInvToMoveFrom != null && specificInvToMoveFrom.InventoryState != null && specificInvToMoveFrom.InventoryState.Count > 0)
+            // Initialize the dictionaries mapping relevant ItemLabels to their specific UI GameObjects and Inventory components
+            specificUIRoots = new Dictionary<ItemLabel, GameObject>
             {
-                Debug.Log($"Specific inventory for {_previousRelevantLabel} is active and contains items. Attempting to move item to toolbar.", this);
+                { ItemLabel.PillStock, pillInventoryUIRoot },
+                { ItemLabel.LiquidStock, liquidInventoryUIRoot },
+                { ItemLabel.InhalerStock, inhalerInventoryUIRoot },
+                { ItemLabel.InsulinStock, insulinInventoryUIRoot }
+            };
 
-                // Get the first item from the specific inventory (assuming it holds only one relevant item at a time)
-                Item itemToMove = specificInvToMoveFrom.InventoryState[0];
+            specificInventories = new Dictionary<ItemLabel, Inventory>
+            {
+                { ItemLabel.PillStock, pillInventory },
+                { ItemLabel.LiquidStock, liquidInventory },
+                { ItemLabel.InhalerStock, inhalerInventory },
+                { ItemLabel.InsulinStock, insulinInventory }
+            };
 
-                if (itemToMove != null && toolbarInventory != null && toolbarInventory.Combiner != null)
+            // Initialize the recipe map for quick lookup
+            _recipeMap = new Dictionary<ItemDetails, CraftingRecipe>();
+            if (craftingRecipes != null)
+            {
+                foreach (var recipe in craftingRecipes)
                 {
-                    // Attempt to add the item to the toolbar inventory
-                    bool addedToToolbar = toolbarInventory.Combiner.AddItem(itemToMove);
-
-                    if (addedToToolbar)
+                    if (recipe != null && recipe.secondaryIngredient != null)
                     {
-                        // If successfully added to the toolbar, remove it from the specific inventory
-                        bool removedFromSpecific = specificInvToMoveFrom.Combiner.TryRemoveAt(0); // Remove from the first slot
-
-                        if (removedFromSpecific)
+                        if (!_recipeMap.ContainsKey(recipe.secondaryIngredient))
                         {
-                            Debug.Log($"Successfully moved item '{itemToMove.details?.Name ?? "Unknown"}' from specific inventory ({_previousRelevantLabel}) to toolbar.", this);
-                            // Item moved, the specific inventory is now empty.
-                            // The UI update below will turn off the specific UI, and the button update will turn off the button.
+                             _recipeMap.Add(recipe.secondaryIngredient, recipe);
+                             Debug.Log($"Added recipe: Secondary='{recipe.secondaryIngredient.Name}' -> Result='{recipe.resultItem?.Name}'", this);
                         }
                         else
                         {
-                             // This shouldn't happen if AddItem succeeded and TryRemoveAt(0) is valid for this setup
-                             Debug.LogError($"Failed to remove item '{itemToMove.details?.Name ?? "Unknown"}' from specific inventory ({_previousRelevantLabel}) AFTER successfully adding to toolbar. Inventory state might be inconsistent!", this);
-                             // Inventory state is messed up, but don't want to lose the item. Leave it in both? Or remove from toolbar? Let's leave in both and log error.
+                            Debug.LogWarning($"Crafting Recipe list contains a duplicate secondary ingredient details: '{recipe.secondaryIngredient.Name}'. Only the first recipe for this ingredient will be used.", this);
                         }
                     }
                     else
                     {
-                        Debug.LogWarning($"Failed to add item '{itemToMove.details?.Name ?? "Unknown"}' from specific inventory ({_previousRelevantLabel}) to toolbar. Leaving item in specific inventory.", this);
-                        // If it can't go to the toolbar, we leave it in the specific inventory.
-                        // The UI update below will turn off the specific UI, making it inaccessible until
-                        // the correct item is back in the main inventory or the item is manually moved.
-                        // The button state will update based on the item still being present here.
+                        Debug.LogWarning("Crafting Recipe list contains a null entry or an entry with a null secondary ingredient (ItemDetails). Cannot add recipe.", this);
+                    }
+                }
+            }
+            else
+            {
+                 Debug.LogWarning("PrescriptionTableManager: Crafting Recipes list is null! Define your recipes in the inspector.", this);
+            }
+
+
+            // Initialize processors
+            if (allProcessors != null)
+            {
+                foreach (var processor in allProcessors)
+                {
+                    if (processor != null)
+                    {
+                         // Pass the specific inventory for this processor's type, output inventory, and recipe map
+                         Inventory specificInvForProcessor = specificInventories.ContainsKey(processor.ProcessorType) ? specificInventories[processor.ProcessorType] : null;
+                         if (specificInvForProcessor != null)
+                         {
+                              processor.Initialize(specificInvForProcessor, outputInventory, _recipeMap);
+                         }
+                         else
+                         {
+                             Debug.LogWarning($"Processor '{processor.GetType().Name}' handles unsupported ItemLabel '{processor.ProcessorType}' or missing specific inventory. It will not be fully initialized.", this);
+                         }
+                    }
+                }
+            }
+            else
+            {
+                Debug.LogWarning("PrescriptionTableManager: All Processors list is null! Assign your processor scripts in the inspector.", this);
+            }
+
+
+            // Ensure UI roots are initially inactive (state will be set in Start/Update based on overall root active state)
+            SetAllSpecificInventoryUIRootsActive(false);
+            if (outputInventoryUIRoot != null) SetOutputInventoryUIActive(false);
+            if (processButtonUIRoot != null) SetProcessButtonActive(false);
+
+        }
+
+        private void Start()
+        {
+            // We no longer subscribe to main inventory state changes for UI visibility logic.
+            // The only subscription needed is to the overall UI root state changes.
+
+            if (prescriptionTableInventoryUIRoot != null)
+            {
+                 _wasPrescriptionTableUIRootActive = prescriptionTableInventoryUIRoot.activeInHierarchy;
+            }
+             else
+             {
+                 Debug.LogError("PrescriptionTableManager: prescriptionTableInventoryUIRoot is not assigned! Cannot monitor UI state.", this);
+                 _wasPrescriptionTableUIRootActive = false;
+             }
+             if (outputInventoryUIRoot == null) Debug.LogWarning("PrescriptionTableManager: Output Inventory UI Root is not assigned!", this);
+
+
+            // --- Subscribe to relevant Prescription Events ---
+            PrescriptionEvents.OnPrescriptionUIOpened += HandlePrescriptionUIOpened; // New handler
+            PrescriptionEvents.OnPrescriptionUIClosed += HandlePrescriptionUIClosed; // Keep this handler
+
+            // We still subscribe to crafting results to update button state (interactability) or provide feedback
+            PrescriptionEvents.OnCraftingComplete += HandleCraftingComplete;
+            PrescriptionEvents.OnCraftingFailed += HandleCraftingFailed;
+
+
+            // Get the Button component and hook up the click event to fire an EVENT
+            if (processButtonUIRoot != null)
+            {
+                _processButton = processButtonUIRoot.GetComponent<Button>();
+                if (_processButton != null)
+                {
+                    _processButton.onClick.AddListener(OnProcessButtonClick); // Button click fires event after checks
+                     Debug.Log("Process button click listener added to fire OnProcessButtonClicked.", this);
+                }
+                else
+                {
+                    Debug.LogError("PrescriptionTableManager: Process Button UI Root has no Button component! Please add one.", this);
+                }
+            }
+
+            // Perform initial UI state update based on the overall root's current state
+            UpdateOverallUIState(); // New method to check state and fire open/close event
+        }
+
+        private void Update()
+        {
+            // Monitor the active state of the main Prescription Table UI root
+            if (prescriptionTableInventoryUIRoot != null)
+            {
+                bool isCurrentlyActive = prescriptionTableInventoryUIRoot.activeInHierarchy;
+
+                // Detect if the active state of the overall UI root has changed
+                if (_wasPrescriptionTableUIRootActive != isCurrentlyActive)
+                {
+                    Debug.Log($"Prescription Table UI Root changed state: {_wasPrescriptionTableUIRootActive} -> {isCurrentlyActive}.", this);
+
+                    // Update the overall UI state based on the change
+                    UpdateOverallUIState();
+
+                    // Update the tracker for the next frame
+                    _wasPrescriptionTableUIRootActive = isCurrentlyActive;
+                }
+            }
+        }
+
+
+        private void OnDestroy()
+        {
+            // Remove button listener
+            if (_processButton != null)
+            {
+                 _processButton.onClick.RemoveListener(OnProcessButtonClick);
+                 Debug.Log("Process button click listener removed.", this);
+            }
+
+            // --- Unsubscribe from Prescription Events ---
+            PrescriptionEvents.OnPrescriptionUIOpened -= HandlePrescriptionUIOpened;
+            PrescriptionEvents.OnPrescriptionUIClosed -= HandlePrescriptionUIClosed;
+            PrescriptionEvents.OnCraftingComplete -= HandleCraftingComplete;
+            PrescriptionEvents.OnCraftingFailed -= HandleCraftingFailed;
+            // Unsubscribe from OnProcessButtonClicked event - this is handled by the Processors themselves in OnDisable
+        }
+
+        /// <summary>
+        /// Checks the current active state of the overall UI root and fires the appropriate event.
+        /// </summary>
+        private void UpdateOverallUIState()
+        {
+            if (prescriptionTableInventoryUIRoot == null) return;
+
+            bool isCurrentlyActive = prescriptionTableInventoryUIRoot.activeInHierarchy;
+
+            if (isCurrentlyActive)
+            {
+                 PrescriptionEvents.InvokePrescriptionUIOpened();
+            }
+            else
+            {
+                 PrescriptionEvents.InvokePrescriptionUIClosed();
+            }
+        }
+
+
+        // OnMainInventoryStateChanged is removed as it no longer drives UI visibility.
+        // CheckForSetupReady is removed as it no longer drives UI visibility or setup readiness events.
+        // ManageSpecificInventorySubscription and OnSpecificInventoryStateChanged are removed.
+
+
+        /// <summary>
+        /// Handles the click event from the process button.
+        /// Performs checks (items present, recipe exists, quantity sufficient) and fires the OnProcessButtonClicked event.
+        /// </summary>
+        public void OnProcessButtonClick()
+        {
+            Debug.Log("Process Button Clicked! Attempting to fire OnProcessButtonClicked event.", this);
+
+            // Determine the current relevant label from the main inventory for checking
+            ItemLabel currentRelevantLabel = FindRelevantLabelInMainInventory();
+            _activeProcessorLabel = currentRelevantLabel; // Update active label here
+
+            // We need the specific inventory that corresponds to the relevant label
+            Inventory specificInv = null;
+            if (currentRelevantLabel != ItemLabel.None && specificInventories.TryGetValue(currentRelevantLabel, out specificInv))
+            {
+                // Find the item instances required for the event parameters
+                Item secondaryItem = specificInv.InventoryState?.Count > 0 ? specificInv.InventoryState[0] : null;
+
+                // Need the *specific* item instance from the main inventory that corresponds to _activeProcessorLabel
+                Item mainItem = mainPrescriptiontableInventory?.InventoryState?.GetCurrentArrayState()?.FirstOrDefault(item => item != null && item.details != null && item.details.itemLabel == currentRelevantLabel);
+
+                // Check if items are valid and a recipe exists for the secondary item
+                 if (mainItem != null && mainItem.details != null && secondaryItem != null && secondaryItem.details != null && _recipeMap.TryGetValue(secondaryItem.details, out CraftingRecipe recipe))
+                 {
+                      // Pre-check quantities before firing the event
+                      int availableMainQty = mainPrescriptiontableInventory.InventoryState.GetCurrentArrayState().Where(item => item != null && item.details == recipe.mainIngredientToConsume).Sum(item => item.quantity);
+                       int availableSecondaryQty = specificInv.InventoryState.GetCurrentArrayState().Where(item => item != null && item.details == recipe.secondaryIngredient).Sum(item => item.quantity);
+
+                      if (availableMainQty >= recipe.mainQuantityToConsume && availableSecondaryQty >= recipe.secondaryQuantityToConsume)
+                      {
+                          // All conditions met, fire the event with all necessary data
+                          PrescriptionEvents.InvokeProcessButtonClicked(currentRelevantLabel, mainPrescriptiontableInventory, mainItem, specificInv, secondaryItem);
+                          Debug.Log("Conditions met. OnProcessButtonClicked event fired.", this);
+
+                          // Button interactability might be temporarily disabled here or handled by a listener
+                          // For now, rely on processor success/failure to trigger feedback.
+                      }
+                      else
+                      {
+                          Debug.LogWarning("Process button clicked, but conditions NOT met for firing OnProcessButtonClicked. Insufficient quantities.", this);
+                          // TODO: Provide feedback to the player about insufficient quantity.
+                      }
+                 }
+                 else
+                 {
+                      // Debugging which item/recipe is missing/invalid
+                      if (mainItem == null || mainItem.details == null) Debug.LogWarning($"OnProcessButtonClick: Main item invalid for label {currentRelevantLabel}.");
+                      if (secondaryItem == null || secondaryItem.details == null) Debug.LogWarning($"OnProcessButtonClick: Secondary item invalid from specific inventory.");
+                      if (secondaryItem != null && secondaryItem.details != null && !_recipeMap.ContainsKey(secondaryItem.details)) Debug.LogWarning($"OnProcessButtonClick: No recipe found for secondary item '{secondaryItem.details.Name}'.");
+                      Debug.LogWarning("Process button clicked, but ingredient items or recipe invalid. Cannot fire event.", this);
+                 }
+            }
+            else
+            {
+                Debug.LogWarning("Process button clicked, but no relevant item found in main inventory or corresponding specific inventory missing/empty. Cannot fire event.", this);
+                // This state should theoretically not be possible if the button is only interactable when items are present,
+                // but the button is now always visible when the UI is open. Added safety logs.
+            }
+        }
+
+
+        // --- Event Handlers ---
+
+        /// <summary>
+        /// Handles the OnPrescriptionUIOpened event. Activates all relevant UI roots and the button.
+        /// </summary>
+        private void HandlePrescriptionUIOpened()
+        {
+            Debug.Log("HandlePrescriptionUIOpened: Received event. Activating all related UI.", this);
+
+            // Activate all specific UI roots
+            SetAllSpecificInventoryUIRootsActive(true);
+            Debug.Log("Activated all specific UI roots.", this);
+
+            // Activate the process button UI root
+            SetProcessButtonActive(true);
+            Debug.Log("Activated process button UI root.", this);
+
+            // Activate the Output UI root
+            SetOutputInventoryUIActive(true);
+            Debug.Log("Activated Output UI root.", this);
+
+            // _activeProcessorLabel does NOT need to be set here. It's determined OnProcessButtonClick.
+        }
+
+
+        /// <summary>
+        /// Handles the OnPrescriptionUIClosed event. Deactivates all relevant UI roots and removes item movement logic.
+        /// </summary>
+        private void HandlePrescriptionUIClosed()
+        {
+            Debug.Log("HandlePrescriptionUIClosed: Received event. Deactivating all related UI and skipping item cleanup.", this);
+
+            // Deactivate all specific UI roots
+            SetAllSpecificInventoryUIRootsActive(false);
+            Debug.Log("Deactivated all specific UI roots.", this);
+
+            // Deactivate the process button
+            SetProcessButtonActive(false);
+            Debug.Log("Deactivated process button.", this);
+
+            // Deactivate the Output UI root
+            SetOutputInventoryUIActive(false);
+            Debug.Log("Deactivated Output UI root.", this);
+
+
+            // *** REMOVED ITEM MOVEMENT LOGIC ***
+            // Items will now STAY in the specific and output inventories when the UI is closed.
+            // If you need item movement on UI close, this logic would need to be added back here.
+            // The logic for moving items back to toolbar based on main item removal (previous versions) is also gone.
+            // *** END REMOVAL ***
+
+
+            // Reset active label tracker
+            _activeProcessorLabel = ItemLabel.None; // Reset active label when UI closes
+            Debug.Log("Reset active label tracker.", this);
+        }
+
+        /// <summary>
+        /// Handles the OnCraftingComplete event. Provides feedback/updates related to successful crafting.
+        /// UI visibility is NOT managed here anymore.
+        /// </summary>
+        private void HandleCraftingComplete(ItemLabel label, Item craftedItem)
+        {
+            Debug.Log($"HandleCraftingComplete: Received event for label {label} and crafted item '{craftedItem?.details?.Name}'. Crafting successful feedback/updates go here.", this);
+            // UI visibility is already handled by OnPrescriptionUIOpened/Closed events.
+            // This handler can be used for effects, sounds, player feedback messages, etc.
+        }
+
+         /// <summary>
+         /// Handles the OnCraftingFailed event. Provides feedback/updates related to crafting failure.
+         /// UI visibility is NOT managed here anymore.
+         /// </summary>
+         private void HandleCraftingFailed(ItemLabel label, string reason)
+         {
+            Debug.LogWarning($"HandleCraftingFailed: Received event for label {label} with reason '{reason}'. Crafting failed feedback/updates go here.", this);
+            // UI visibility is already handled by OnPrescriptionUIOpened/Closed events.
+            // This handler can be used for failure effects, sounds, player feedback messages, etc.
+         }
+
+
+        /// <summary>
+        /// Sets the active state of the process button UI root GameObject.
+        /// Called by HandlePrescriptionUIOpened/Closed.
+        /// </summary>
+        private void SetProcessButtonActive(bool active)
+        {
+            // Only change state if necessary and if the button GameObject is assigned
+            if (processButtonUIRoot != null && processButtonUIRoot.activeSelf != active)
+            {
+                 processButtonUIRoot.SetActive(active);
+                 // Debug.Log($"Process Button UI Root set active: {active}", this); // Less noisy log
+            }
+            else if (processButtonUIRoot == null)
+            {
+                 // Warning is already logged in Awake if not assigned
+            }
+        }
+
+         /// <summary>
+         /// Helper method to set the active state of the Output Inventory UI root GameObject.
+         /// Called by HandlePrescriptionUIOpened/Closed.
+         /// </summary>
+         private void SetOutputInventoryUIActive(bool active)
+         {
+              if (outputInventoryUIRoot != null && outputInventoryUIRoot.activeSelf != active)
+              {
+                   outputInventoryUIRoot.SetActive(active);
+                   // Debug.Log($"Output Inventory UI Root set active: {active}", this); // Less noisy log
+              }
+              else if (outputInventoryUIRoot == null)
+             {
+                  // Warning is already logged in Start if not assigned
+             }
+         }
+
+
+        /// <summary>
+        /// Helper method to set the active state of all tracked specific UI roots GameObjects.
+        /// Called by HandlePrescriptionUIOpened/Closed.
+        /// </summary>
+        private void SetAllSpecificInventoryUIRootsActive(bool active)
+        {
+            if (specificUIRoots == null) return;
+            // Iterate through all specific UI roots and set their active state
+            foreach (var pair in specificUIRoots)
+            {
+                if (pair.Value != null)
+                {
+                    // Only change state if necessary
+                    if (pair.Value.activeSelf != active)
+                    {
+                       pair.Value.SetActive(active);
+                       // Debug.Log($"Set specific UI root for {pair.Key} active: {active}.", this);
                     }
                 }
                 else
                 {
-                    if (itemToMove == null) Debug.LogWarning($"Item to move from specific inventory ({_previousRelevantLabel}) is null.", this);
-                    if (toolbarInventory == null) Debug.LogError("Toolbar Inventory is not assigned!", this);
-                    if (toolbarInventory != null && toolbarInventory.Combiner == null) Debug.LogError("Toolbar Inventory's Combiner is null!", this);
-                     Debug.LogWarning($"Skipping item move attempt from specific inventory due to missing references.", this);
+                    Debug.LogWarning($"PrescriptionTableManager: Specific UI Root GameObject for {pair.Key} is not assigned!", this);
                 }
             }
-            else
-            {
-                 Debug.Log($"Specific inventory for {_previousRelevantLabel} is empty or not assigned. No item to move back to toolbar.", this);
-            }
         }
 
-        // --- Manage Subscription to the Specific Inventory ---
-        // Determine which specific inventory we should NOW be monitoring for button state
-        Inventory newInventoryToMonitor = null;
-        if (specificInventories.TryGetValue(currentRelevantLabel, out Inventory foundInventory))
+         // SetSingleSpecificUIRootActive is no longer needed as all are active/inactive together.
+
+
+        /// <summary>
+        /// Helper method to find the first item in the main inventory's physical slots that matches one of the specific processor labels.
+        /// Returns the ItemLabel of that item. Used by OnProcessButtonClick to identify the target processor.
+        /// </summary>
+        private ItemLabel FindRelevantLabelInMainInventory()
         {
-            newInventoryToMonitor = foundInventory;
+             if (mainPrescriptiontableInventory == null || mainPrescriptiontableInventory.InventoryState == null || mainPrescriptiontableInventory.Combiner == null)
+             {
+                  Debug.LogWarning("FindRelevantLabelInMainInventory: Main Inventory, InventoryState, or Combiner is null.", this);
+                  return ItemLabel.None;
+             }
+
+             Item[] currentItems = mainPrescriptiontableInventory.InventoryState.GetCurrentArrayState();
+             int physicalSlotCount = mainPrescriptiontableInventory.Combiner.PhysicalSlotCount;
+
+             // Loop through physical slots only
+             for (int i = 0; i < physicalSlotCount; i++)
+             {
+                  // Safety check in case the array returned is unexpectedly smaller than physical count
+                  if (i < currentItems.Length)
+                  {
+                       Item item = currentItems[i];
+
+                       if (item != null && item.details != null)
+                       {
+                            ItemLabel currentItemLabel = item.details.itemLabel;
+                            // Check if this item's label is one of the stock labels that correspond to a specific processor
+                            // We don't need specificUIRoots.ContainsKey here anymore, just check if it's a valid processor type label.
+                            // We can check against the keys in the specificInventories dictionary.
+                            if (specificInventories.ContainsKey(currentItemLabel))
+                            {
+                                 return currentItemLabel; // Return the ItemLabel of the first relevant item found
+                            }
+                       }
+                  }
+                  else
+                  {
+                       Debug.LogError($"FindRelevantLabelInMainInventory: Loop index {i} exceeded currentItems array length ({currentItems.Length}) while still within physical slots ({physicalSlotCount}). This indicates an inconsistency in the Inventory system.", this);
+                       break; // Prevent index out of bounds
+                  }
+             }
+             return ItemLabel.None; // No relevant label found in physical slots
         }
-        ManageSpecificInventorySubscription(newInventoryToMonitor);
-
-
-        // --- Update Specific UI Root Active States ---
-        // Activate the one matching currentRelevantLabel, deactivate all others.
-        foreach (var pair in specificUIRoots)
-        {
-            bool shouldBeActive = (pair.Key == currentRelevantLabel);
-
-            // Check if the specific UI root GameObject is assigned in the inspector
-            if (pair.Value != null)
-            {
-                pair.Value.SetActive(shouldBeActive);
-            }
-            else
-            {
-                Debug.LogWarning($"PrescriptionTableManager: Specific UI Root GameObject for {pair.Key} is not assigned! Please assign it in the inspector.", this);
-            }
-        }
-
-        // --- Update the Process Button State ---
-        // This must happen *after* ManageSpecificInventorySubscription
-        // because it relies on _currentlyMonitoredSpecificInventory
-        UpdateProcessButtonState();
-
-
-        // --- Update the previous relevant label for the next check ---
-        _previousRelevantLabel = currentRelevantLabel;
-    }
-
-    /// <summary>
-    /// Manages the subscription to the AnyValueChanged event of the specific inventory
-    /// that is currently relevant based on the main inventory.
-    /// </summary>
-    private void ManageSpecificInventorySubscription(Inventory inventoryToSubscribe)
-    {
-        // If the inventory to subscribe to is the same as the one we're already monitoring, do nothing
-        if (_currentlyMonitoredSpecificInventory == inventoryToSubscribe)
-        {
-            // Debug.Log("Subscription already correct.", this);
-            return;
-        }
-
-        // If we were previously monitoring an inventory, unsubscribe from its event
-        if (_currentlyMonitoredSpecificInventory != null && _currentlyMonitoredSpecificInventory.InventoryState != null)
-        {
-            _currentlyMonitoredSpecificInventory.InventoryState.AnyValueChanged -= OnSpecificInventoryStateChanged;
-            Debug.Log($"PrescriptionTableManager: Unsubscribed from {_currentlyMonitoredSpecificInventory.gameObject.name}'s state changes.", this);
-        }
-
-        // Set the new inventory to monitor
-        _currentlyMonitoredSpecificInventory = inventoryToSubscribe;
-
-        // If the new inventory is valid, subscribe to its event
-        if (_currentlyMonitoredSpecificInventory != null && _currentlyMonitoredSpecificInventory.InventoryState != null)
-        {
-            _currentlyMonitoredSpecificInventory.InventoryState.AnyValueChanged += OnSpecificInventoryStateChanged;
-            Debug.Log($"PrescriptionTableManager: Subscribed to {_currentlyMonitoredSpecificInventory.gameObject.name}'s state changes.", this);
-            // Immediately trigger the button state update based on the content of the newly monitored inventory.
-            // This is important if the inventory already contains items when it becomes the relevant one.
-             UpdateProcessButtonState();
-        }
-        else
-        {
-             // If newInventoryToMonitor is null, ensure button is off and state is correct
-             Debug.Log("PrescriptionTableManager: No specific inventory to subscribe to.", this);
-             SetProcessButtonActive(false);
-        }
-    }
-
-
-    /// <summary>
-    /// Handles state changes on the specific inventory we are currently monitoring.
-    /// </summary>
-    private void OnSpecificInventoryStateChanged(ArrayChangeInfo<Item> changeInfo)
-    {
-        // The content of the currently monitored specific inventory changed.
-        // Update the state of the process button.
-        Debug.Log($"Specific Inventory ({_currentlyMonitoredSpecificInventory?.gameObject.name}) state changed. Triggering Process Button update. Change Type: {changeInfo.Type}", this);
-        UpdateProcessButtonState();
-    }
-
-
-    /// <summary>
-    /// Sets the active state of the process button based on the content of the currently monitored specific inventory.
-    /// </summary>
-    private void UpdateProcessButtonState()
-    {
-        bool shouldButtonBeActive = false;
-
-        // The button should be active only if the overall UI is open AND
-        // the currently monitored specific inventory exists AND has items.
-        if (prescriptionTableInventoryUIRoot != null && prescriptionTableInventoryUIRoot.activeInHierarchy &&
-            _currentlyMonitoredSpecificInventory != null && _currentlyMonitoredSpecificInventory.InventoryState != null)
-        {
-             shouldButtonBeActive = _currentlyMonitoredSpecificInventory.InventoryState.Count > 0;
-        }
-
-        SetProcessButtonActive(shouldButtonBeActive);
-    }
-
-    /// <summary>
-    /// Helper method to set the active state of the process button UI root.
-    /// </summary>
-    private void SetProcessButtonActive(bool active)
-    {
-        // Only change state if necessary
-        if (processButtonUIRoot != null && processButtonUIRoot.activeSelf != active)
-        {
-             processButtonUIRoot.SetActive(active);
-             Debug.Log($"Process Button UI Root set active: {active}", this);
-        }
-        else if (processButtonUIRoot == null)
-        {
-             Debug.LogWarning("PrescriptionTableManager: Process Button UI Root is null, cannot set active state.", this);
-        }
-    }
-
-
-    /// <summary>
-    /// Helper method to set the active state of all tracked specific UI roots.
-    /// </summary>
-    private void SetAllSpecificInventoryUIRootsActive(bool active)
-    {
-        if (specificUIRoots == null) return; // Should not happen after Awake, but good practice
-        foreach (var pair in specificUIRoots)
-        {
-            if (pair.Value != null)
-            {
-                pair.Value.SetActive(active);
-            }
-            else
-            {
-                Debug.LogWarning($"PrescriptionTableManager: Specific UI Root GameObject for {pair.Key} is not assigned!", this);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Helper method to find the first relevant item label in the main inventory.
-    /// </summary>
-    private ItemLabel FindRelevantLabelInMainInventory()
-    {
-         if (mainPrescriptiontableInventory == null || mainPrescriptiontableInventory.InventoryState == null)
-         {
-              return ItemLabel.None;
-         }
-
-         Item[] currentItems = mainPrescriptiontableInventory.InventoryState.GetCurrentArrayState();
-         // Iterate through physical slots only (excluding the ghost slot if GetCurrentArrayState provides it)
-         // Assuming the relevant item will always be in a physical slot (0 to PhysicalSlotCount-1)
-         int physicalSlotCount = mainPrescriptiontableInventory.Combiner != null ? mainPrescriptiontableInventory.Combiner.PhysicalSlotCount : currentItems.Length; // Fallback if Combiner is null
-
-         for (int i = 0; i < physicalSlotCount; i++)
-         {
-              Item item = currentItems[i]; // Access item via index
-
-              if (item != null && item.details != null)
-              {
-                   ItemLabel currentItemLabel = item.details.itemLabel;
-                   if (specificUIRoots.ContainsKey(currentItemLabel)) // Check if it's one of our tracked labels
-                   {
-                        return currentItemLabel; // Return the first relevant label found
-                   }
-              }
-         }
-         return ItemLabel.None; // No relevant label found in physical slots
     }
 }
