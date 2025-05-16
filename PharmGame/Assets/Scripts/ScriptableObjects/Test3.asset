@@ -12,16 +12,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d9c72e01113f4e84cb78436fbc4ee80d, type: 3}
   m_Name: Test3
   m_EditorClassIdentifier: 
-  Name: 
-  maxStack: 1
+  Name: Test3
+  maxStack: 10
   Id:
-    Part1: 0
-    Part2: 0
-    Part3: 0
-    Part4: 0
-  Icon: {fileID: 0}
+    Part1: 568358213
+    Part2: 1083832071
+    Part3: 2463860625
+    Part4: 175122566
+  Icon: {fileID: -2084204989, guid: ca398d286c584a94a9217528227c88a2, type: 3}
   Description: 
   prefab3D: {fileID: 0}
   shelfArrangement: 0
-  itemLabel: 0
+  itemLabel: 7
   price: 5

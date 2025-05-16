@@ -1,4 +1,4 @@
-    using UnityEngine;
+using UnityEngine;
 using System;
 using System.Collections.Generic;
 using InventoryClass = Systems.Inventory.Inventory;
@@ -6,7 +6,7 @@ using Systems.Interaction; // Needed for InteractionResponse types
 using System.Collections;
 using Systems.CameraControl;
 using Systems.Minigame;
-using Systems.Inventory;    
+using Systems.Inventory;
 
 public class MenuManager : MonoBehaviour
 {
@@ -19,7 +19,8 @@ public class MenuManager : MonoBehaviour
         InInventory,
         InPauseMenu,
         InComputer,
-        InMinigame // ADD THIS STATE
+        InMinigame,
+        InCrafting // ADD THIS STATE
     }
     // ------------------------
 
@@ -36,14 +37,18 @@ public class MenuManager : MonoBehaviour
     private PlayerMovement playerMovement;
     [Tooltip("Drag the player's toolbar InventorySelector GameObject here.")]
     [SerializeField] private InventorySelector playerToolbarInventorySelector;
-    [SerializeField] private GameObject playerUI; 
-    [SerializeField] private GameObject playerToolbarUI; 
+    [SerializeField] private GameObject playerUI;
+    [SerializeField] private GameObject playerToolbarUI;
 
     // Fields to track the currently active UI and data for states like InInventory or InComputer
     private GameObject currentActiveUIRoot; // Renamed for generality
     private InventoryClass currentOpenInventoryComponent;
     private ComputerInteractable currentComputerInteractable;
     private CashRegisterInteractable currentCashRegisterInteractable;
+     // --- ADDED FIELD FOR CRAFTING STATION ---
+     private CraftingStation currentCraftingStation;
+     // --------------------------------------
+
 
     // --- ADDED FIELDS FOR CAMERA MANAGEMENT ---
     private Transform playerCameraTransform; // This should be set by CameraManager Start now, but kept for reference if needed.
@@ -74,7 +79,7 @@ public class MenuManager : MonoBehaviour
                  playerToolbarInventorySelector = playerToolbarObject.GetComponent<InventorySelector>();
                  if (playerToolbarInventorySelector == null)
                  {
-                      Debug.LogError($"MenuManager: GameObject with tag 'PlayerToolbarInventory' found, but it does not have an InventorySelector component.", playerToolbarObject);
+                      Debug.LogError($"MenuManager: GameObject with tag '{playerToolbarObject.tag}' found, but it does not have an InventorySelector component.", playerToolbarObject);
                  }
              }
              else
@@ -88,19 +93,36 @@ public class MenuManager : MonoBehaviour
          }
          if (playerUI == null)
          {
-            GameObject playerUI = GameObject.FindGameObjectWithTag("PlayerUI");
+            GameObject foundPlayerUI = GameObject.FindGameObjectWithTag("PlayerUI"); // Use a different local variable name
+            if (foundPlayerUI != null)
+            {
+                 playerUI = foundPlayerUI;
+            }
+            else
+            {
+                 Debug.LogError("MenuManager: Player UI GameObject with tag 'PlayerUI' not found!", this);
+            }
          }
         if (playerToolbarUI == null)
          {
-            GameObject playerToolbarUI = GameObject.FindGameObjectWithTag("PlayerToolbar");
+            GameObject foundPlayerToolbarUI = GameObject.FindGameObjectWithTag("PlayerToolbar"); // Use a different local variable name
+            if (foundPlayerToolbarUI != null)
+            {
+                 playerToolbarUI = foundPlayerToolbarUI;
+            }
+            else
+            {
+                 Debug.LogError("MenuManager: Player Toolbar UI GameObject with tag 'PlayerToolbar' not found!", this);
+            }
          }
     }
 
 
     private void Start()
     {
-       playerUI.SetActive(true);
-       playerToolbarUI.SetActive(true);
+       if(playerUI != null) playerUI.SetActive(true); // Added null checks
+       if(playerToolbarUI != null) playerToolbarUI.SetActive(true); // Added null checks
+
         // --- GET REFERENCES ---
         if (player != null)
         {
@@ -109,7 +131,7 @@ public class MenuManager : MonoBehaviour
 
              playerMovement = player.GetComponent<PlayerMovement>();
              if (playerMovement == null) Debug.LogWarning("MenuManager: Player GameObject does not have a PlayerMovement component! Player movement control will not work.", player);
-             
+
         }
         else
         {
@@ -125,7 +147,8 @@ public class MenuManager : MonoBehaviour
             { GameState.InInventory, HandleInInventoryStateEntry },
             { GameState.InPauseMenu, HandleInPauseMenuEntry },
             { GameState.InComputer, HandleInComputerStateEntry },
-            { GameState.InMinigame, HandleInMinigameStateEntry } // REGISTER MINIGAME ENTRY HANDLER
+            { GameState.InMinigame, HandleInMinigameStateEntry },
+            { GameState.InCrafting, HandleInCraftingStateEntry } // REGISTER CRAFTING ENTRY HANDLER
         };
 
          stateExitActions = new Dictionary<GameState, StateActionHandler>
@@ -134,7 +157,8 @@ public class MenuManager : MonoBehaviour
              { GameState.InInventory, HandleInInventoryStateExit },
              { GameState.InPauseMenu, HandleInPauseMenuExit },
              { GameState.InComputer, HandleInComputerStateExit },
-             { GameState.InMinigame, HandleInMinigameStateExit } // REGISTER MINIGAME EXIT HANDLER
+             { GameState.InMinigame, HandleInMinigameStateExit },
+             { GameState.InCrafting, HandleInCraftingStateExit } // REGISTER CRAFTING EXIT HANDLER
          };
         // ----------------------------------------------------------
 
@@ -163,10 +187,10 @@ public class MenuManager : MonoBehaviour
     {
         if (Input.GetKeyDown(KeyCode.Escape))
         {
-            // Allow escaping from Minigame state too
-            if (currentState == GameState.InInventory || currentState == GameState.InPauseMenu || currentState == GameState.InComputer || currentState == GameState.InMinigame) // ADD InMinigame
+            // Allow escaping from inventory, pause, computer, minigame, AND crafting states
+            if (currentState != GameState.Playing) // Simplified check: if not Playing, Escape goes back to Playing
             {
-                SetState(GameState.Playing, null); // Exiting via Escape
+                SetState(GameState.Playing, null); // Exiting via Escape (no specific response)
             }
             else if (currentState == GameState.Playing)
             {
@@ -192,9 +216,15 @@ public class MenuManager : MonoBehaviour
                   Debug.Log($"MenuManager: Already in {currentState} state with the same inventory '{currentOpenInventoryComponent?.Id}'. Ignoring SetState call.", this);
                   return;
              }
-             // Add similar checks for other states if needed (e.g., re-entering same computer?)
+             // Add similar checks for other states if needed (e.g., re-entering same computer, same crafting station?)
+             // Check for trying to open the same crafting station again
+              if (newState == GameState.InCrafting && response is OpenCraftingResponse openCraftingResponse && openCraftingResponse.CraftingStationComponent == currentCraftingStation)
+              {
+                   Debug.Log($"MenuManager: Already in {currentState} state with the same crafting station '{currentCraftingStation?.gameObject.name}'. Ignoring SetState call.", this);
+                   return;
+              }
              // else if (newState == GameState.InComputer && response is EnterComputerResponse enterCompResponse && enterCompResponse.ComputerInteractable == currentComputerInteractable) { ... }
-             // else if (newState != GameState.InInventory) // General check for other states if ignoring is desired
+             // else if (newState != GameState.InInventory && newState != GameState.InCrafting && newState != GameState.InComputer && newState != GameState.InMinigame) // General check for other states if ignoring is desired
              else
              {
                   Debug.Log($"MenuManager: Already in {currentState} state. Ignoring SetState call.");
@@ -218,11 +248,7 @@ public class MenuManager : MonoBehaviour
             entryAction.Invoke(response); // Pass the response to the ENTRY action
         }
 
-         // Clear state-specific references if not handled in exit action
-         // Note: It's cleaner for exit actions to clear their own state's references AFTER using them.
-         // currentActiveUIRoot = null; // Managed by exit actions
-         // currentOpenInventoryComponent = null; // Managed by exit actions
-         // currentComputerInteractable = null; // Managed by exit actions
+         // Clear state-specific references is now primarily handled by exit actions
     }
 
     /// <summary>
@@ -234,7 +260,7 @@ public class MenuManager : MonoBehaviour
     {
         if (response == null)
         {
-            Debug.LogWarning("MenuManager: Received a null interaction response.", this);
+            Debug.LogWarning("MenuManager: Received a null interaction response. Ignoring.", this);
             return; // Do not proceed with null response unless it's a specific internal signal
         }
 
@@ -247,10 +273,16 @@ public class MenuManager : MonoBehaviour
         {
             SetState(GameState.InComputer, enterComputerResponse);
         }
-        else if (response is StartMinigameResponse startMinigameResponse) // ADD HANDLING FOR MINIGAME RESPONSE
+        else if (response is StartMinigameResponse startMinigameResponse)
         {
-             SetState(GameState.InMinigame, startMinigameResponse); // Transition to the new minigame state
+             SetState(GameState.InMinigame, startMinigameResponse);
         }
+         // --- ADD HANDLING FOR CRAFTING RESPONSE ---
+         else if (response is OpenCraftingResponse openCraftingResponse)
+         {
+             SetState(GameState.InCrafting, openCraftingResponse);
+         }
+         // ----------------------------------------
         else if (response is ToggleLightResponse toggleLightResponse)
         {
              // For simple actions that don't require a state change, execute them directly
@@ -271,10 +303,11 @@ public class MenuManager : MonoBehaviour
     private void HandlePlayingStateEntry(InteractionResponse response)
     {
         Time.timeScale = 1f;
-        playerMovement.moveSpeed = 7f;
+        if(playerMovement != null) playerMovement.moveSpeed = 7f; // Added null check
         interactionManager?.EnableRaycast();
-        playerUI.SetActive(true);
-        playerToolbarUI.SetActive(true);
+        if(playerUI != null) playerUI.SetActive(true); // Added null check
+        if(playerToolbarUI != null) playerToolbarUI.SetActive(true); // Added null check
+
 
         if (CameraManager.Instance != null)
         {
@@ -285,6 +318,7 @@ public class MenuManager : MonoBehaviour
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
 
+        // Clear hover highlights on player toolbar when returning to playing
         if (playerToolbarInventorySelector != null && playerToolbarInventorySelector.SlotUIComponents != null)
         {
              foreach (var slotUI in playerToolbarInventorySelector.SlotUIComponents)
@@ -300,22 +334,24 @@ public class MenuManager : MonoBehaviour
              Debug.LogWarning("MenuManager: Player Toolbar Inventory Selector or its SlotUIComponents list is null. Cannot clear hover highlights on Playing entry.", this);
         }
 
-        // Clear specific state references (redundant with exit actions clearing, but safe)
-        // currentActiveUIRoot = null;
-        // currentOpenInventoryComponent = null;
-        // currentComputerInteractable = null;
+        // Clear specific state references that might have been missed
+        currentActiveUIRoot = null;
+        currentOpenInventoryComponent = null;
+        currentComputerInteractable = null;
+        currentCashRegisterInteractable = null;
+        currentCraftingStation = null; // Clear crafting station reference
         // Reset stored duration (safe)
-        // storedCinematicDuration = 0.5f; // Or some default
+        storedCinematicDuration = 0.5f; // Or some default
     }
 
     private void HandleInInventoryStateEntry(InteractionResponse response)
     {
-        InMenu();
+        InMenu(); // Helper to disable player movement, show cursor, hide player UI
         interactionManager?.DisableRaycast();
 
         if (CameraManager.Instance != null)
         {
-             CameraManager.Instance.SetCameraMode(CameraManager.CameraMode.Locked);
+             CameraManager.Instance.SetCameraMode(CameraManager.CameraMode.Locked); // Lock camera movement
         }
         else Debug.LogError("MenuManager: CameraManager Instance is null! Cannot set camera mode.");
 
@@ -333,20 +369,22 @@ public class MenuManager : MonoBehaviour
         }
         else Debug.LogError("MenuManager: Entered InInventory state, but the response was not an OpenInventoryResponse!", this);
 
+        // Ensure other state references are null
         currentComputerInteractable = null;
         currentCashRegisterInteractable = null;
+        currentCraftingStation = null;
     }
 
     private void HandleInPauseMenuEntry(InteractionResponse response)
     {
-        InMenu();
-        playerToolbarUI.SetActive(false);
-        Time.timeScale = 1f;
+        InMenu(); // Helper to disable player movement, show cursor, hide player UI
+        if(playerToolbarUI != null) playerToolbarUI.SetActive(false); // Added null check
+        Time.timeScale = 0f; // Pause the game time
         interactionManager?.DisableRaycast();
 
         if (CameraManager.Instance != null)
         {
-             CameraManager.Instance.SetCameraMode(CameraManager.CameraMode.Locked);
+             CameraManager.Instance.SetCameraMode(CameraManager.CameraMode.Locked); // Lock camera movement
         }
         else Debug.LogError("MenuManager: CameraManager Instance is null! Cannot set camera mode.");
 
@@ -354,16 +392,18 @@ public class MenuManager : MonoBehaviour
         Debug.LogWarning("MenuManager: Pause Menu UI activation is not implemented yet.");
          // Pause Menu entry doesn't need data from a response currently
 
+        // Ensure other state references are null
         currentActiveUIRoot = null;
         currentOpenInventoryComponent = null;
         currentComputerInteractable = null;
         currentCashRegisterInteractable = null;
+        currentCraftingStation = null;
     }
 
     private void HandleInComputerStateEntry(InteractionResponse response)
     {
-        InMenu();
-        playerToolbarUI.SetActive(false);
+        InMenu(); // Helper to disable player movement, show cursor, hide player UI
+        if(playerToolbarUI != null) playerToolbarUI.SetActive(false); // Added null check
         interactionManager?.DisableRaycast();
 
         if (response is EnterComputerResponse computerResponse)
@@ -382,17 +422,26 @@ public class MenuManager : MonoBehaviour
                  );
              }
              else Debug.LogError("MenuManager: CameraManager Instance is null! Cannot set camera mode.");
+
+             // Activate the Computer UI Root
+             if (currentActiveUIRoot != null)
+             {
+                  currentActiveUIRoot.SetActive(true);
+             }
+             else Debug.LogWarning("MenuManager: EnterComputerResponse did not contain a valid UI Root to activate.", this);
         }
         else Debug.LogError("MenuManager: Entered InComputer state, but the response was not an EnterComputerResponse!", this);
 
+        // Ensure other state references are null
         currentOpenInventoryComponent = null;
         currentCashRegisterInteractable = null;
+        currentCraftingStation = null;
     }
 
     private void HandleInMinigameStateEntry(InteractionResponse response)
     {
-        InMenu();
-        playerToolbarUI.SetActive(false);
+        InMenu(); // Helper to disable player movement, show cursor, hide player UI
+        if(playerToolbarUI != null) playerToolbarUI.SetActive(false); // Added null check
         interactionManager?.DisableRaycast();
 
         if (response is StartMinigameResponse minigameResponse)
@@ -420,8 +469,8 @@ public class MenuManager : MonoBehaviour
              // --- Initialize and Start the Minigame Logic ---
              if (MinigameManager.Instance != null) // Check if MinigameManager instance exists
              {
-                  // Pass the target click count from the response
-                  MinigameManager.Instance.StartMinigame(minigameResponse.ItemsToScan, minigameResponse.CashRegisterInteractable); // Call the StartMinigame method
+                  // Pass the item list and register reference
+                  MinigameManager.Instance.StartMinigame(minigameResponse.ItemsToScan, minigameResponse.CashRegisterInteractable);
              }
              else Debug.LogError("MenuManager: MinigameManager Instance is null! Cannot start minigame.");
              // --------------------------------------------
@@ -431,6 +480,46 @@ public class MenuManager : MonoBehaviour
         // Ensure other state references are null
         currentOpenInventoryComponent = null;
         currentComputerInteractable = null;
+        currentCraftingStation = null;
+    }
+
+    /// <summary>
+    /// Handles entering the crafting state.
+    /// </summary>
+    private void HandleInCraftingStateEntry(InteractionResponse response)
+    {
+        InMenu(); // Helper to disable player movement, show cursor, hide player UI
+        if(playerToolbarUI != null) playerToolbarUI.SetActive(false); // Added null check
+        interactionManager?.DisableRaycast();
+
+        // No specific camera movement needed for crafting table for now, just lock camera
+        if (CameraManager.Instance != null)
+        {
+             CameraManager.Instance.SetCameraMode(CameraManager.CameraMode.Locked); // Lock camera movement
+        }
+        else Debug.LogError("MenuManager: CameraManager Instance is null! Cannot set camera mode.");
+
+
+        if (response is OpenCraftingResponse openCraftingResponse)
+        {
+            currentCraftingStation = openCraftingResponse.CraftingStationComponent;
+            // The CraftingStation itself manages its UI root visibility,
+            // so we just need to tell it to open its UI.
+            if (currentCraftingStation != null)
+            {
+                 currentCraftingStation.OpenCraftingUI(); // Tell the CraftingStation to activate its UI
+                 // We don't store currentActiveUIRoot here because CraftingStation owns it.
+                 Debug.Log($"MenuManager: Activated Crafting UI via CraftingStation: {currentCraftingStation.gameObject.name}", this);
+            }
+            else Debug.LogWarning("MenuManager: OpenCraftingResponse did not contain a valid CraftingStation component.", this);
+        }
+        else Debug.LogError("MenuManager: Entered InCrafting state, but the response was not an OpenCraftingResponse!", this);
+
+        // Ensure other state references are null
+        currentActiveUIRoot = null; // CraftingStation owns its UI root
+        currentOpenInventoryComponent = null;
+        currentComputerInteractable = null;
+        currentCashRegisterInteractable = null;
     }
 
 
@@ -439,7 +528,7 @@ public class MenuManager : MonoBehaviour
 
     private void HandlePlayingStateExit(InteractionResponse response)
     {
-
+        // Currently empty, actions for entering other states are handled in their entry methods
     }
 
     private void HandleInInventoryStateExit(InteractionResponse response)
@@ -482,7 +571,9 @@ public class MenuManager : MonoBehaviour
 
     private void HandleInPauseMenuExit(InteractionResponse response)
     {
+         Time.timeScale = 1f; // Unpause the game time
         // TODO: Deactivate Pause Menu UI GameObject
+        Debug.LogWarning("MenuManager: Pause Menu UI deactivation is not implemented yet.");
         // Camera mode and player controls handled in HandlePlayingStateEntry if transitioning to Playing
     }
 
@@ -508,13 +599,27 @@ public class MenuManager : MonoBehaviour
          }
          else Debug.LogWarning("MenuManager: No stored ComputerInteractable instance to call ResetInteraction.", this);
 
+        // Deactivate the Computer UI Root
+        if (currentActiveUIRoot != null)
+        {
+             currentActiveUIRoot.SetActive(false);
+        }
+        else Debug.LogWarning("MenuManager: No stored UI Root GameObject reference to deactivate when exiting InComputer.", this);
+
+
         // Clear the stored references after use
         currentComputerInteractable = null;
-        currentActiveUIRoot = null; // Clear this too
+        currentActiveUIRoot = null;
         // currentOpenInventoryComponent is null for Computer state
+        currentCraftingStation = null; // Ensure crafting reference is null
+
 
         // Re-enable player movement and interaction raycast here explicitly on exit from Computer
+        // If transitioning to Playing state, HandlePlayingStateEntry will also do this, which is fine.
+         if(playerMovement != null) playerMovement.moveSpeed = 7f; // Added null check, assuming default speed
          interactionManager?.EnableRaycast();
+         if(playerUI != null) playerUI.SetActive(true); // Added null check
+         if(playerToolbarUI != null) playerToolbarUI.SetActive(true); // Added null check
     }
 
     private void HandleInMinigameStateExit(InteractionResponse response)
@@ -555,18 +660,80 @@ public class MenuManager : MonoBehaviour
         // Clear the stored references after use
         currentCashRegisterInteractable = null;
         currentActiveUIRoot = null;
+        currentCraftingStation = null; // Ensure crafting reference is null
 
 
-        interactionManager?.EnableRaycast();
+        // Re-enable player movement and interaction raycast
+         if(playerMovement != null) playerMovement.moveSpeed = 7f; // Added null check, assuming default speed
+         interactionManager?.EnableRaycast();
+         if(playerUI != null) playerUI.SetActive(true); // Added null check
+         if(playerToolbarUI != null) playerToolbarUI.SetActive(true); // Added null check
     }
+
+    /// <summary>
+    /// Handles exiting the crafting state.
+    /// </summary>
+    private void HandleInCraftingStateExit(InteractionResponse response)
+    {
+        // Tell the CraftingStation to close its UI
+        if (currentCraftingStation != null)
+        {
+            currentCraftingStation.CloseCraftingUI(); // Tell the CraftingStation to deactivate its UI
+            Debug.Log($"MenuManager: Deactivated Crafting UI via CraftingStation: {currentCraftingStation.gameObject.name}", this);
+
+             // --- FIND AND CLEAR HOVER HIGHLIGHTS ON ALL SLOTS FOR CRAFTING INVENTORIES ---
+             // Need to access the input and output inventories from the CraftingStation
+             if (currentCraftingStation.primaryInputInventory != null) ClearHoverHighlights(currentCraftingStation.primaryInputInventory);
+             if (currentCraftingStation.secondaryInputInventory != null) ClearHoverHighlights(currentCraftingStation.secondaryInputInventory);
+             if (currentCraftingStation.outputInventory != null) ClearHoverHighlights(currentCraftingStation.outputInventory);
+             // --------------------------------------------------------------------------
+        }
+        else Debug.LogWarning("MenuManager: No stored CraftingStation component to close UI when exiting InCrafting.", this);
+
+
+        // Clear the stored reference after use
+        currentCraftingStation = null;
+        // currentActiveUIRoot is not stored for CraftingState as CraftingStation owns it
+
+
+        // Camera mode and player controls handled in HandlePlayingStateEntry if transitioning to Playing
+        // Also re-enabled explicitly here just in case, redundant with Playing entry but safe.
+         if(playerMovement != null) playerMovement.moveSpeed = 7f; // Added null check, assuming default speed
+         interactionManager?.EnableRaycast();
+         if(playerUI != null) playerUI.SetActive(true); // Added null check
+         if(playerToolbarUI != null) playerToolbarUI.SetActive(true); // Added null check
+    }
+
+    // Helper method to clear hover highlights for any given inventory
+    private void ClearHoverHighlights(InventoryClass inventory)
+    {
+         if (inventory != null)
+         {
+              Visualizer visualizer = inventory.GetComponent<Visualizer>();
+              if (visualizer != null && visualizer.SlotUIComponents != null)
+              {
+                   foreach (var slotUI in visualizer.SlotUIComponents)
+                   {
+                        if (slotUI != null)
+                        {
+                             slotUI.RemoveHoverHighlight();
+                        }
+                   }
+              }
+              else Debug.LogWarning($"MenuManager: Could not find Visualizer or SlotUIComponents on Inventory GameObject '{inventory.gameObject.name}' to clear hover highlights.", inventory?.gameObject);
+         }
+    }
+
 
     // --- Helper Method ---
     private void InMenu()
     {
+        Time.timeScale = 1f; // Ensure time is not paused by other menus
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
-        playerMovement.moveSpeed = 0f;
-        playerUI.SetActive(false);
+        if(playerMovement != null) playerMovement.moveSpeed = 0f; // Added null check
+        if(playerUI != null) playerUI.SetActive(false); // Added null check
+        // playerToolbarUI visibility is handled explicitly per state entry/exit now
     }
 
         public void OpenPauseMenu()
