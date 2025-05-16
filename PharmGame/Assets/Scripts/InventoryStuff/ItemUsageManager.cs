@@ -99,7 +99,7 @@ namespace Systems.Inventory
         /// <param name="userInventory">The Inventory component the item belongs to (should be the player's inventory).</param>
         /// <param name="selectedIndex">The index of the slot the item was selected from.</param> // ADDED PARAMETER
         /// <returns>True if the item usage logic was successfully triggered, false otherwise.</returns>
-        public bool UseItem(Item itemToUse, Inventory userInventory, int selectedIndex) 
+        public bool UseItem(Item itemToUse, Inventory userInventory, int selectedIndex) // ADDED PARAMETER
         {
             if (itemToUse == null || itemToUse.details == null || userInventory == null || userInventory.InventoryState == null || userInventory.Combiner == null) // Added check for InventoryState
             {

@@ -23,5 +23,5 @@ MonoBehaviour:
   Description: yo
   prefab3D: {fileID: 5829944590135129764, guid: 18b8e46e780aa064e876b6d593d1a4ad, type: 3}
   shelfArrangement: 0
-  itemLabel: 2
+  isOverTheCounter: 1
   price: 5
