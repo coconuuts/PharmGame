@@ -1,747 +1,359 @@
+// Keep the existing usings and namespace
 using UnityEngine;
 using System;
 using System.Collections.Generic;
 using InventoryClass = Systems.Inventory.Inventory;
-using Systems.Interaction; // Needed for InteractionResponse types
+using Systems.Interaction;
 using System.Collections;
 using Systems.CameraControl;
 using Systems.Minigame;
 using Systems.Inventory;
+using Systems.UI; // ADDED: Needed to ensure UIManager namespace is known if MenuManager interacts with it directly (it doesn't here, but good practice)
+using Systems.Player;
 
-public class MenuManager : MonoBehaviour
+namespace Systems.GameStates
 {
-    public static MenuManager Instance;
-
-    // --- ADD THE NEW STATE ---
-    public enum GameState
+    public class MenuManager : MonoBehaviour
     {
-        Playing,
-        InInventory,
-        InPauseMenu,
-        InComputer,
-        InMinigame,
-        InCrafting // ADD THIS STATE
-    }
-    // ------------------------
+        public static MenuManager Instance;
 
-    public GameState currentState = GameState.Playing;
-    [HideInInspector] public GameState previousState;
+        public enum GameState
+        {
+            Playing,
+            InInventory,
+            InPauseMenu,
+            InComputer,
+            InMinigame,
+            InCrafting
+        }
 
-    public delegate void StateChangedHandler(GameState newState);
-    public static event StateChangedHandler OnStateChanged;
+        public GameState currentState = GameState.Playing;
+        [HideInInspector] public GameState previousState;
 
-    [Header("Player Settings")]
-    public GameObject player;
-    public string cameraTag = "MainCamera";
-    private PlayerInteractionManager interactionManager;
-    private PlayerMovement playerMovement;
-    [Tooltip("Drag the player's toolbar InventorySelector GameObject here.")]
-    [SerializeField] private InventorySelector playerToolbarInventorySelector;
-    [SerializeField] private GameObject playerUI;
-    [SerializeField] private GameObject playerToolbarUI;
+        // --- MODIFIED: Delegate signature to include InteractionResponse ---
+        public delegate void StateChangedHandler(GameState newState, GameState oldState, InteractionResponse response);
+        public static event StateChangedHandler OnStateChanged;
+        // -------------------------------------------------------------------
 
-    // Fields to track the currently active UI and data for states like InInventory or InComputer
-    private GameObject currentActiveUIRoot; // Renamed for generality
-    private InventoryClass currentOpenInventoryComponent;
-    private ComputerInteractable currentComputerInteractable;
-    private CashRegisterInteractable currentCashRegisterInteractable;
-     // --- ADDED FIELD FOR CRAFTING STATION ---
-     private CraftingStation currentCraftingStation;
-     // --------------------------------------
+        [Header("Player Settings")]
+        public GameObject player;
+        public string cameraTag = "MainCamera";
+        private PlayerInteractionManager interactionManager;
+        private PlayerMovement playerMovement;
+        [Tooltip("Drag the player's toolbar InventorySelector GameObject here.")]
+        [SerializeField] private InventorySelector playerToolbarInventorySelector;
+        public InventorySelector PlayerToolbarInventorySelector => playerToolbarInventorySelector;
 
+        // Fields to track the currently active UI and data for states like InInventory or InComputer
+        // Keep these internal fields. They are populated by SetState and accessed via public getters.
+        private GameObject currentActiveUIRoot_internal;
+        private InventoryClass currentOpenInventoryComponent_internal;
+        private ComputerInteractable currentComputerInteractable_internal;
+        private CashRegisterInteractable currentCashRegisterInteractable_internal;
+        private CraftingStation currentCraftingStation_internal;
 
-    // --- ADDED FIELDS FOR CAMERA MANAGEMENT ---
-    private Transform playerCameraTransform; // This should be set by CameraManager Start now, but kept for reference if needed.
-    private Vector3 originalCameraPosition; // Managed by CameraManager
-    private Quaternion originalCameraRotation; // Managed by CameraManager
-    private float storedCinematicDuration = 0.25f; // Store the duration for cinematic moves
-    // Coroutine is in CameraManager now
-    // ----------------------------------------
-
-
-    public delegate void StateActionHandler(InteractionResponse response);
-    private Dictionary<GameState, StateActionHandler> stateEntryActions;
-    private Dictionary<GameState, StateActionHandler> stateExitActions;
+        // Public Getters for UIManager and StateActions to access
+        // These will reflect the data of the *current* state after SetState finishes.
+        public GameObject CurrentActiveUIRoot => currentActiveUIRoot_internal;
+        public InventoryClass CurrentOpenInventoryComponent => currentOpenInventoryComponent_internal;
+        public ComputerInteractable CurrentComputerInteractable => currentComputerInteractable_internal;
+        public CashRegisterInteractable CurrentCashRegisterInteractable => currentCashRegisterInteractable_internal;
+        public CraftingStation CurrentCraftingStation => currentCraftingStation_internal;
 
 
-    private void Awake()
-    {
-        if (Instance == null) Instance = this;
-        else { Debug.LogWarning("MenuManager: Duplicate instance found. Destroying this one.", this); Destroy(gameObject); return; }
-        Debug.Log("MenuManager: Awake completed.");
+        [Header("Game State Configuration")]
+        [SerializeField] private List<GameStateConfigSO> gameStateConfigsList;
+        private Dictionary<GameState, GameStateConfigSO> gameStateConfigMap;
 
-         // Ensure playerToolbarInventorySelector is assigned or try finding it
-         if (playerToolbarInventorySelector == null)
-         {
+        // Reference to the Simple Action Dispatcher
+        private SimpleActionDispatcher simpleActionDispatcher = new SimpleActionDispatcher();
+
+
+        private void Awake()
+        {
+            if (Instance == null) Instance = this;
+            else { Debug.LogWarning("MenuManager: Duplicate instance found. Destroying this one.", this); Destroy(gameObject); return; }
+            Debug.Log("MenuManager: Awake completed.");
+
+             // ... (Keep existing logic to find playerToolbarInventorySelector) ...
              GameObject playerToolbarObject = GameObject.FindGameObjectWithTag("PlayerToolbarInventory"); // Use your actual toolbar tag
              if (playerToolbarObject != null)
              {
-                 playerToolbarInventorySelector = playerToolbarObject.GetComponent<InventorySelector>();
-                 if (playerToolbarInventorySelector == null)
-                 {
-                      Debug.LogError($"MenuManager: GameObject with tag '{playerToolbarObject.tag}' found, but it does not have an InventorySelector component.", playerToolbarObject);
-                 }
+                  playerToolbarInventorySelector = playerToolbarObject.GetComponent<InventorySelector>();
+                  if (playerToolbarInventorySelector == null)
+                  {
+                       Debug.LogError($"MenuManager: GameObject with tag '{playerToolbarObject.tag}' found, but it does not have an InventorySelector component.", playerToolbarObject);
+                  }
              }
              else
              {
                   Debug.LogWarning($"MenuManager: Player Toolbar Inventory GameObject with tag 'PlayerToolbarInventory' not found. Cannot manage toolbar highlights.", this);
              }
-         }
-         else
-         {
-              Debug.Log("MenuManager: Player Toolbar Inventory Selector assigned in Inspector.", this);
-         }
-         if (playerUI == null)
-         {
-            GameObject foundPlayerUI = GameObject.FindGameObjectWithTag("PlayerUI"); // Use a different local variable name
-            if (foundPlayerUI != null)
+        }
+
+
+        private void Start()
+        {
+            // Populate the Game State Config Dictionary
+            gameStateConfigMap = new Dictionary<GameState, GameStateConfigSO>();
+            if (gameStateConfigsList != null)
             {
-                 playerUI = foundPlayerUI;
+                foreach (var config in gameStateConfigsList)
+                {
+                    if (config != null)
+                    {
+                         if (!gameStateConfigMap.ContainsKey(config.gameState))
+                         {
+                              gameStateConfigMap.Add(config.gameState, config);
+                         }
+                         else
+                         {
+                              Debug.LogWarning($"MenuManager: Duplicate GameStateConfigSO found for state {config.gameState}. Using the first one found.", config);
+                         }
+                    }
+                }
             }
             else
             {
-                 Debug.LogError("MenuManager: Player UI GameObject with tag 'PlayerUI' not found!", this);
+                Debug.LogError("MenuManager: Game State Configs List is not assigned in the Inspector!", this);
             }
-         }
-        if (playerToolbarUI == null)
-         {
-            GameObject foundPlayerToolbarUI = GameObject.FindGameObjectWithTag("PlayerToolbar"); // Use a different local variable name
-            if (foundPlayerToolbarUI != null)
+
+            // Basic validation: Check if configs exist for all enum values
+            foreach (GameState state in Enum.GetValues(typeof(GameState)))
             {
-                 playerToolbarUI = foundPlayerToolbarUI;
+                if (!gameStateConfigMap.ContainsKey(state))
+                {
+                    Debug.LogError($"MenuManager: No GameStateConfigSO assigned for state: {state}!", this);
+                }
+            }
+
+            // GET PLAYER REFERENCES (Keep this)
+            if (player != null)
+            {
+                interactionManager = player.GetComponent<PlayerInteractionManager>();
+                if (interactionManager == null) Debug.LogError("MenuManager: Player GameObject does not have a PlayerInteractionManager component!");
+
+                playerMovement = player.GetComponent<PlayerMovement>();
+                if (playerMovement == null) Debug.LogWarning("MenuManager: Player GameObject does not have a PlayerMovement component! Player movement control will not work.", player);
+
             }
             else
             {
-                 Debug.LogError("MenuManager: Player Toolbar UI GameObject with tag 'PlayerToolbar' not found!", this);
+                Debug.LogWarning("MenuManager: Player GameObject reference is missing. Player control features may be disabled.");
             }
-         }
-    }
 
 
-    private void Start()
-    {
-       if(playerUI != null) playerUI.SetActive(true); // Added null checks
-       if(playerToolbarUI != null) playerToolbarUI.SetActive(true); // Added null checks
+            // Initial Game State Setup (Ensures Playing state entry action runs via SetState)
+            currentState = GameState.Playing;
+            previousState = currentState; // Initialize previous state
 
-        // --- GET REFERENCES ---
-        if (player != null)
-        {
-             interactionManager = player.GetComponent<PlayerInteractionManager>();
-             if (interactionManager == null) Debug.LogError("MenuManager: Player GameObject does not have a PlayerInteractionManager component!");
-
-             playerMovement = player.GetComponent<PlayerMovement>();
-             if (playerMovement == null) Debug.LogWarning("MenuManager: Player GameObject does not have a PlayerMovement component! Player movement control will not work.", player);
-
-        }
-        else
-        {
-             Debug.LogWarning("MenuManager: Player GameObject reference is missing. Player control features may be disabled.");
-        }
-        // ---------------------
-
-
-        // --- Initialize Dictionaries with the new state handlers ---
-        stateEntryActions = new Dictionary<GameState, StateActionHandler>
-        {
-            { GameState.Playing, HandlePlayingStateEntry },
-            { GameState.InInventory, HandleInInventoryStateEntry },
-            { GameState.InPauseMenu, HandleInPauseMenuEntry },
-            { GameState.InComputer, HandleInComputerStateEntry },
-            { GameState.InMinigame, HandleInMinigameStateEntry },
-            { GameState.InCrafting, HandleInCraftingStateEntry } // REGISTER CRAFTING ENTRY HANDLER
-        };
-
-         stateExitActions = new Dictionary<GameState, StateActionHandler>
-         {
-             { GameState.Playing, HandlePlayingStateExit },
-             { GameState.InInventory, HandleInInventoryStateExit },
-             { GameState.InPauseMenu, HandleInPauseMenuExit },
-             { GameState.InComputer, HandleInComputerStateExit },
-             { GameState.InMinigame, HandleInMinigameStateExit },
-             { GameState.InCrafting, HandleInCraftingStateExit } // REGISTER CRAFTING EXIT HANDLER
-         };
-        // ----------------------------------------------------------
-
-
-        // TODO: Ensure all interactable UI roots start disabled in their own setup
-
-        // Initial Game State Setup (Ensures Playing state entry action runs)
-        currentState = GameState.Playing;
-        previousState = currentState;
-        Debug.Log("Menu State: " + currentState + " (Initial Setup)");
-
-        if (stateEntryActions.TryGetValue(currentState, out var entryAction))
-        {
-             Debug.Log($"MenuManager: Invoking initial entry action for state {currentState}.");
-             entryAction.Invoke(null); // Pass null as there's no response
-        }
-        else
-        {
-             Debug.LogWarning($"MenuManager: No entry action defined for initial state {currentState}.", this);
+            // Call SetState for the initial state to run its entry actions
+            Debug.Log("Menu State: " + currentState + " (Initial Setup)");
+            SetState(currentState, null, true); // Pass null response and indicate initial setup
+             // UIManager will listen to the OnStateChanged event triggered by SetState
+             // and activate/deactivate UIs accordingly.
         }
 
-        OnStateChanged?.Invoke(currentState); // Trigger initial event
-    }
-
-    private void Update()
-    {
-        if (Input.GetKeyDown(KeyCode.Escape))
+        private void Update()
         {
-            // Allow escaping from inventory, pause, computer, minigame, AND crafting states
-            if (currentState != GameState.Playing) // Simplified check: if not Playing, Escape goes back to Playing
+            // Keep Escape key logic
+            if (Input.GetKeyDown(KeyCode.Escape))
             {
-                SetState(GameState.Playing, null); // Exiting via Escape (no specific response)
-            }
-            else if (currentState == GameState.Playing)
-            {
-                OpenPauseMenu(); // Call public method for consistency
+                if (currentState != GameState.Playing)
+                {
+                    SetState(GameState.Playing, null); // Exiting via Escape (no specific response)
+                }
+                else if (currentState == GameState.Playing)
+                {
+                    OpenPauseMenu();
+                }
             }
         }
-    }
 
-    /// <summary>
-    /// Sets the current game state and triggers associated entry/exit actions.
-    /// Called by HandleInteractionResponse or internal transitions like Escape/Pause.
-    /// </summary>
-    /// <param name="newState">The state to transition to.</param>
-    /// <param name="response">The InteractionResponse that caused this state change, or null if internal.</param>
-    public void SetState(GameState newState, InteractionResponse response = null)
-    {
-         // Check for same state transition (ignore unless specific handling is needed)
-         if (currentState == newState)
-         {
-             // Specific check for trying to open the same inventory again
-             if (newState == GameState.InInventory && response is OpenInventoryResponse openInvResponse && openInvResponse.InventoryComponent == currentOpenInventoryComponent)
+        /// <summary>
+        /// Sets the current game state and triggers associated entry/exit actions defined in GameStateConfigSO.
+        /// Triggers the OnStateChanged event, passing the InteractionResponse.
+        /// Updates internal state data references AFTER the event and exit actions.
+        /// </summary>
+        /// <param name="newState">The state to transition to.</param>
+        /// <param name="response">The InteractionResponse that caused this state change, or null if internal.</param>
+        /// <param name="isInitialSetup">Flag to indicate if this is the very first state setting in Start.</param>
+        public void SetState(GameState newState, InteractionResponse response = null, bool isInitialSetup = false)
+        {
+             // Ignore same state transition unless it's the initial setup
+            if (currentState == newState && !isInitialSetup)
+            {
+                 Debug.Log($"MenuManager: Already in {currentState} state. Ignoring SetState call (unless initial setup).");
+                 return;
+            }
+
+            GameState oldState = currentState; // Capture the old state
+
+            // Find the config for the old state BEFORE changing currentState
+             GameStateConfigSO oldStateConfig = null;
+             if (gameStateConfigMap.TryGetValue(oldState, out var config))
              {
-                  Debug.Log($"MenuManager: Already in {currentState} state with the same inventory '{currentOpenInventoryComponent?.Id}'. Ignoring SetState call.", this);
-                  return;
+                  oldStateConfig = config;
              }
-             // Add similar checks for other states if needed (e.g., re-entering same computer, same crafting station?)
-             // Check for trying to open the same crafting station again
-              if (newState == GameState.InCrafting && response is OpenCraftingResponse openCraftingResponse && openCraftingResponse.CraftingStationComponent == currentCraftingStation)
-              {
-                   Debug.Log($"MenuManager: Already in {currentState} state with the same crafting station '{currentCraftingStation?.gameObject.name}'. Ignoring SetState call.", this);
-                   return;
-              }
-             // else if (newState == GameState.InComputer && response is EnterComputerResponse enterCompResponse && enterCompResponse.ComputerInteractable == currentComputerInteractable) { ... }
-             // else if (newState != GameState.InInventory && newState != GameState.InCrafting && newState != GameState.InComputer && newState != GameState.InMinigame) // General check for other states if ignoring is desired
              else
              {
-                  Debug.Log($"MenuManager: Already in {currentState} state. Ignoring SetState call.");
-                  return;
+                  Debug.LogWarning($"MenuManager: No GameStateConfigSO found for old state {oldState}. Cannot execute exit actions.", this);
              }
-         }
-
-        previousState = currentState;
-
-        if (stateExitActions.TryGetValue(currentState, out var exitAction))
-        {
-            exitAction.Invoke(response); // Pass the response to the EXIT action
-        }
-
-        currentState = newState;
-        Debug.Log("Menu State: " + currentState);
-        OnStateChanged?.Invoke(newState); // Trigger the event *after* the state is set
-
-        if (stateEntryActions.TryGetValue(currentState, out var entryAction))
-        {
-            entryAction.Invoke(response); // Pass the response to the ENTRY action
-        }
-
-         // Clear state-specific references is now primarily handled by exit actions
-    }
-
-    /// <summary>
-    /// Receives and processes InteractionResponse objects to trigger state changes and related actions.
-    /// Called by PlayerInteractionManager.
-    /// </summary>
-    /// <param name="response">The InteractionResponse received from an interactable.</param>
-    public void HandleInteractionResponse(InteractionResponse response)
-    {
-        if (response == null)
-        {
-            Debug.LogWarning("MenuManager: Received a null interaction response. Ignoring.", this);
-            return; // Do not proceed with null response unless it's a specific internal signal
-        }
-
-        // Check the type of the response and trigger the appropriate state change OR action
-        if (response is OpenInventoryResponse openInventoryResponse)
-        {
-            SetState(GameState.InInventory, openInventoryResponse);
-        }
-        else if (response is EnterComputerResponse enterComputerResponse)
-        {
-            SetState(GameState.InComputer, enterComputerResponse);
-        }
-        else if (response is StartMinigameResponse startMinigameResponse)
-        {
-             SetState(GameState.InMinigame, startMinigameResponse);
-        }
-         // --- ADD HANDLING FOR CRAFTING RESPONSE ---
-         else if (response is OpenCraftingResponse openCraftingResponse)
-         {
-             SetState(GameState.InCrafting, openCraftingResponse);
-         }
-         // ----------------------------------------
-        else if (response is ToggleLightResponse toggleLightResponse)
-        {
-             // For simple actions that don't require a state change, execute them directly
-             Debug.Log("MenuManager: Executing ToggleLightResponse action.");
-             toggleLightResponse.LightSwitch?.ToggleLightState();
-        }
-        // TODO: Add handling for other InteractionResponse types here
-        else
-        {
-            Debug.LogWarning($"MenuManager: Received unhandled InteractionResponse type: {response.GetType().Name}", this);
-        }
-    }
 
 
-    // --- State Entry Actions ---
-    // Signatures accept InteractionResponse
-
-    private void HandlePlayingStateEntry(InteractionResponse response)
-    {
-        Time.timeScale = 1f;
-        if(playerMovement != null) playerMovement.moveSpeed = 7f; // Added null check
-        interactionManager?.EnableRaycast();
-        if(playerUI != null) playerUI.SetActive(true); // Added null check
-        if(playerToolbarUI != null) playerToolbarUI.SetActive(true); // Added null check
-
-
-        if (CameraManager.Instance != null)
-        {
-             CameraManager.Instance.SetCameraMode(CameraManager.CameraMode.MouseLook);
-        }
-        else Debug.LogError("MenuManager: CameraManager Instance is null! Cannot set camera mode.");
-
-        Cursor.lockState = CursorLockMode.Locked;
-        Cursor.visible = false;
-
-        // Clear hover highlights on player toolbar when returning to playing
-        if (playerToolbarInventorySelector != null && playerToolbarInventorySelector.SlotUIComponents != null)
-        {
-             foreach (var slotUI in playerToolbarInventorySelector.SlotUIComponents)
-             {
-                  if (slotUI != null)
-                  {
-                       slotUI.RemoveHoverHighlight(); // Ensure hover state is false and visual updated
-                  }
-             }
-        }
-        else
-        {
-             Debug.LogWarning("MenuManager: Player Toolbar Inventory Selector or its SlotUIComponents list is null. Cannot clear hover highlights on Playing entry.", this);
-        }
-
-        // Clear specific state references that might have been missed
-        currentActiveUIRoot = null;
-        currentOpenInventoryComponent = null;
-        currentComputerInteractable = null;
-        currentCashRegisterInteractable = null;
-        currentCraftingStation = null; // Clear crafting station reference
-        // Reset stored duration (safe)
-        storedCinematicDuration = 0.5f; // Or some default
-    }
-
-    private void HandleInInventoryStateEntry(InteractionResponse response)
-    {
-        InMenu(); // Helper to disable player movement, show cursor, hide player UI
-        interactionManager?.DisableRaycast();
-
-        if (CameraManager.Instance != null)
-        {
-             CameraManager.Instance.SetCameraMode(CameraManager.CameraMode.Locked); // Lock camera movement
-        }
-        else Debug.LogError("MenuManager: CameraManager Instance is null! Cannot set camera mode.");
-
-        if (response is OpenInventoryResponse openInvResponse)
-        {
-            currentOpenInventoryComponent = openInvResponse.InventoryComponent;
-            currentActiveUIRoot = openInvResponse.InventoryUIRoot; // Use generic field
-
-            if (currentActiveUIRoot != null)
+            // --- Execute Exit Actions for the old state ---
+            // These actions (and UIManager listening to event) will use the public getters,
+            // which *still* hold the references from the state being exited at this moment.
+            if (oldStateConfig != null)
             {
-                currentActiveUIRoot.SetActive(true);
-                Debug.Log($"MenuManager: Activated UI for inventory: {currentOpenInventoryComponent?.Id}.", this);
+                oldStateConfig.ExecuteExitActions(response, this); // Pass the response to exit actions
             }
-            else Debug.LogWarning("MenuManager: OpenInventoryResponse did not contain a valid UI Root to activate.", this);
-        }
-        else Debug.LogError("MenuManager: Entered InInventory state, but the response was not an OpenInventoryResponse!", this);
 
-        // Ensure other state references are null
-        currentComputerInteractable = null;
-        currentCashRegisterInteractable = null;
-        currentCraftingStation = null;
-    }
 
-    private void HandleInPauseMenuEntry(InteractionResponse response)
-    {
-        InMenu(); // Helper to disable player movement, show cursor, hide player UI
-        if(playerToolbarUI != null) playerToolbarUI.SetActive(false); // Added null check
-        Time.timeScale = 0f; // Pause the game time
-        interactionManager?.DisableRaycast();
+            // --- Trigger the OnStateChanged event AFTER exit actions ---
+            // UIManager and other event listeners will react here.
+            // UIManager's oldState logic will run NOW, accessing the public getters (which still hold old data).
+            // UIManager's newState logic will run NOW, accessing the 'response' parameter.
+             OnStateChanged?.Invoke(newState, oldState, response);
 
-        if (CameraManager.Instance != null)
-        {
-             CameraManager.Instance.SetCameraMode(CameraManager.CameraMode.Locked); // Lock camera movement
-        }
-        else Debug.LogError("MenuManager: CameraManager Instance is null! Cannot set camera mode.");
 
-        // TODO: Activate Pause Menu UI GameObject (You'll need a field for this in MenuManager)
-        Debug.LogWarning("MenuManager: Pause Menu UI activation is not implemented yet.");
-         // Pause Menu entry doesn't need data from a response currently
+            // --- NOW Update the internal state and references for the NEW state ---
+            previousState = oldState;
+            currentState = newState; // Change the current state here
+            Debug.Log($"Menu State: Transitioning from {oldState} to {currentState}.");
 
-        // Ensure other state references are null
-        currentActiveUIRoot = null;
-        currentOpenInventoryComponent = null;
-        currentComputerInteractable = null;
-        currentCashRegisterInteractable = null;
-        currentCraftingStation = null;
-    }
+             // Clear old dynamic references and set new ones based on the response.
+             // This happens AFTER exit logic and the event.
+             currentActiveUIRoot_internal = null;
+             currentOpenInventoryComponent_internal = null;
+             currentComputerInteractable_internal = null;
+             currentCashRegisterInteractable_internal = null;
+             currentCraftingStation_internal = null;
 
-    private void HandleInComputerStateEntry(InteractionResponse response)
-    {
-        InMenu(); // Helper to disable player movement, show cursor, hide player UI
-        if(playerToolbarUI != null) playerToolbarUI.SetActive(false); // Added null check
-        interactionManager?.DisableRaycast();
-
-        if (response is EnterComputerResponse computerResponse)
-        {
-             currentComputerInteractable = computerResponse.ComputerInteractable;
-             currentActiveUIRoot = computerResponse.ComputerUIRoot; // Use generic field
-             storedCinematicDuration = computerResponse.CameraMoveDuration; // Store the duration
-
-             if (CameraManager.Instance != null)
+             if (response is OpenInventoryResponse openInventoryResponse)
              {
-                 // Start camera movement TO the computer view point
-                 CameraManager.Instance.SetCameraMode(
-                     CameraManager.CameraMode.CinematicView,
-                     computerResponse.CameraTargetView, // Pass the target Transform
-                     computerResponse.CameraMoveDuration // Pass the duration
-                 );
+                 currentOpenInventoryComponent_internal = openInventoryResponse.InventoryComponent;
+                 currentActiveUIRoot_internal = openInventoryResponse.InventoryUIRoot;
              }
-             else Debug.LogError("MenuManager: CameraManager Instance is null! Cannot set camera mode.");
-
-             // Activate the Computer UI Root
-             if (currentActiveUIRoot != null)
+             else if (response is EnterComputerResponse enterComputerResponse)
              {
-                  currentActiveUIRoot.SetActive(true);
+                  currentComputerInteractable_internal = enterComputerResponse.ComputerInteractable;
+                  currentActiveUIRoot_internal = enterComputerResponse.ComputerUIRoot;
              }
-             else Debug.LogWarning("MenuManager: EnterComputerResponse did not contain a valid UI Root to activate.", this);
-        }
-        else Debug.LogError("MenuManager: Entered InComputer state, but the response was not an EnterComputerResponse!", this);
-
-        // Ensure other state references are null
-        currentOpenInventoryComponent = null;
-        currentCashRegisterInteractable = null;
-        currentCraftingStation = null;
-    }
-
-    private void HandleInMinigameStateEntry(InteractionResponse response)
-    {
-        InMenu(); // Helper to disable player movement, show cursor, hide player UI
-        if(playerToolbarUI != null) playerToolbarUI.SetActive(false); // Added null check
-        interactionManager?.DisableRaycast();
-
-        if (response is StartMinigameResponse minigameResponse)
-        {
-             currentCashRegisterInteractable = minigameResponse.CashRegisterInteractable;
-             currentActiveUIRoot = minigameResponse.MinigameUIRoot;
-             storedCinematicDuration = minigameResponse.CameraMoveDuration;
-
-             if (CameraManager.Instance != null)
+             else if (response is StartMinigameResponse startMinigameResponse)
              {
-                 CameraManager.Instance.SetCameraMode(
-                     CameraManager.CameraMode.CinematicView,
-                     minigameResponse.CameraTargetView,
-                     minigameResponse.CameraMoveDuration
-                 );
+                  currentCashRegisterInteractable_internal = startMinigameResponse.CashRegisterInteractable;
+                  currentActiveUIRoot_internal = startMinigameResponse.MinigameUIRoot;
              }
-             else Debug.LogError("MenuManager: CameraManager Instance is null! Cannot set camera mode.");
-
-             if (currentActiveUIRoot != null)
+             else if (response is OpenCraftingResponse openCraftingResponse)
              {
-                 currentActiveUIRoot.SetActive(true);
+                  currentCraftingStation_internal = openCraftingResponse.CraftingStationComponent;
              }
-             else Debug.LogWarning("MenuManager: StartMinigameResponse did not contain a valid UI Root to activate.", this);
+             // Add other response types here if they carry data needed by StateActions.
+            // -----------------------------------------------------------------------------
 
-             // --- Initialize and Start the Minigame Logic ---
-             if (MinigameManager.Instance != null) // Check if MinigameManager instance exists
+
+            // --- Execute Entry Actions for the new state ---
+            // Actions here will use the NEW data now available via the public getters.
+             GameStateConfigSO newStateConfig = null;
+             if (gameStateConfigMap.TryGetValue(currentState, out var config2))
              {
-                  // Pass the item list and register reference
-                  MinigameManager.Instance.StartMinigame(minigameResponse.ItemsToScan, minigameResponse.CashRegisterInteractable);
+                  newStateConfig = config2;
              }
-             else Debug.LogError("MenuManager: MinigameManager Instance is null! Cannot start minigame.");
-             // --------------------------------------------
-        }
-        else Debug.LogError("MenuManager: Entered InMinigame state, but the response was not a StartMinigameResponse!", this);
+             else
+             {
+                  Debug.LogError($"MenuManager: No GameStateConfigSO found for new state {currentState}. Cannot execute entry actions!", this);
+             }
 
-        // Ensure other state references are null
-        currentOpenInventoryComponent = null;
-        currentComputerInteractable = null;
-        currentCraftingStation = null;
-    }
-
-    /// <summary>
-    /// Handles entering the crafting state.
-    /// </summary>
-    private void HandleInCraftingStateEntry(InteractionResponse response)
-    {
-        InMenu(); // Helper to disable player movement, show cursor, hide player UI
-        if(playerToolbarUI != null) playerToolbarUI.SetActive(false); // Added null check
-        interactionManager?.DisableRaycast();
-
-        // No specific camera movement needed for crafting table for now, just lock camera
-        if (CameraManager.Instance != null)
-        {
-             CameraManager.Instance.SetCameraMode(CameraManager.CameraMode.Locked); // Lock camera movement
-        }
-        else Debug.LogError("MenuManager: CameraManager Instance is null! Cannot set camera mode.");
-
-
-        if (response is OpenCraftingResponse openCraftingResponse)
-        {
-            currentCraftingStation = openCraftingResponse.CraftingStationComponent;
-            // The CraftingStation itself manages its UI root visibility,
-            // so we just need to tell it to open its UI.
-            if (currentCraftingStation != null)
+            if (newStateConfig != null)
             {
-                 currentCraftingStation.OpenCraftingUI(); // Tell the CraftingStation to activate its UI
-                 // We don't store currentActiveUIRoot here because CraftingStation owns it.
-                 Debug.Log($"MenuManager: Activated Crafting UI via CraftingStation: {currentCraftingStation.gameObject.name}", this);
+                newStateConfig.ExecuteEntryActions(response, this); // Pass the response to entry actions
             }
-            else Debug.LogWarning("MenuManager: OpenCraftingResponse did not contain a valid CraftingStation component.", this);
         }
-        else Debug.LogError("MenuManager: Entered InCrafting state, but the response was not an OpenCraftingResponse!", this);
 
-        // Ensure other state references are null
-        currentActiveUIRoot = null; // CraftingStation owns its UI root
-        currentOpenInventoryComponent = null;
-        currentComputerInteractable = null;
-        currentCashRegisterInteractable = null;
-    }
+        /// <summary>
+        /// Receives and processes InteractionResponse objects to trigger state changes and related actions.
+        /// Stores relevant response data for UIManager/StateActions to access.
+        /// Called by PlayerInteractionManager.
+        /// </summary>
+        /// <param name="response">The InteractionResponse received from an interactable.</param>
+        public void HandleInteractionResponse(InteractionResponse response)
+        {
+            if (response == null)
+            {
+                Debug.LogWarning("MenuManager: Received a null interaction response. Ignoring.", this);
+                return;
+            }
 
-
-    // --- State Exit Actions ---
-    // Signatures accept InteractionResponse
-
-    private void HandlePlayingStateExit(InteractionResponse response)
-    {
-        // Currently empty, actions for entering other states are handled in their entry methods
-    }
-
-    private void HandleInInventoryStateExit(InteractionResponse response)
-    {
-         // Deactivate the UI using the stored generic field
-         if (currentActiveUIRoot != null)
-         {
-             currentActiveUIRoot.SetActive(false);
-
-             // --- FIND AND CLEAR HOVER HIGHLIGHTS ON ALL SLOTS ---
-             // Get the Visualizer from the inventory component's GameObject
-             if (currentOpenInventoryComponent != null)
+            // Check the type of the response and trigger the appropriate state change OR action
+            // State-changing responses call SetState.
+            if (response is OpenInventoryResponse openInventoryResponse)
+            {
+                 SetState(GameState.InInventory, openInventoryResponse);
+            }
+            else if (response is EnterComputerResponse enterComputerResponse)
+            {
+                 SetState(GameState.InComputer, enterComputerResponse);
+            }
+            else if (response is StartMinigameResponse startMinigameResponse)
+            {
+                 SetState(GameState.InMinigame, startMinigameResponse);
+            }
+            else if (response is OpenCraftingResponse openCraftingResponse)
+            {
+                 SetState(GameState.InCrafting, openCraftingResponse);
+            }
+             // Pass unhandled responses to the Simple Action Dispatcher
+             else
              {
-                  Visualizer visualizer = currentOpenInventoryComponent.GetComponent<Visualizer>();
-                  if (visualizer != null && visualizer.SlotUIComponents != null)
-                  {
-                       foreach (var slotUI in visualizer.SlotUIComponents)
-                       {
-                            // Call RemoveHoverHighlight on each slot
-                            if (slotUI != null)
-                            {
-                                slotUI.RemoveHoverHighlight();
-                            }
-                       }
-                  }
-                  else Debug.LogWarning("MenuManager: Could not find Visualizer or SlotUIComponents on the closing Inventory GameObject to clear hover highlights.", currentOpenInventoryComponent?.gameObject);
+                 simpleActionDispatcher.Dispatch(response);
              }
-             else Debug.LogWarning("MenuManager: currentOpenInventoryComponent is null when exiting InInventory state. Cannot clear hover highlights.");
-             // ----------------------------------------------------
-         }
-         else Debug.LogWarning("MenuManager: No stored UI Root GameObject reference to deactivate when exiting InInventory.", this);
-
-
-         // Clear the stored references AFTER using them
-         currentOpenInventoryComponent = null;
-         currentActiveUIRoot = null;
-
-         // Camera mode and player controls handled in HandlePlayingStateEntry if transitioning to Playing
-    }
-
-    private void HandleInPauseMenuExit(InteractionResponse response)
-    {
-         Time.timeScale = 1f; // Unpause the game time
-        // TODO: Deactivate Pause Menu UI GameObject
-        Debug.LogWarning("MenuManager: Pause Menu UI deactivation is not implemented yet.");
-        // Camera mode and player controls handled in HandlePlayingStateEntry if transitioning to Playing
-    }
-
-    private void HandleInComputerStateExit(InteractionResponse response)
-    {
-         // --- Tell CameraManager to go back to MouseLook mode ---
-         if (CameraManager.Instance != null)
-         {
-             // Use the stored duration for the return trip
-             CameraManager.Instance.SetCameraMode(
-                 CameraManager.CameraMode.MouseLook,
-                 null, // Target view is null for MouseLook return
-                 storedCinematicDuration // Pass the stored duration for the return move
-             );
-         }
-         else Debug.LogError("MenuManager: CameraManager Instance is null! Cannot set camera mode.");
-        // -----------------------------------------------------
-
-         // Call ResetInteraction on the ComputerInteractable using the stored reference
-         if (currentComputerInteractable != null)
-         {
-             currentComputerInteractable.ResetInteraction();
-         }
-         else Debug.LogWarning("MenuManager: No stored ComputerInteractable instance to call ResetInteraction.", this);
-
-        // Deactivate the Computer UI Root
-        if (currentActiveUIRoot != null)
-        {
-             currentActiveUIRoot.SetActive(false);
         }
-        else Debug.LogWarning("MenuManager: No stored UI Root GameObject reference to deactivate when exiting InComputer.", this);
 
-
-        // Clear the stored references after use
-        currentComputerInteractable = null;
-        currentActiveUIRoot = null;
-        // currentOpenInventoryComponent is null for Computer state
-        currentCraftingStation = null; // Ensure crafting reference is null
-
-
-        // Re-enable player movement and interaction raycast here explicitly on exit from Computer
-        // If transitioning to Playing state, HandlePlayingStateEntry will also do this, which is fine.
-         if(playerMovement != null) playerMovement.moveSpeed = 7f; // Added null check, assuming default speed
-         interactionManager?.EnableRaycast();
-         if(playerUI != null) playerUI.SetActive(true); // Added null check
-         if(playerToolbarUI != null) playerToolbarUI.SetActive(true); // Added null check
-    }
-
-    private void HandleInMinigameStateExit(InteractionResponse response)
-    {
-         if (currentActiveUIRoot != null)
-         {
-             currentActiveUIRoot.SetActive(false);
-         }
-         else Debug.LogWarning("MenuManager: No stored UI Root GameObject reference to deactivate when exiting Minigame.", this);
-
-
-         if (CameraManager.Instance != null)
-         {
-             CameraManager.Instance.SetCameraMode(
-                 CameraManager.CameraMode.MouseLook,
-                 null,
-                 storedCinematicDuration
-             );
-         }
-         else Debug.LogError("MenuManager: CameraManager Instance is null! Cannot set camera mode.");
-
-
-        // --- Reset Minigame Logic ---
-         if (MinigameManager.Instance != null) // Check if MinigameManager instance exists
-         {
-             MinigameManager.Instance.ResetMinigame(); // Call the ResetMinigame method
-         }
-         else Debug.LogError("MenuManager: MinigameManager Instance is null! Cannot reset minigame.");
-
-         // Call ResetInteraction on the CashRegisterInteractable using the stored reference
-         if (currentCashRegisterInteractable != null)
-         {
-             currentCashRegisterInteractable.ResetInteraction();
-         }
-         else Debug.LogWarning("MenuManager: No stored CashRegisterInteractable instance to call ResetInteraction.", this);
-
-
-        // Clear the stored references after use
-        currentCashRegisterInteractable = null;
-        currentActiveUIRoot = null;
-        currentCraftingStation = null; // Ensure crafting reference is null
-
-
-        // Re-enable player movement and interaction raycast
-         if(playerMovement != null) playerMovement.moveSpeed = 7f; // Added null check, assuming default speed
-         interactionManager?.EnableRaycast();
-         if(playerUI != null) playerUI.SetActive(true); // Added null check
-         if(playerToolbarUI != null) playerToolbarUI.SetActive(true); // Added null check
-    }
-
-    /// <summary>
-    /// Handles exiting the crafting state.
-    /// </summary>
-    private void HandleInCraftingStateExit(InteractionResponse response)
-    {
-        // Tell the CraftingStation to close its UI
-        if (currentCraftingStation != null)
+        // Helper method to clear hover highlights for any given inventory
+        // Keep this public as StateActions or UIManager might call it
+        public void ClearHoverHighlights(InventoryClass inventory)
         {
-            currentCraftingStation.CloseCraftingUI(); // Tell the CraftingStation to deactivate its UI
-            Debug.Log($"MenuManager: Deactivated Crafting UI via CraftingStation: {currentCraftingStation.gameObject.name}", this);
-
-             // --- FIND AND CLEAR HOVER HIGHLIGHTS ON ALL SLOTS FOR CRAFTING INVENTORIES ---
-             // Need to access the input and output inventories from the CraftingStation
-             if (currentCraftingStation.primaryInputInventory != null) ClearHoverHighlights(currentCraftingStation.primaryInputInventory);
-             if (currentCraftingStation.secondaryInputInventory != null) ClearHoverHighlights(currentCraftingStation.secondaryInputInventory);
-             if (currentCraftingStation.outputInventory != null) ClearHoverHighlights(currentCraftingStation.outputInventory);
-             // --------------------------------------------------------------------------
-        }
-        else Debug.LogWarning("MenuManager: No stored CraftingStation component to close UI when exiting InCrafting.", this);
-
-
-        // Clear the stored reference after use
-        currentCraftingStation = null;
-        // currentActiveUIRoot is not stored for CraftingState as CraftingStation owns it
-
-
-        // Camera mode and player controls handled in HandlePlayingStateEntry if transitioning to Playing
-        // Also re-enabled explicitly here just in case, redundant with Playing entry but safe.
-         if(playerMovement != null) playerMovement.moveSpeed = 7f; // Added null check, assuming default speed
-         interactionManager?.EnableRaycast();
-         if(playerUI != null) playerUI.SetActive(true); // Added null check
-         if(playerToolbarUI != null) playerToolbarUI.SetActive(true); // Added null check
-    }
-
-    // Helper method to clear hover highlights for any given inventory
-    private void ClearHoverHighlights(InventoryClass inventory)
-    {
-         if (inventory != null)
-         {
-              Visualizer visualizer = inventory.GetComponent<Visualizer>();
-              if (visualizer != null && visualizer.SlotUIComponents != null)
-              {
-                   foreach (var slotUI in visualizer.SlotUIComponents)
-                   {
-                        if (slotUI != null)
+            if (inventory != null)
+            {
+                Visualizer visualizer = inventory.GetComponent<Visualizer>(); // Assuming Visualizer exists
+                if (visualizer != null && visualizer.SlotUIComponents != null) // Assuming SlotUIComponents is a public list
+                {
+                    foreach (var slotUI in visualizer.SlotUIComponents)
+                    {
+                        if (slotUI != null) // Ensure the slotUI is not null in the list
                         {
-                             slotUI.RemoveHoverHighlight();
+                            slotUI.RemoveHoverHighlight(); // Assuming RemoveHoverHighlight exists on SlotUI component
                         }
-                   }
-              }
-              else Debug.LogWarning($"MenuManager: Could not find Visualizer or SlotUIComponents on Inventory GameObject '{inventory.gameObject.name}' to clear hover highlights.", inventory?.gameObject);
-         }
-    }
+                    }
+                }
+                 // Added checks for null visualizer or empty SlotUIComponents list
+                else if (visualizer == null) Debug.LogWarning($"MenuManager: Could not find Visualizer component on Inventory GameObject '{inventory.gameObject.name}' to clear hover highlights.", inventory?.gameObject);
+                else if (visualizer.SlotUIComponents == null) Debug.LogWarning($"MenuManager: SlotUIComponents list is null on Visualizer component of Inventory GameObject '{inventory.gameObject.name}'.", inventory?.gameObject);
+                else if (visualizer.SlotUIComponents.Count == 0) Debug.LogWarning($"MenuManager: SlotUIComponents list is empty on Visualizer component of Inventory GameObject '{inventory.gameObject.name}'.", inventory?.gameObject);
+            }
+            else Debug.LogWarning("MenuManager: Cannot clear hover highlights - Inventory reference is null.", this);
+        }
 
-
-    // --- Helper Method ---
-    private void InMenu()
-    {
-        Time.timeScale = 1f; // Ensure time is not paused by other menus
-        Cursor.lockState = CursorLockMode.None;
-        Cursor.visible = true;
-        if(playerMovement != null) playerMovement.moveSpeed = 0f; // Added null check
-        if(playerUI != null) playerUI.SetActive(false); // Added null check
-        // playerToolbarUI visibility is handled explicitly per state entry/exit now
-    }
-
+        // Public methods to open/close pause menu still call SetState
         public void OpenPauseMenu()
-    {
-        SetState(GameState.InPauseMenu, null);
-    }
-    public void ClosePauseMenu()
-    {
-         SetState(GameState.Playing, null);
+        {
+            // Ensure we use the correct enum name
+            SetState(GameState.InPauseMenu, null);
+        }
+
+        public void ClosePauseMenu()
+        {
+             // When exiting PauseMenu via a dedicated button, return to the state it was in BEFORE PauseMenu.
+             // This uses previousState.
+             // The Escape key logic in Update already handles returning to Playing from PauseMenu.
+             // Let's use previousState here for more flexible Pause Menu exits (e.g., from Inventory -> Pause -> back to Inventory).
+             // Ensure previousState is valid and not PauseMenu itself to prevent infinite loops.
+
+             // --- CORRECTED: Use GameState.InPauseMenu ---
+             GameState stateAfterPause = (previousState != GameState.InPauseMenu && previousState != GameState.Playing) ? previousState : GameState.Playing;
+             SetState(stateAfterPause, null);
+             // -------------------------------------------
+        }
     }
 }

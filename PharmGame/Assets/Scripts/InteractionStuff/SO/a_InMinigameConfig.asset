@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6567497683378e14bae2805ca663d17a, type: 3}
+  m_Name: a_InMinigameConfig
+  m_EditorClassIdentifier: 
+  gameState: 4
+  entryActions:
+  - {fileID: 11400000, guid: 4ffd3fa1627be944994e810793f8b1ab, type: 2}
+  - {fileID: 11400000, guid: 9e2dad9478ae5b84e9a38b406a790030, type: 2}
+  - {fileID: 11400000, guid: 7b6b983f77496f54aa502ee5f09e9a4b, type: 2}
+  exitActions:
+  - {fileID: 11400000, guid: baae417531facb7449bdb363915d90d7, type: 2}
+  - {fileID: 11400000, guid: 5efc06b7a44b7ad4c8b51ff31094c7c7, type: 2}

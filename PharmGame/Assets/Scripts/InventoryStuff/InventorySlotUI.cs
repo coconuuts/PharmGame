@@ -3,7 +3,8 @@ using UnityEngine.UI;
 using TMPro;
 using Systems.Inventory;
 using UnityEngine.EventSystems;
-using System; // Needed for Action
+using System; 
+using Systems.GameStates;
 
 namespace Systems.Inventory
 {

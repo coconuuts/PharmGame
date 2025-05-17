@@ -2,57 +2,118 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using TMPro;
+using Systems.GameStates; // Needed for MenuManager and GameState enum
+using Systems.Interaction;
 
-public class PlayerMovement : MonoBehaviour
+namespace Systems.Player
 {
-    public CharacterController controller;
-
-    public float moveSpeed = 7f;
-    public float gravity = -9.81f;
-    // The jumpHeight variable is now mainly for reference – we use jumpForce for the actual jump.
-    public float jumpHeight = 3f;
-    
-    // Instead of computing jump velocity with sqrt at runtime, we predefine jumpForce.
-    // For example, with gravity=-9.81 and jumpHeight=3, a good starting value is about 7.67.
-    public float jumpForce = 7.67f;
-
-    Vector3 velocity;
-
-    public Transform groundCheck;
-    public float groundDistance = 0.1f;
-    public LayerMask groundMask;
-    bool isGrounded;
-
-    private void Update()
+    public class PlayerMovement : MonoBehaviour
     {
-        // Check if the player is grounded
-        isGrounded = Physics.CheckSphere(groundCheck.position, groundDistance, groundMask);
+        public CharacterController controller;
 
-        if(isGrounded && velocity.y < 0)
+        public float moveSpeed = 7f;
+        public float gravity = -9.81f;
+        public float jumpHeight = 3f;
+        public float jumpForce = 7.67f;
+
+        Vector3 velocity;
+
+        public Transform groundCheck;
+        public float groundDistance = 0.1f;
+        public LayerMask groundMask;
+        bool isGrounded;
+
+        // --- ADDED: Flag to control movement ---
+        private bool movementEnabled = true;
+        // -------------------------------------
+
+
+        private void OnEnable()
         {
-            velocity.y = -2f;
+            // Subscribe to the state change event
+            MenuManager.OnStateChanged += HandleGameStateChanged;
         }
 
-        // Get input axes
-        float x = Input.GetAxisRaw("Horizontal");
-        float z = Input.GetAxisRaw("Vertical");
-
-        // Calculate movement direction
-        Vector3 move = transform.right * x + transform.forward * z;
-        controller.Move(move * moveSpeed * Time.deltaTime);
-
-        // Jump functionality without using sqrt:
-        // When the jump button is pressed and the player is grounded,
-        // we simply assign the precomputed jumpForce to the vertical velocity.
-        if(Input.GetButtonDown("Jump") && isGrounded)
+        private void OnDisable()
         {
-            velocity.y = jumpForce;
+            // Unsubscribe from the state change event
+            MenuManager.OnStateChanged -= HandleGameStateChanged;
         }
 
-        // Apply gravity over time
-        velocity.y += gravity * Time.deltaTime;
+        // --- ADDED: Handler for state changes ---
+        private void HandleGameStateChanged(MenuManager.GameState newState, MenuManager.GameState oldState, InteractionResponse response)
+        {
+            // Enable movement only in the Playing state
+            if (newState == MenuManager.GameState.Playing)
+            {
+                SetMovementEnabled(true);
+            }
+            else
+            {
+                SetMovementEnabled(false); // Disable movement in all other states
+            }
+        }
+        // ----------------------------------------
 
-        // Move the controller vertically
-        controller.Move(velocity * Time.deltaTime);
+        // --- ADDED: Public method to set movement enabled state ---
+        /// <summary>
+        /// Enables or disables player movement input processing.
+        /// Called by StateAction Scriptable Objects or event handlers.
+        /// </summary>
+        public void SetMovementEnabled(bool enabled)
+        {
+            movementEnabled = enabled;
+             // Optional: If disabling movement, stop any ongoing velocity immediately
+            if (!enabled)
+            {
+                 velocity.x = 0;
+                 velocity.z = 0;
+                 // For CharacterController, setting velocity directly might not work as expected for vertical.
+                 // The gravity logic below will handle vertical velocity decay when not grounded.
+                 // For horizontal, setting move * moveSpeed = 0 implicitly handles it in Update.
+            }
+            Debug.Log($"PlayerMovement: Movement enabled set to {movementEnabled}.");
+        }
+        // ---------------------------------------------------------
+
+
+        private void Update()
+        {
+            // Check if the player is grounded
+            isGrounded = Physics.CheckSphere(groundCheck.position, groundDistance, groundMask);
+
+            if (isGrounded && velocity.y < 0)
+            {
+                velocity.y = -2f;
+            }
+
+            // --- MODIFIED: Only process movement input if movement is enabled ---
+            if (movementEnabled)
+            {
+                // Get input axes
+                float x = Input.GetAxisRaw("Horizontal");
+                float z = Input.GetAxisRaw("Vertical");
+
+                // Calculate movement direction
+                Vector3 move = transform.right * x + transform.forward * z;
+                controller.Move(move * moveSpeed * Time.deltaTime);
+
+                // Jump functionality
+                if (Input.GetButtonDown("Jump") && isGrounded)
+                {
+                    velocity.y = jumpForce;
+                }
+            }
+            // -----------------------------------------------------------------
+
+
+            // Apply gravity over time (always applies, even if movement input is disabled)
+            velocity.y += gravity * Time.deltaTime;
+
+            // Move the controller vertically (always applies)
+            controller.Move(velocity * Time.deltaTime);
+        }
+
+         // Removed obsolete methods related to old MenuManager direct calls if any existed
     }
 }

@@ -1,7 +1,8 @@
 using UnityEngine;
 using Systems.Inventory;
-using System.Collections.Generic; // Needed for List
-using System; // Needed for Action
+using System.Collections.Generic;
+using System; 
+using Systems.GameStates;
 
 namespace Systems.Inventory
 {

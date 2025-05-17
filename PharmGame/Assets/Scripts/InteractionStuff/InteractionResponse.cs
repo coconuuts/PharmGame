@@ -7,7 +7,8 @@ using System.Linq;
 // Assuming this is within your Systems.Interaction namespace file (e.g., InteractionResponses.cs)
 namespace Systems.Interaction
 {
-    public abstract class InteractionResponse {
+    public abstract class InteractionResponse
+    {
         // Add an InteractionResult enum and base constructor if needed
         // public enum InteractionResult { None, OpenInventory, EnterComputer, ToggleLight, StartMinigame }
         // public InteractionResult ResultType { get; protected set; }
@@ -92,6 +93,24 @@ namespace Systems.Interaction
             // Calculate TargetClickCount from the assigned list for MinigameManager
             TargetClickCount = ItemsToScan != null ? ItemsToScan.Sum(item => item.quantity) : 0;
             CashRegisterInteractable = cashRegisterInteractable; // Assign the register instance
+        }
+    }
+    
+    /// <summary>
+    /// Response indicating that the player is interacting with a crafting station.
+    /// Contains a reference to the CraftingStation component.
+    /// </summary>
+    public class OpenCraftingResponse : InteractionResponse
+    {
+        public CraftingStation CraftingStationComponent { get; }
+
+        /// <summary>
+        /// Constructor for OpenCraftingResponse.
+        /// </summary>
+        /// <param name="craftingStation">The CraftingStation component that was interacted with.</param>
+        public OpenCraftingResponse(CraftingStation craftingStation) // : base(...) // Add if using a base constructor in InteractionResponse
+        {
+            CraftingStationComponent = craftingStation;
         }
     }
 }

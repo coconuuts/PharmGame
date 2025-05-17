@@ -29,6 +29,8 @@ TagManager:
   - NPCInventory
   - NPC Grid
   - PlayerUI
+  - PlayerToolbar
+  - BarcodeGame
   layers:
   - Default
   - TransparentFX
