@@ -47,15 +47,15 @@ namespace Systems.Inventory
                  if (parentInventory != null && parentInventory.InventoryState != null &&
                      selectedIndex >= 0 && selectedIndex < parentInventory.InventoryState.Length)
                  {
-                      // Check if the index is within the bounds of physical slots if Combiner exists
-                      if (parentInventory.Combiner != null && selectedIndex < parentInventory.Combiner.PhysicalSlotCount)
-                      {
-                           return parentInventory.InventoryState[selectedIndex];
-                      }
-                      else if (parentInventory.Combiner == null) // If no Combiner, assume all slots are physical/selectable
-                      {
-                           return parentInventory.InventoryState[selectedIndex];
-                      }
+                     // Check if the index is within the bounds of physical slots if Combiner exists
+                     if (parentInventory.Combiner != null && selectedIndex < parentInventory.Combiner.PhysicalSlotCount)
+                     {
+                         return parentInventory.InventoryState[selectedIndex];
+                     }
+                     else if (parentInventory.Combiner == null) // If no Combiner, assume all slots are physical/selectable
+                     {
+                         return parentInventory.InventoryState[selectedIndex];
+                     }
                  }
                  return null; // Return null if index is out of bounds or InventoryState is null
             }
@@ -85,40 +85,38 @@ namespace Systems.Inventory
                 // Ensure the initial selected index is valid
                 selectedIndex = Mathf.Clamp(selectedIndex, 0, slotUIs.Count - 1);
 
-                // Apply initial highlight IF starting in Playing state (handled by event subscription now)
-                // We no longer need to explicitly check here in Start, the initial SetState call
-                // in MenuManager.Start will trigger the event and the handler below.
-            }
-            else
-            {
-                enabled = false; // Disable this script if visualizer is null
-            }
+                if (MenuManager.Instance == null)
+                {
+                    Debug.LogError("InventorySelector: MenuManager Instance is null in Start! Cannot subscribe to state changes or determine initial state.", this);
+                    enabled = false; // Disable if MenuManager is missing
+                    return; // Exit Start if MenuManager is missing
+                }
 
-            if (MenuManager.Instance == null)
-            {
-                Debug.LogError("InventorySelector: MenuManager Instance is null! Cannot subscribe to state changes.", this);
-                enabled = false; // Disable if MenuManager is missing
-            }
-            else
-            {
                 // --- Subscribe to state changes ---
                 MenuManager.OnStateChanged += HandleGameStateChanged;
                 Debug.Log("InventorySelector: Subscribed to MenuManager.OnStateChanged.");
 
-                // Apply the correct highlight based on the *initial* state after subscribing
-                // This handles the scenario where the game starts not in the Playing state.
-                 if (MenuManager.Instance.currentState == MenuManager.GameState.Playing)
-                 {
-                      ApplyHighlight(selectedIndex); // Apply selection highlight if starting in Playing
-                 }
+                // --- ADDED: Check current state and apply highlight if already in Playing ---
+                // This handles the scenario where the toolbar UI is activated AFTER the initial
+                // MenuManager state transition has already occurred.
+                if (MenuManager.Instance.currentState == MenuManager.GameState.Playing)
+                {
+                    Debug.Log("InventorySelector: Starting while in Playing state, applying initial selection highlight.");
+                    ApplyHighlight(selectedIndex); // Apply selection highlight to the default/saved index
+                }
+                // --- END ADDED CODE ---
                  else
                  {
-                       // Ensure highlight is off if not starting in Playing
-                       if (slotUIs != null && selectedIndex >= 0 && selectedIndex < slotUIs.Count)
-                       {
-                           slotUIs[selectedIndex].RemoveSelectionHighlight();
-                       }
+                     // Ensure highlight is off if starting in a state other than Playing
+                      if (slotUIs != null && selectedIndex >= 0 && selectedIndex < slotUIs.Count)
+                      {
+                          slotUIs[selectedIndex].RemoveSelectionHighlight();
+                      }
                  }
+            }
+            else
+            {
+                enabled = false; // Disable this script if visualizer is null
             }
         }
 
@@ -131,18 +129,16 @@ namespace Systems.Inventory
                 Debug.Log("InventorySelector: Unsubscribed from MenuManager.OnStateChanged.");
             }
 
-            // Optional: Ensure highlight is removed on destroy
+            // Ensure highlight is removed on destroy
              if (slotUIs != null && selectedIndex >= 0 && selectedIndex < slotUIs.Count)
              {
                  slotUIs[selectedIndex].RemoveSelectionHighlight();
              }
         }
 
-
-        // --- MODIFIED: Handle Game State Changes to manage selection highlight visibility ---
         /// <summary>
         /// Event handler for MenuManager.OnStateChanged.
-        /// Manages the visibility of the selection highlight based on the game state.
+        /// Manages the visibility of the selection highlight based on the game state transition.
         /// </summary>
         private void HandleGameStateChanged(MenuManager.GameState newState, MenuManager.GameState oldState, InteractionResponse response)
         {
@@ -151,23 +147,25 @@ namespace Systems.Inventory
             if (newState == MenuManager.GameState.Playing)
             {
                 Debug.Log("InventorySelector: Entering Playing state, applying selection highlight.");
+                // ApplyHighlight no longer has the state check, so this call works correctly.
                 ApplyHighlight(selectedIndex); // Apply selection highlight
             }
             // If exiting Playing state, remove the selection highlight from the current index
-            else if (oldState == MenuManager.GameState.Playing) // Check if the *previous* state was Playing
+            // Note: This happens BEFORE the MenuManager's state variable is updated to the new state.
+            // The RemoveSelectionHighlight method on SlotUI doesn't have a state check, so it's safe to call.
+            else if (oldState == MenuManager.GameState.Playing)
             {
                  Debug.Log("InventorySelector: Exiting Playing state, removing selection highlight.");
                  // Remove highlight from the previously selected slot (which is still selectedIndex)
                  if (slotUIs != null && selectedIndex >= 0 && selectedIndex < slotUIs.Count)
                  {
-                      slotUIs[selectedIndex].RemoveSelectionHighlight(); // Remove selection highlight
-                      Debug.Log($"InventorySelector: Removed selection highlight from slot {selectedIndex}.");
+                     slotUIs[selectedIndex].RemoveSelectionHighlight(); // Remove selection highlight
+                     Debug.Log($"InventorySelector: Removed selection highlight from slot {selectedIndex}.");
                  }
             }
-            // Note: When entering InInventory state, the hover highlight takes over
-            // (This is handled by the InventorySlotUI itself, not here).
-            // When exiting InInventory, the MenuManager's ClearHoverHighlights action
-            // will remove hover highlights from *all* slots in the inventory.
+            // Note: When entering InInventory or InCrafting, the selection highlight is
+            // implicitly removed by the check above when exiting Playing. Hover highlight takes over
+            // (handled by InventorySlotUI itself).
         }
 
 
@@ -216,38 +214,28 @@ namespace Systems.Inventory
             // This logic handles changing the highlight *while* already in Playing.
             if (selectedIndex != previousSelectedIndex)
             {
-                // Only update highlight visually if currently in Playing state
-                // This check is technically redundant because HandleInput only runs in Playing,
-                // but it adds an extra layer of safety.
-                if (MenuManager.Instance.currentState == MenuManager.GameState.Playing)
-                {
-                    ApplyHighlight(selectedIndex, previousSelectedIndex); // Apply/Remove selection highlights
-                }
-                // If not in Playing, the selection state changes, but the visual highlight is not immediately updated here.
-                // It will be updated when returning to Playing state in HandleGameStateChanged.
+                // The ApplyHighlight method no longer has the state check, so calling it here is fine.
+                // The HandleInput method itself only runs in the Playing state, ensuring this only
+                // updates the highlight while in Playing.
+                ApplyHighlight(selectedIndex, previousSelectedIndex); // Apply/Remove selection highlights
             }
         }
 
         /// <summary>
         /// Applies the visual selection highlight to the newly selected slot and removes it from the previously selected slot.
-        /// ONLY applies highlight if the game state is Playing.
+        /// Called by HandleInput (when in Playing state) or HandleGameStateChanged (when entering Playing state),
+        /// or from Start if the state is already Playing.
         /// Requires InventorySlotUI to have ApplySelectionHighlight() and RemoveSelectionHighlight() methods.
+        /// NOTE: This method assumes the caller has determined that selection highlighting is appropriate (i.e., in Playing state).
         /// </summary>
         private void ApplyHighlight(int newIndex, int previousIndex = -1)
         {
-            // This method now specifically manages the *selection* highlight.
-            // It should only proceed if the game state is Playing.
-            if (MenuManager.Instance != null && MenuManager.Instance.currentState != MenuManager.GameState.Playing)
-            {
-                 // Debug.Log("InventorySelector: ApplyHighlight called, but state is not Playing. Skipping selection highlight update."); // Too verbose?
-                 return; // Do not apply selection highlight if not in Playing state
-            }
-             else if (MenuManager.Instance == null)
+             // Keep null check for safety, but the state check is removed as it's handled by the callers.
+             if (MenuManager.Instance == null)
              {
-                  Debug.LogError("InventorySelector: MenuManager Instance is null in ApplyHighlight!");
+                  Debug.LogError("InventorySelector: MenuManager Instance is null in ApplyHighlight!", this);
                   return;
              }
-
 
             if (slotUIs == null || slotUIs.Count == 0)
             {
@@ -263,11 +251,11 @@ namespace Systems.Inventory
 
             // Remove selection highlight from the previous slot (if a valid previous index exists and it's different from the new index)
              if (previousIndex >= 0 && previousIndex < slotUIs.Count && previousIndex != newIndex)
-            {
+             {
                  // Call the new RemoveSelectionHighlight method on the SlotUI
-                if(slotUIs[previousIndex] != null) slotUIs[previousIndex].RemoveSelectionHighlight();
-                else Debug.LogWarning($"InventorySelector: slotUIs[{previousIndex}] is null when attempting to remove selection highlight.", this);
-            }
+                 if(slotUIs[previousIndex] != null) slotUIs[previousIndex].RemoveSelectionHighlight();
+                 else Debug.LogWarning($"InventorySelector: slotUIs[{previousIndex}] is null when attempting to remove selection highlight.", this);
+             }
 
             // Apply selection highlight to the new slot
             if (newIndex >= 0 && newIndex < slotUIs.Count)
@@ -310,8 +298,5 @@ namespace Systems.Inventory
             else Debug.Log("InventorySelector: No item in selected slot to use.", this);
             return false;
         }
-
-        // Removed obsolete methods: Highlight(), Unhighlight() if they were just visual toggles
-        // Assuming ApplySelectionHighlight and RemoveSelectionHighlight on InventorySlotUI replace them for selection state
     }
 }

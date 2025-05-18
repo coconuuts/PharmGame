@@ -1,421 +1,351 @@
 using UnityEngine;
+using System; // Needed for Action and Tuple
 using System.Collections.Generic;
-using Systems.Interaction; // Needed for InteractionResponse types (StartMinigameResponse data)
-using System.Linq; // Needed for Linq methods like .ToList(), Sum()
-using Systems.Inventory; // Needed for ItemDetails
-using Systems.Economy; // Needed for EconomyManager
 using Systems.GameStates; // Needed for MenuManager and GameState enum
-// Assuming CashRegisterInteractable is in Systems.Interaction or its own namespace
-// using Systems.Interaction; // Already included
-// or using Systems.Interactables; // Example namespace
+using Systems.Interaction; // Needed for InteractionResponse types and CashRegisterInteractable
+using Systems.Inventory; // Needed for ItemDetails (for data)
+using Systems.Economy; // Needed for EconomyManager
 
 namespace Systems.Minigame // Your Minigame namespace
 {
+    /// <summary>
+    /// Central manager for coordinating different minigame types.
+    /// Listens to state changes and activates the appropriate minigame component and its UI.
+    /// </summary>
     public class MinigameManager : MonoBehaviour
     {
-        // ... (Existing fields remain)
         public static MinigameManager Instance { get; private set; }
 
-        [Header("UI References")]
-        [Tooltip("The root GameObject for the minigame UI.")]
-        [SerializeField] private GameObject minigameUIRoot; // ADDED FIELD
+        [Header("Minigame Configurations")]
+        [Tooltip("List of configurations for different minigame types.")]
+        [SerializeField] private List<MinigameConfig> minigameConfigs; // Using a list of configurations
 
-        [Header("Grid References")]
-        [Tooltip("Drag all the BarcodeSlot GameObjects from the UI grid here.")]
-        [SerializeField] private List<BarcodeSlot> gridSlots; // Assumes BarcodeSlot script exists
+        [System.Serializable] // Make this struct visible in the Inspector
+        public struct MinigameConfig
+        {
+            public MinigameType type;
+            [Tooltip("The GameObject containing the IMinigame script component (Optional, can be the same as UI Root).")]
+            public GameObject minigameLogicGameObject; // The GameObject with the script component
+            [Tooltip("The root GameObject of the minigame's UI hierarchy.")]
+            public GameObject minigameUIRootGameObject; // The root of the UI visuals (your 'BarcodeGame' object)
+        }
 
-        [Header("Barcode Settings")]
-        [Tooltip("A list of possible sprites to use for the barcodes.")]
-        [SerializeField] private List<Sprite> possibleBarcodeSprites;
+        private IMinigame currentActiveMinigameLogic; // Tracks the currently running minigame LOGIC component
+        private GameObject currentActiveMinigameUIRoot; // Tracks the currently active minigame UI ROOT GameObject
 
-        [Tooltip("The maximum number of barcodes visible on the grid at any given time.")]
-        [SerializeField] private int maxVisibleBarcodes = 3;
-
-        // Fields to store customer's purchase and the initiating register
-        private List<(ItemDetails details, int quantity)> currentItemsToScan;
-        private CashRegisterInteractable initiatingRegister; // Assumes this class exists
-
-        private int targetClickCount;
-        private int clicksMade;
-        private int barcodesCurrentlyVisible;
-
-        private List<int> availableSlotIndices;
-
-        private int lastClickedSlotIndex = -1;
+        private Dictionary<MinigameType, MinigameConfig> minigameConfigMap;
 
 
         private void Awake()
         {
             if (Instance == null) Instance = this;
-            else { Debug.LogWarning("MinigameManager: Duplicate instance found. Destroying this one.", this); Destroy(gameObject); return; }
+            else { Debug.LogWarning("MinigameManager: Duplicate instance found. Destroying this one.", this); return; }
             Debug.Log("MinigameManager: Awake completed.");
 
-             // Ensure UI is off initially if assigned
-             if (minigameUIRoot != null)
-             {
-                  minigameUIRoot.SetActive(false);
-             }
-             else
-             {
-                  Debug.LogWarning("MinigameManager: Minigame UI Root GameObject is not assigned!", this);
-             }
-
-
-            availableSlotIndices = new List<int>();
-            if (gridSlots != null)
+            minigameConfigMap = new Dictionary<MinigameType, MinigameConfig>();
+            if (minigameConfigs != null)
             {
-                for (int i = 0; i < gridSlots.Count; i++)
+                foreach (var config in minigameConfigs)
                 {
-                    if (gridSlots[i] != null)
+                    // Ensure both logic and UI root GameObjects are assigned and valid
+                    if (config.minigameLogicGameObject != null && config.minigameUIRootGameObject != null)
                     {
-                        gridSlots[i].SetMinigameManager(this); // Assuming BarcodeSlot needs a reference back
-                        availableSlotIndices.Add(i); // All slots are available initially
+                         if (!minigameConfigMap.ContainsKey(config.type))
+                         {
+                              minigameConfigMap.Add(config.type, config);
+                              // Ensure the logic GameObject and UI root are initially inactive
+                              config.minigameLogicGameObject.SetActive(false);
+                              config.minigameUIRootGameObject.SetActive(false);
+                         }
+                         else
+                         {
+                              Debug.LogWarning($"MinigameManager: Duplicate MinigameConfig found for type {config.type}. Using the first one.", config.minigameLogicGameObject);
+                         }
                     }
-                    else Debug.LogWarning($"MinigameManager: Grid slot at index {i} is null in the assigned list!", this);
+                    else
+                    {
+                        Debug.LogWarning($"MinigameManager: Minigame Config for type {config.type} has null Logic GameObject or UI Root GameObject assigned! This minigame will not be functional.", this);
+                    }
                 }
-                 if(gridSlots.Count > 0 && availableSlotIndices.Count != gridSlots.Count)
-                 {
-                     Debug.LogWarning("MinigameManager: Some grid slots are null in the list, availableSlotIndices size doesn't match gridSlots count.", this);
-                 }
             }
-            else { Debug.LogError("MinigameManager: Grid Slots list is not assigned in the Inspector!", this); enabled = false; }
-
-            // Initialize the item list
-            currentItemsToScan = new List<(ItemDetails details, int quantity)>();
+            else
+            {
+                Debug.LogError("MinigameManager: Minigame Configs list is not assigned in the Inspector! No minigames can be managed.", this);
+                enabled = false; // Disable if configs are missing
+            }
         }
 
         private void OnEnable()
         {
-             // Subscribe to the state change event
-             MenuManager.OnStateChanged += HandleGameStateChanged;
+            MenuManager.OnStateChanged += HandleGameStateChanged;
+            Debug.Log("MinigameManager: Subscribed to MenuManager.OnStateChanged.");
         }
 
         private void OnDisable()
         {
-             // Unsubscribe from the state change event
-             MenuManager.OnStateChanged -= HandleGameStateChanged;
+            MenuManager.OnStateChanged -= HandleGameStateChanged;
+            Debug.Log("MinigameManager: Unsubscribed from MenuManager.OnStateChanged.");
+
+            // Ensure any active minigame is ended and deactivated if the manager is disabled
+            if (currentActiveMinigameLogic != null)
+            {
+                 currentActiveMinigameLogic.End();
+                 // Deactivate both the UI root and the logic GameObject
+                 if (currentActiveMinigameUIRoot != null) currentActiveMinigameUIRoot.SetActive(false);
+                 if (currentActiveMinigameLogic is MonoBehaviour activeMono) activeMono.gameObject.SetActive(false);
+
+                 currentActiveMinigameLogic.OnMinigameCompleted -= HandleMinigameCompleted; // Unsubscribe
+                 currentActiveMinigameLogic = null;
+                 currentActiveMinigameUIRoot = null;
+                 Debug.Log("MinigameManager: Active minigame and UI deactivated due to manager being disabled.");
+            }
         }
 
         private void OnDestroy()
         {
             if (Instance == this) Instance = null;
+
+            // Ensure event handlers are removed from any active minigame if manager is destroyed
+             if (currentActiveMinigameLogic != null)
+             {
+                 currentActiveMinigameLogic.OnMinigameCompleted -= HandleMinigameCompleted;
+             }
         }
 
-        // --- ADDED: Handler for state changes ---
         /// <summary>
         /// Event handler for MenuManager.OnStateChanged.
-        /// Manages the visibility of the minigame UI.
+        /// Manages the activation, starting, and ending of minigame components and their UI.
         /// </summary>
         private void HandleGameStateChanged(MenuManager.GameState newState, MenuManager.GameState oldState, InteractionResponse response)
         {
-             // Activate UI when entering the Minigame state
-             if (newState == MenuManager.GameState.InMinigame)
+             Debug.Log($"MinigameManager: Handling state change from {oldState} to {newState}.");
+
+            // --- Handle Exiting the Minigame State ---
+            if (oldState == MenuManager.GameState.InMinigame)
+            {
+                 Debug.Log("MinigameManager: Exiting InMinigame state.");
+                 // End and deactivate the currently active minigame logic and UI
+                 if (currentActiveMinigameLogic != null)
+                 {
+                     currentActiveMinigameLogic.End(); // Call the End method for cleanup
+
+                     // Deactivate the Logic GameObject
+                     if (currentActiveMinigameLogic is MonoBehaviour exitingMono)
+                     {
+                         exitingMono.gameObject.SetActive(false);
+                         Debug.Log($"MinigameManager: Deactivated minigame Logic GameObject: {exitingMono.gameObject.name}");
+                     }
+                     else Debug.LogWarning("MinigameManager: Active minigame logic is not a MonoBehaviour. Cannot deactivate Logic GameObject.");
+
+                     // Deactivate the UI Root GameObject
+                     if (currentActiveMinigameUIRoot != null)
+                     {
+                         currentActiveMinigameUIRoot.SetActive(false);
+                         Debug.Log($"MinigameManager: Deactivated minigame UI Root GameObject: {currentActiveMinigameUIRoot.name}");
+                     }
+                     else Debug.LogWarning("MinigameManager: No active minigame UI Root found to deactivate.");
+
+
+                     currentActiveMinigameLogic.OnMinigameCompleted -= HandleMinigameCompleted; // Unsubscribe from completion
+                     currentActiveMinigameLogic = null; // Clear the references
+                     currentActiveMinigameUIRoot = null;
+                     Debug.Log("MinigameManager: Current active minigame ended and references cleared.");
+                 }
+                 else
+                 {
+                      Debug.LogWarning("MinigameManager: Exiting InMinigame state but no active minigame found.");
+                 }
+            }
+
+
+            // --- Handle Entering the Minigame State ---
+            if (newState == MenuManager.GameState.InMinigame)
+            {
+                 Debug.Log("MinigameManager: Entering InMinigame state.");
+                 // Determine which minigame to start based on the response
+
+                 IMinigame minigameLogicToStart = null;
+                 GameObject minigameUIRootToActivate = null;
+                 object startData = null; // Data to pass to the minigame's SetupAndStart method
+
+                 if (response is StartMinigameResponse startMinigameResponse)
+                 {
+                     Debug.Log($"MinigameManager: Received StartMinigameResponse for type: {startMinigameResponse.Type}.");
+
+                     // --- Find the correct minigame config based on the Type ---
+                     if (minigameConfigMap.TryGetValue(startMinigameResponse.Type, out var config))
+                     {
+                          // Get the logic component from the assigned GameObject
+                          if (config.minigameLogicGameObject != null)
+                          {
+                               minigameLogicToStart = config.minigameLogicGameObject.GetComponent<IMinigame>();
+                               // Get the UI Root GameObject from the assigned field
+                               minigameUIRootToActivate = config.minigameUIRootGameObject;
+
+
+                               if (minigameLogicToStart != null && minigameUIRootToActivate != null)
+                               {
+                                    Debug.Log($"MinigameManager: Identified {config.type} minigame logic and UI root.");
+                                    // Prepare the specific start data based on the minigame type
+                                    switch (config.type)
+                                    {
+                                        case MinigameType.BarcodeScanning:
+                                             startData = new BarcodeMinigameStartData(startMinigameResponse.ItemsToScan, startMinigameResponse.CashRegisterInteractable);
+                                            break;
+                                        // Add cases for other minigame types and their specific data structs
+                                        // case MinigameType.Lockpicking:
+                                        //      startData = new LockpickingMinigameStartData(...); // Define this struct/class
+                                        //     break;
+                                        // ...
+                                        default:
+                                            Debug.LogWarning($"MinigameManager: Unhandled MinigameType during data preparation for type: {config.type}.", this);
+                                            break;
+                                    }
+                               }
+                               else
+                               {
+                                    // Log specific errors if IMinigame component is missing or UI Root is null
+                                    if (minigameLogicToStart == null) Debug.LogError($"MinigameManager: Assigned Logic GameObject '{config.minigameLogicGameObject.name}' does not have an IMinigame component for type {config.type}!", config.minigameLogicGameObject);
+                                    if (minigameUIRootToActivate == null) Debug.LogError($"MinigameManager: Assigned UI Root GameObject is null in config for type {config.type}!", this);
+
+                                    minigameLogicToStart = null; // Prevent starting if logic or UI is missing
+                                    minigameUIRootToActivate = null;
+                               }
+                          }
+                           else
+                           {
+                                Debug.LogError($"MinigameManager: Minigame Logic GameObject is null in config for type {config.type}!", this);
+                           }
+                     }
+                     else
+                     {
+                          Debug.LogWarning($"MinigameManager: No Minigame Config found for type: {startMinigameResponse.Type}. No minigame will start.", this);
+                     }
+                     // ---------------------------------------------------------------------
+
+                 }
+                 // Add checks for other potential minigame-starting response types if they exist
+                 // else if (response is StartSomeOtherMinigameResponse otherResponse) { ... }
+                 else
+                 {
+                      Debug.LogWarning("MinigameManager: Entered InMinigame state but the response was not a StartMinigameResponse.", this);
+                 }
+
+
+                 // --- If a minigame logic component and UI root were found, activate and start it ---
+                 if (minigameLogicToStart != null && minigameUIRootToActivate != null)
+                 {
+                     if (currentActiveMinigameLogic != null)
+                     {
+                          Debug.LogWarning("MinigameManager: Entering InMinigame state, but there is already an active minigame! Ending the previous one.", this);
+                          // Clean up the previous one before starting a new one
+                          currentActiveMinigameLogic.End();
+                           if (currentActiveMinigameLogic is MonoBehaviour alreadyActiveMono) alreadyActiveMono.gameObject.SetActive(false);
+                           if (currentActiveMinigameUIRoot != null) currentActiveMinigameUIRoot.SetActive(false); // Deactivate old UI
+                           currentActiveMinigameLogic.OnMinigameCompleted -= HandleMinigameCompleted;
+                     }
+
+                     currentActiveMinigameLogic = minigameLogicToStart; // Set the new active logic component
+                     currentActiveMinigameUIRoot = minigameUIRootToActivate; // Set the new active UI root
+
+                     // Activate the GameObject hosting the minigame component
+                      if (currentActiveMinigameLogic is MonoBehaviour enteringMono)
+                      {
+                          enteringMono.gameObject.SetActive(true);
+                          Debug.Log($"MinigameManager: Activated minigame Logic GameObject: {enteringMono.gameObject.name}");
+                      }
+                      else Debug.LogWarning("MinigameManager: Minigame logic to start is not a MonoBehaviour. Cannot activate Logic GameObject.");
+
+                     // Activate the UI Root GameObject for this minigame
+                     currentActiveMinigameUIRoot.SetActive(true);
+                     Debug.Log($"MinigameManager: Activated minigame UI Root GameObject: {currentActiveMinigameUIRoot.name}");
+
+
+                     currentActiveMinigameLogic.OnMinigameCompleted += HandleMinigameCompleted; // Subscribe to completion
+                     Debug.Log("MinigameManager: Subscribed to active minigame's completion event.");
+
+
+                     // Call the minigame's SetupAndStart method with the prepared data
+                     currentActiveMinigameLogic.SetupAndStart(startData);
+                     Debug.Log("MinigameManager: Called SetupAndStart on the active minigame logic component.");
+
+                 }
+                 else
+                 {
+                      Debug.LogWarning("MinigameManager: No valid IMinigame logic component or UI root was selected/found to start for this state entry.");
+                 }
+            }
+        }
+
+        /// <summary>
+        /// Handles the OnMinigameCompleted event from the currently active minigame.
+        /// Processes completion data and transitions the game state.
+        /// </summary>
+        /// <param name="completionData">Data provided by the completed minigame.</param>
+        private void HandleMinigameCompleted(object completionData)
+        {
+             Debug.Log("MinigameManager: Received OnMinigameCompleted event from active minigame logic.");
+
+             // --- Process Completion Data (Specific to each minigame type) ---
+             // Check the type of the active minigame logic component to process the data
+             if (currentActiveMinigameLogic is BarcodeMinigame completedBarcodeMinigame)
              {
-                  if (minigameUIRoot != null)
-                  {
-                       minigameUIRoot.SetActive(true);
-                       Debug.Log("MinigameManager: Activated Minigame UI.");
-                  }
-                  else Debug.LogWarning("MinigameManager: Cannot activate Minigame UI - root is null.");
+                 Debug.Log("MinigameManager: Completed minigame was Barcode Minigame.");
+                 // Expect completionData to be a Tuple<float, CashRegisterInteractable>
+                 if (completionData is Tuple<float, CashRegisterInteractable> barcodeCompletionData)
+                 {
+                      float totalPayment = barcodeCompletionData.Item1;
+                      CashRegisterInteractable initiatingRegister = barcodeCompletionData.Item2;
+
+                      Debug.Log($"MinigameManager: Received total payment: {totalPayment}");
+
+                      // Process Payment (Add to Player's Currency)
+                      if (EconomyManager.Instance != null)
+                      {
+                          EconomyManager.Instance.AddCurrency(totalPayment);
+                          Debug.Log($"MinigameManager: Added {totalPayment} currency via EconomyManager.");
+                      }
+                      else Debug.LogError("MinigameManager: EconomyManager Instance is null! Cannot process payment.");
+
+                      // Notify the Initiating Register
+                      if (initiatingRegister != null)
+                      {
+                           initiatingRegister.OnMinigameCompleted(totalPayment); // Call the completion method on the register
+                           Debug.Log("MinigameManager: Notified initiating register of completion.");
+                      }
+                      else Debug.LogWarning("MinigameManager: Initiating register reference is null in completion data! Cannot notify completion.");
+                 }
+                  else Debug.LogWarning($"MinigameManager: Barcode Minigame completion data was not the expected Tuple<float, CashRegisterInteractable>. Received type: {completionData?.GetType().Name ?? "null"}.");
+
              }
-             // Deactivate UI when exiting the Minigame state
-             else if (oldState == MenuManager.GameState.InMinigame)
+             // Add cases for other minigame types and how to process their completion data:
+             // else if (currentActiveMinigameLogic is LockpickingMinigame completedLockpickingMinigame)
+             // {
+             //     Debug.Log("MinigameManager: Completed minigame was Lockpicking Minigame.");
+             //     // Process Lockpicking specific completion data (e.g., bool success)
+             //     if (completionData is bool success) { ... }
+             // }
+             // ...
+             else
              {
-                  if (minigameUIRoot != null)
-                  {
-                       minigameUIRoot.SetActive(false);
-                       Debug.Log("MinigameManager: Deactivated Minigame UI.");
-                  }
-                  else Debug.LogWarning("MinigameManager: Cannot deactivate Minigame UI - root is null.");
+                  Debug.LogWarning($"MinigameManager: Completed minigame logic component type ({currentActiveMinigameLogic?.GetType().Name ?? "null"}) is not recognized. Cannot process completion data.");
              }
-        }
-        // ----------------------------------------
 
 
-        /// <summary>
-        /// Starts the minigame with the given list of items to be scanned.
-        /// Called by a StateAction Scriptable Object (CallMinigameManagerMethodActionSO).
-        /// </summary>
-        /// <param name="itemsToScan">The list of items the customer is buying.</param>
-        /// <param name="register">The CashRegisterInteractable that initiated this minigame.</param>
-        public void StartMinigame(List<(ItemDetails details, int quantity)> itemsToScan, CashRegisterInteractable register)
-        {
-            if (gridSlots == null || gridSlots.Count == 0) { Debug.LogError("MinigameManager: Cannot start minigame - gridSlots list is empty or null."); return; }
-            if (possibleBarcodeSprites == null || possibleBarcodeSprites.Count == 0) { Debug.LogError("MinigameManager: Cannot start minigame - possibleBarcodeSprites list is empty or null."); return; }
-             if (itemsToScan == null || itemsToScan.Count == 0) { Debug.LogWarning("MinigameManager: Cannot start minigame - itemsToScan list is null or empty."); return; }
-            if (register == null) { Debug.LogError("MinigameManager: Cannot start minigame - initiating register is null."); return; }
+             // --- Transition Game State ---
+             // After processing completion, always transition back to the Playing state.
+             Debug.Log("MinigameManager: Requesting state transition back to Playing.");
+             if (MenuManager.Instance != null)
+             {
+                 MenuManager.Instance.SetState(MenuManager.GameState.Playing, null); // Exit minigame state
+             }
+             else Debug.LogError("MinigameManager: MenuManager Instance is null! Cannot exit minigame state after completion.");
 
-            // Store the customer's purchase list and the initiating register
-            currentItemsToScan = new List<(ItemDetails details, int quantity)>(itemsToScan); // Store a copy
-            initiatingRegister = register;
-
-            // Calculate target clicks from the item list
-            targetClickCount = currentItemsToScan.Sum(item => item.quantity);
-
-            Debug.Log($"MinigameManager: Starting minigame with target clicks (total quantity): {targetClickCount}. Items to scan: {currentItemsToScan.Count} distinct types.");
-
-            clicksMade = 0;
-            barcodesCurrentlyVisible = 0;
-            lastClickedSlotIndex = -1; // Reset last clicked slot index
-
-            ClearGrid(); // Clear any existing barcodes and prepare slots
-
-            // Spawn the initial set of barcodes (up to maxVisibleBarcodes or targetCount if less)
-            int initialBarcodesToSpawn = Mathf.Min(maxVisibleBarcodes, targetClickCount);
-            Debug.Log($"MinigameManager: Spawning initial {initialBarcodesToSpawn} barcodes.");
-            for (int i = 0; i < initialBarcodesToSpawn; i++)
-            {
-                SpawnBarcode(); // Spawn a barcode in a random empty slot
-            }
+             // The state exit handling in HandleGameStateChanged will now clean up the minigame component and UI.
         }
 
-        /// <summary>
-        /// Resets the minigame state and clears the grid.
-        /// Called by a StateAction Scriptable Object (CallMinigameManagerMethodActionSO).
-        /// </summary>
-        public void ResetMinigame()
-        {
-            Debug.Log("MinigameManager: Resetting minigame state.");
-            targetClickCount = 0;
-            clicksMade = 0;
-            barcodesCurrentlyVisible = 0;
-            lastClickedSlotIndex = -1; // Reset last clicked slot index
 
-            // Clear stored purchase list and register reference
-            if (currentItemsToScan != null) currentItemsToScan.Clear();
-            initiatingRegister = null;
-
-            ClearGrid(); // Clears sprites and resets available slots
-        }
-
-        private void ClearGrid()
-        {
-            if (gridSlots == null) return;
-
-            availableSlotIndices.Clear(); // Clear and repopulate available slots
-            for (int i = 0; i < gridSlots.Count; i++)
-            {
-                if (gridSlots[i] != null)
-                {
-                    gridSlots[i].ClearSprite(); // Assuming BarcodeSlot has ClearSprite()
-                    availableSlotIndices.Add(i); // Add the index back to available
-                }
-                 else Debug.LogWarning($"MinigameManager: Grid slot at index {i} is null during ClearGrid!", this);
-            }
-            Debug.Log("MinigameManager: Grid cleared. All slot indices are available.");
-        }
-
-        /// <summary>
-        /// Spawns a single barcode in a randomly selected empty slot, avoiding the last clicked slot.
-        /// Does nothing if no suitable slots are available or no sprites are possible.
-        /// </summary>
-        private void SpawnBarcode()
-        {
-            // Only spawn if there are still clicks needed and we have available slots
-            if (clicksMade >= targetClickCount)
-            {
-                Debug.LogWarning("MinigameManager: Not spawning barcode - target clicks already met or exceeded.");
-                return;
-            }
-
-             // Create a temporary list of slots we can actually spawn in (available AND not last clicked)
-            List<int> spawnableSlotIndices = new List<int>(availableSlotIndices);
-
-            // Remove the last clicked slot from potential spawn locations if it's available
-            if (lastClickedSlotIndex != -1 && spawnableSlotIndices.Contains(lastClickedSlotIndex))
-            {
-                 spawnableSlotIndices.Remove(lastClickedSlotIndex);
-            }
-
-            if (spawnableSlotIndices.Count == 0)
-            {
-                Debug.LogWarning("MinigameManager: Cannot spawn barcode - no suitable empty slots available (excluding last clicked).");
-                return;
-            }
-            if (possibleBarcodeSprites == null || possibleBarcodeSprites.Count == 0)
-            {
-                Debug.LogError("MinigameManager: Cannot spawn barcode - no possible sprites assigned!");
-                return;
-            }
-
-            int randomIndexInSpawnableList = UnityEngine.Random.Range(0, spawnableSlotIndices.Count);
-            int slotIndexToUse = spawnableSlotIndices[randomIndexInSpawnableList]; // Get the actual index from the gridSlots list
-
-
-            availableSlotIndices.Remove(slotIndexToUse); // Remove from the MAIN available list
-
-            BarcodeSlot slotToSpawnIn = gridSlots[slotIndexToUse];
-            Sprite randomSprite = possibleBarcodeSprites[UnityEngine.Random.Range(0, possibleBarcodeSprites.Count)];
-
-            if (slotToSpawnIn != null)
-            {
-                slotToSpawnIn.SetSprite(randomSprite); // Assuming BarcodeSlot has SetSprite()
-                barcodesCurrentlyVisible++;
-                Debug.Log($"MinigameManager: Spawned barcode in slot {slotIndexToUse}. Visible: {barcodesCurrentlyVisible}. Available slots: {availableSlotIndices.Count}. Clicks made: {clicksMade}/{targetClickCount}");
-            }
-            else
-            {
-                Debug.LogError($"MinigameManager: BarcodeSlot at index {slotIndexToUse} is null!", this);
-            }
-        }
-
-        /// <summary>
-        /// Called by a BarcodeSlot when it is clicked.
-        /// Processes the click, checks win condition, and spawns new barcodes if needed.
-        /// </summary>
-        /// <param name="clickedSlot">The BarcodeSlot that was clicked.</param>
-        public void BarcodeClicked(BarcodeSlot clickedSlot)
-        {
-            // Only process click if the game is active (optional, but good practice)
-            // You might also check if the game state is InMinigame here, though UI being active implies this.
-            // if (MenuManager.Instance == null || MenuManager.Instance.currentState != MenuManager.GameState.InMinigame) return;
-
-
-            if (clickedSlot == null || clickedSlot.IsEmpty) // Assumes BarcodeSlot has IsEmpty property
-            {
-                Debug.LogWarning("MinigameManager: BarcodeClicked called with null or empty slot.");
-                return;
-            }
-
-            int clickedSlotIndex = gridSlots.IndexOf(clickedSlot);
-            if (clickedSlotIndex == -1)
-            {
-                 Debug.LogError("MinigameManager: Could not find clicked slot in gridSlots list!", this);
-                 return;
-            }
-
-            // Only process click if game is not already won
-            if (clicksMade < targetClickCount)
-            {
-                Debug.Log($"MinigameManager: Barcode clicked in slot: {clickedSlot.gameObject.name} (Index: {clickedSlotIndex})");
-
-                clickedSlot.ClearSprite(); // Clear the sprite from the clicked slot
-                barcodesCurrentlyVisible--;
-                clicksMade++;
-
-                lastClickedSlotIndex = clickedSlotIndex;
-                Debug.Log($"MinigameManager: Last clicked slot index set to: {lastClickedSlotIndex}");
-
-                // Add the slot index back to the available list
-                if (!availableSlotIndices.Contains(clickedSlotIndex)) // Safety check
-                {
-                    availableSlotIndices.Add(clickedSlotIndex);
-                    Debug.Log($"MinigameManager: Slot {clickedSlotIndex} made available.");
-                }
-                else
-                {
-                    Debug.LogWarning($"MinigameManager: Slot {clickedSlotIndex} was already in the available list after clicking?", this);
-                }
-
-                Debug.Log($"MinigameManager: Clicks Made: {clicksMade} / {targetClickCount}. Visible barcodes: {barcodesCurrentlyVisible}. Available slots: {availableSlotIndices.Count}");
-
-                // --- Check Win Condition ---
-                // Check if this click resulted in reaching the target count
-                if (clicksMade >= targetClickCount) // Use >= just in case
-                {
-                    Debug.Log("MinigameManager: Target clicks reached or exceeded.");
-                    CheckWinCondition(); // Handle win logic
-                }
-                // --- MODIFIED: Restore the full condition for spawning more barcodes ---
-                // Only spawn if:
-                // 1. There are clicks remaining (clicksMade < targetClickCount) - Handled by the outer if
-                // 2. We haven't reached the max visible barcodes yet (barcodesCurrentlyVisible < maxVisibleBarcodes)
-                // 3. There are enough *unclicked* items remaining that we *should* show another barcode
-                //    (i.e., the number of unclicked items is > the number of currently visible barcodes)
-                else if (barcodesCurrentlyVisible < maxVisibleBarcodes && (targetClickCount - clicksMade) > barcodesCurrentlyVisible)
-                {
-                    // Before spawning, check if there's actually an available slot excluding the last clicked one
-                    List<int> spawnableSlotIndices = new List<int>(availableSlotIndices);
-                    if (lastClickedSlotIndex != -1 && spawnableSlotIndices.Contains(lastClickedSlotIndex))
-                    {
-                        spawnableSlotIndices.Remove(lastClickedSlotIndex);
-                    }
-
-                    if (spawnableSlotIndices.Count > 0)
-                    {
-                        Debug.Log("MinigameManager: Spawning another barcode...");
-                        SpawnBarcode(); // Spawn another barcode
-                    }
-                    else
-                    {
-                        Debug.Log("MinigameManager: Cannot spawn barcode - not enough suitable empty slots available to maintain max visible count.");
-                    }
-                }
-                else
-                {
-                    // Added log for clarity when not spawning because conditions are not met
-                    // This happens when barcodesCurrentlyVisible >= maxVisibleBarcodes
-                    // OR (targetClickCount - clicksMade) <= barcodesCurrentlyVisible
-                    Debug.Log($"MinigameManager: Not spawning barcode. Current visible: {barcodesCurrentlyVisible}, Max visible: {maxVisibleBarcodes}, Items left: {targetClickCount - clicksMade}.");
-                }
-            }
-            else
-            {
-                Debug.LogWarning($"MinigameManager: Barcode clicked in slot {clickedSlotIndex}, but clicksMade ({clicksMade}) is already >= targetClickCount ({targetClickCount}). Click ignored.");
-            }
-        }
-
-        /// <summary>
-        /// Handles the actions when the minigame is won (target clicks are made).
-        /// </summary>
-        private void CheckWinCondition()
-        {
-            // This method should only be called when clicksMade >= targetClickCount
-            if (clicksMade >= targetClickCount)
-            {
-                Debug.Log($"MinigameManager: Minigame WON! Clicks Made: {clicksMade}. Target: {targetClickCount}.");
-
-                // Ensure all barcodes are cleared visually if any are left
-                ClearGrid(); // Clear any remaining visible barcodes and reset slots
-
-                // Calculate Total Payment
-                float totalPayment = 0f;
-                if (currentItemsToScan != null)
-                {
-                    foreach (var item in currentItemsToScan)
-                    {
-                        if (item.details != null)
-                        {
-                             totalPayment += item.details.price * item.quantity;
-                        }
-                        else
-                        {
-                            Debug.LogWarning($"MinigameManager: ItemDetails is null for an item in the purchase list. Cannot calculate price for this item.", this);
-                        }
-                    }
-                }
-                Debug.Log($"MinigameManager: Calculated total payment: {totalPayment}");
-
-                // Process Payment (Add to Player's Currency)
-                if (EconomyManager.Instance != null) // Assumes EconomyManager exists
-                {
-                    EconomyManager.Instance.AddCurrency(totalPayment); // Assumes AddCurrency method exists
-                }
-                else
-                {
-                    Debug.LogError("MinigameManager: EconomyManager Instance is null! Cannot process payment.", this);
-                }
-
-                // Notify the Initiating Register
-                if (initiatingRegister != null)
-                {
-                    initiatingRegister.OnMinigameCompleted(totalPayment); // Assumes this method exists on CashRegisterInteractable
-                }
-                else
-                {
-                    Debug.LogError("MinigameManager: Initiating register reference is null! Cannot notify completion.", this);
-                }
-
-                // Tell the MenuManager to exit the minigame state and return to Playing
-                // This also calls ResetMinigame via the exit action defined in the GameStateConfigSO
-                if (MenuManager.Instance != null)
-                {
-                    MenuManager.Instance.SetState(MenuManager.GameState.Playing, null); // Exit minigame state, passing null response
-                }
-                else Debug.LogError("MinigameManager: MenuManager Instance is null! Cannot exit minigame state.");
-            }
-        }
-
-        // TODO: Implement bonuses (clicking streak without missing or completing minigame in certain amount of time)
+        // Public methods if needed by StateActions to interact with the CURRENTLY active minigame logic component
+        // public void CallMethodOnActiveMinigame(string methodName, object parameter = null) { ... }
     }
 }

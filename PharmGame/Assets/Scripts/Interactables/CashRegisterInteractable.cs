@@ -114,73 +114,78 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
          }
     }
 
-    /// <summary>
-    /// Runs the object's specific interaction logic and returns a response describing the outcome.
-    /// Called by the Player Interaction system when the player interacts.
-    /// </summary>
-    public InteractionResponse Interact()
+/// <summary>
+/// Runs the object's specific interaction logic and returns a response describing the outcome.
+/// Called by the Player Interaction system when the player interacts.
+/// MODIFIED: Creates a StartMinigameResponse including the MinigameType.
+/// </summary>
+public InteractionResponse Interact()
+{
+    // Prevent interaction if already interacting with this cash register
+    if (isInteracting)
     {
-        // Prevent interaction if already interacting with this cash register
-        if (isInteracting)
-        {
-            Debug.Log($"CashRegisterInteractable ({gameObject.name}): Already interacting with this cash register.");
-            return null;
-        }
-
-        // --- Check if there is a customer waiting ---
-        if (currentWaitingCustomer == null)
-        {
-             Debug.Log($"CashRegisterInteractable ({gameObject.name}): No customer waiting at the register. Interaction not starting minigame.");
-             // Optionally return a different response here (e.g., a message like "The register is empty")
-             // For now, just return null.
-             return null;
-        }
-        // -----------------------------------------
-
-        // --- Get the customer's purchase list and validate ---
-        List<(ItemDetails details, int quantity)> itemsToScan = currentWaitingCustomer.Shopper.GetItemsToBuy();
-
-        if (itemsToScan == null || itemsToScan.Sum(item => item.quantity) <= 0)
-        {
-             Debug.LogWarning($"CashRegisterInteractable ({gameObject.name}): Customer '{currentWaitingCustomer.gameObject.name}' has no items or zero total quantity to buy. Cancelling minigame.", currentWaitingCustomer.gameObject);
-             // Customer leaves empty-handed? Tell the customer to exit.
-             currentWaitingCustomer.OnTransactionCompleted(0); // Signal transaction complete with 0 payment
-             currentWaitingCustomer = null; // Clear waiting customer reference
-             CustomerDeparted(); // Deactivate trigger etc.
-             return null;
-        }
-
-        // The total clicks needed for the minigame is the total quantity of items the customer is buying
-        int actualTargetClickCount = itemsToScan.Sum(item => item.quantity);
-         Debug.Log($"CashRegisterInteractable ({gameObject.name}): Customer '{currentWaitingCustomer.gameObject.name}' wants to buy {actualTargetClickCount} items.", currentWaitingCustomer.gameObject);
-
-
-        if (minigameCameraViewPoint == null || minigameUIRoot == null)
-        {
-             Debug.LogError($"CashRegisterInteractable ({gameObject.name}): Cannot create StartMinigameResponse - Camera View Point or Minigame UI Root not assigned.", this);
-             return null;
-        }
-
-        Debug.Log($"CashRegisterInteractable ({gameObject.name}): Interact called. Preparing to start minigame with {actualTargetClickCount} items.", this);
-
-        // --- Inform the customer that the transaction is starting ---
-        currentWaitingCustomer.StartTransaction(/* itemsToScan */); // Pass the list if needed by CustomerAI
-        // ---------------------------------------------------------
-
-        // --- Create and return the response ---
-        // Pass the actual list of items to the response, not just the count.
-        StartMinigameResponse response = new StartMinigameResponse(
-            minigameCameraViewPoint,
-            cameraMoveDuration,
-            minigameUIRoot,
-            itemsToScan, // Pass the list of items here
-            this // PASS THIS INSTANCE
-        );
-
-        isInteracting = true; // Mark as interacting
-
-        return response; // Returns StartMinigameResponse to the system
+        Debug.Log($"CashRegisterInteractable ({gameObject.name}): Already interacting with this cash register.");
+        return null;
     }
+
+    // --- Check if there is a customer waiting ---
+    if (currentWaitingCustomer == null)
+    {
+         Debug.Log($"CashRegisterInteractable ({gameObject.name}): No customer waiting at the register. Interaction not starting minigame.");
+         // Optionally return a different response here (e.g., a message like "The register is empty")
+         // For now, just return null.
+         return null;
+    }
+    // -----------------------------------------
+
+    // --- Get the customer's purchase list and validate ---
+    List<(ItemDetails details, int quantity)> itemsToScan = currentWaitingCustomer.Shopper.GetItemsToBuy();
+
+    if (itemsToScan == null || itemsToScan.Sum(item => item.quantity) <= 0)
+    {
+         Debug.LogWarning($"CashRegisterInteractable ({gameObject.name}): Customer '{currentWaitingCustomer.gameObject.name}' has no items or zero total quantity to buy. Cancelling minigame.", currentWaitingCustomer.gameObject);
+         // Customer leaves empty-handed? Tell the customer to exit.
+         currentWaitingCustomer.OnTransactionCompleted(0); // Signal transaction complete with 0 payment
+         currentWaitingCustomer = null; // Clear waiting customer reference
+         CustomerDeparted(); // Deactivate trigger etc.
+         return null;
+    }
+
+    // The total clicks needed for the minigame is the total quantity of items the customer is buying
+    int actualTargetClickCount = itemsToScan.Sum(item => item.quantity);
+     Debug.Log($"CashRegisterInteractable ({gameObject.name}): Customer '{currentWaitingCustomer.gameObject.name}' wants to buy {actualTargetClickCount} items.", currentWaitingCustomer.gameObject);
+
+
+    // --- Removed Minigame UI Root check here, UIManager handles UI activation based on state ---
+    if (minigameCameraViewPoint == null /* || minigameUIRoot == null */) // minigameUIRoot check is no longer strictly needed for response creation
+    {
+         // Added null check for camera view point as it's still in the response
+         Debug.LogError($"CashRegisterInteractable ({gameObject.name}): Cannot create StartMinigameResponse - Minigame Camera View Point not assigned.", this);
+         return null;
+    }
+
+    Debug.Log($"CashRegisterInteractable ({gameObject.name}): Interact called. Preparing to start minigame with {actualTargetClickCount} items.", this);
+
+    // --- Inform the customer that the transaction is starting ---
+    currentWaitingCustomer.StartTransaction(/* itemsToScan */); // Pass the list if needed by CustomerAI
+    // ---------------------------------------------------------
+
+    // --- Create and return the response ---
+    // Pass the actual list of items to the response, not just the count.
+    // MODIFIED: Include the MinigameType and remove the minigameUIRoot parameter.
+    StartMinigameResponse response = new StartMinigameResponse(
+        Systems.Minigame.MinigameType.BarcodeScanning, // Specify the type of minigame
+        minigameCameraViewPoint,
+        cameraMoveDuration,
+        // Removed minigameUIRoot parameter
+        itemsToScan, // Pass the list of items here
+        this // PASS THIS INSTANCE
+    );
+
+    isInteracting = true; // Mark as interacting
+
+    return response; // Returns StartMinigameResponse to the system
+}
 
     /// <summary>
     /// Public method to reset the interacting state (Called by MenuManager state exit action).

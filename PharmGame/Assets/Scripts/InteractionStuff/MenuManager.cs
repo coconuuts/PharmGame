@@ -170,106 +170,114 @@ namespace Systems.GameStates
             }
         }
 
-        /// <summary>
-        /// Sets the current game state and triggers associated entry/exit actions defined in GameStateConfigSO.
-        /// Triggers the OnStateChanged event, passing the InteractionResponse.
-        /// Updates internal state data references AFTER the event and exit actions.
-        /// </summary>
-        /// <param name="newState">The state to transition to.</param>
-        /// <param name="response">The InteractionResponse that caused this state change, or null if internal.</param>
-        /// <param name="isInitialSetup">Flag to indicate if this is the very first state setting in Start.</param>
-        public void SetState(GameState newState, InteractionResponse response = null, bool isInitialSetup = false)
-        {
-             // Ignore same state transition unless it's the initial setup
-            if (currentState == newState && !isInitialSetup)
-            {
-                 Debug.Log($"MenuManager: Already in {currentState} state. Ignoring SetState call (unless initial setup).");
-                 return;
-            }
+/// <summary>
+/// Sets the current game state and triggers associated entry/exit actions defined in GameStateConfigSO.
+/// Triggers the OnStateChanged event, passing the InteractionResponse.
+/// Updates internal state data references AFTER the event and exit actions.
+/// MODIFIED: Removed access to StartMinigameResponse.MinigameUIRoot.
+/// </summary>
+/// <param name="newState">The state to transition to.</param>
+/// <param name="response">The InteractionResponse that caused this state change, or null if internal.</param>
+/// <param name="isInitialSetup">Flag to indicate if this is the very first state setting in Start.</param>
+public void SetState(GameState newState, InteractionResponse response = null, bool isInitialSetup = false)
+{
+     // Ignore same state transition unless it's the initial setup
+    if (currentState == newState && !isInitialSetup)
+    {
+         Debug.Log($"MenuManager: Already in {currentState} state. Ignoring SetState call (unless initial setup).");
+         return;
+    }
 
-            GameState oldState = currentState; // Capture the old state
+    GameState oldState = currentState; // Capture the old state
 
-            // Find the config for the old state BEFORE changing currentState
-             GameStateConfigSO oldStateConfig = null;
-             if (gameStateConfigMap.TryGetValue(oldState, out var config))
-             {
-                  oldStateConfig = config;
-             }
-             else
-             {
-                  Debug.LogWarning($"MenuManager: No GameStateConfigSO found for old state {oldState}. Cannot execute exit actions.", this);
-             }
-
-
-            // --- Execute Exit Actions for the old state ---
-            // These actions (and UIManager listening to event) will use the public getters,
-            // which *still* hold the references from the state being exited at this moment.
-            if (oldStateConfig != null)
-            {
-                oldStateConfig.ExecuteExitActions(response, this); // Pass the response to exit actions
-            }
+    // Find the config for the old state BEFORE changing currentState
+     GameStateConfigSO oldStateConfig = null;
+     if (gameStateConfigMap.TryGetValue(oldState, out var config))
+     {
+          oldStateConfig = config;
+     }
+     else
+     {
+          Debug.LogWarning($"MenuManager: No GameStateConfigSO found for old state {oldState}. Cannot execute exit actions.", this);
+     }
 
 
-            // --- Trigger the OnStateChanged event AFTER exit actions ---
-            // UIManager and other event listeners will react here.
-            // UIManager's oldState logic will run NOW, accessing the public getters (which still hold old data).
-            // UIManager's newState logic will run NOW, accessing the 'response' parameter.
-             OnStateChanged?.Invoke(newState, oldState, response);
+    // --- Execute Exit Actions for the old state ---
+    // These actions (and UIManager listening to event) will use the public getters,
+    // which *still* hold the references from the state being exited at this moment.
+    if (oldStateConfig != null)
+    {
+        oldStateConfig.ExecuteExitActions(response, this); // Pass the response to exit actions
+    }
 
 
-            // --- NOW Update the internal state and references for the NEW state ---
-            previousState = oldState;
-            currentState = newState; // Change the current state here
-            Debug.Log($"Menu State: Transitioning from {oldState} to {currentState}.");
-
-             // Clear old dynamic references and set new ones based on the response.
-             // This happens AFTER exit logic and the event.
-             currentActiveUIRoot_internal = null;
-             currentOpenInventoryComponent_internal = null;
-             currentComputerInteractable_internal = null;
-             currentCashRegisterInteractable_internal = null;
-             currentCraftingStation_internal = null;
-
-             if (response is OpenInventoryResponse openInventoryResponse)
-             {
-                 currentOpenInventoryComponent_internal = openInventoryResponse.InventoryComponent;
-                 currentActiveUIRoot_internal = openInventoryResponse.InventoryUIRoot;
-             }
-             else if (response is EnterComputerResponse enterComputerResponse)
-             {
-                  currentComputerInteractable_internal = enterComputerResponse.ComputerInteractable;
-                  currentActiveUIRoot_internal = enterComputerResponse.ComputerUIRoot;
-             }
-             else if (response is StartMinigameResponse startMinigameResponse)
-             {
-                  currentCashRegisterInteractable_internal = startMinigameResponse.CashRegisterInteractable;
-                  currentActiveUIRoot_internal = startMinigameResponse.MinigameUIRoot;
-             }
-             else if (response is OpenCraftingResponse openCraftingResponse)
-             {
-                  currentCraftingStation_internal = openCraftingResponse.CraftingStationComponent;
-             }
-             // Add other response types here if they carry data needed by StateActions.
-            // -----------------------------------------------------------------------------
+    // --- Trigger the OnStateChanged event AFTER exit actions ---
+    // UIManager and other event listeners will react here.
+    // UIManager's oldState logic will run NOW, accessing the public getters (which still hold old data).
+    // UIManager's newState logic will run NOW, accessing the 'response' parameter.
+     OnStateChanged?.Invoke(newState, oldState, response);
 
 
-            // --- Execute Entry Actions for the new state ---
-            // Actions here will use the NEW data now available via the public getters.
-             GameStateConfigSO newStateConfig = null;
-             if (gameStateConfigMap.TryGetValue(currentState, out var config2))
-             {
-                  newStateConfig = config2;
-             }
-             else
-             {
-                  Debug.LogError($"MenuManager: No GameStateConfigSO found for new state {currentState}. Cannot execute entry actions!", this);
-             }
+    // --- NOW Update the internal state and references for the NEW state ---
+    previousState = oldState;
+    currentState = newState; // Change the current state here
+    Debug.Log($"Menu State: Transitioning from {oldState} to {currentState}.");
 
-            if (newStateConfig != null)
-            {
-                newStateConfig.ExecuteEntryActions(response, this); // Pass the response to entry actions
-            }
-        }
+     // Clear old dynamic references and set new ones based on the response.
+     // This happens AFTER exit logic and the event.
+     currentActiveUIRoot_internal = null; // The specific UI root is handled by the minigame component's GameObject
+     currentOpenInventoryComponent_internal = null;
+     currentComputerInteractable_internal = null; // The specific UI root is handled by the computer interactable
+     currentCashRegisterInteractable_internal = null; // The specific UI root is handled by the minigame component's GameObject
+     currentCraftingStation_internal = null; // The specific UI is handled by the crafting station
+
+     if (response is OpenInventoryResponse openInventoryResponse)
+     {
+         currentOpenInventoryComponent_internal = openInventoryResponse.InventoryComponent;
+         currentActiveUIRoot_internal = openInventoryResponse.InventoryUIRoot;
+     }
+     else if (response is EnterComputerResponse enterComputerResponse)
+     {
+          currentComputerInteractable_internal = enterComputerResponse.ComputerInteractable;
+          currentActiveUIRoot_internal = enterComputerResponse.ComputerUIRoot;
+     }
+     else if (response is StartMinigameResponse startMinigameResponse)
+     {
+          // --- MODIFIED: Store the CashRegisterInteractable, but not MinigameUIRoot ---
+          currentCashRegisterInteractable_internal = startMinigameResponse.CashRegisterInteractable;
+          // currentActiveUIRoot_internal is NOT set from MinigameUIRoot here anymore
+          // The specific minigame's UI Root is part of its GameObject managed by the central MinigameManager
+          Debug.Log("MenuManager: Received StartMinigameResponse. Storing CashRegisterInteractable.");
+          // -----------------------------------------------------------------------------
+     }
+     else if (response is OpenCraftingResponse openCraftingResponse)
+     {
+          currentCraftingStation_internal = openCraftingResponse.CraftingStationComponent;
+          // Crafting UI root reference is managed by the CraftingStation itself
+          // You might need a getter on CraftingStation if a StateAction needs the root reference
+          // currentActiveUIRoot_internal is NOT set from Crafting here
+     }
+     // Add other response types here if they carry data needed by StateActions.
+    // -----------------------------------------------------------------------------
+
+
+    // --- Execute Entry Actions for the new state ---
+    // Actions here will use the NEW data now available via the public getters.
+     GameStateConfigSO newStateConfig = null;
+     if (gameStateConfigMap.TryGetValue(currentState, out var config2))
+     {
+          newStateConfig = config2;
+     }
+     else
+     {
+          Debug.LogError($"MenuManager: No GameStateConfigSO found for new state {currentState}. Cannot execute entry actions!", this);
+     }
+
+    if (newStateConfig != null)
+    {
+        newStateConfig.ExecuteEntryActions(response, this); // Pass the response to entry actions
+    }
+}
 
         /// <summary>
         /// Receives and processes InteractionResponse objects to trigger state changes and related actions.

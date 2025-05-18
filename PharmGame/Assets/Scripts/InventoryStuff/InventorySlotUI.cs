@@ -3,8 +3,8 @@ using UnityEngine.UI;
 using TMPro;
 using Systems.Inventory;
 using UnityEngine.EventSystems;
-using System; 
-using Systems.GameStates;
+using System;
+using Systems.GameStates; // Ensure this is included
 
 namespace Systems.Inventory
 {
@@ -30,18 +30,18 @@ namespace Systems.Inventory
 
         private void Awake()
         {
-             if (highlightElement != null)
-             {
-                 highlightElement.SetActive(false); // Ensure highlight is off by default
-             }
-             else
-             {
-                  Debug.LogWarning($"InventorySlotUI ({gameObject.name}, Index: {SlotIndex}): Highlight Element is not assigned. Selection/Hover highlight will not be visible.", this);
-             }
+            if (highlightElement != null)
+            {
+                highlightElement.SetActive(false); // Ensure highlight is off by default
+            }
+            else
+            {
+                Debug.LogWarning($"InventorySlotUI ({gameObject.name}, Index: {SlotIndex}): Highlight Element is not assigned. Selection/Hover highlight will not be visible.", this);
+            }
 
-             // Ensure state flags are false initially
-             isSelected = false;
-             isHovered = false;
+            // Ensure state flags are false initially
+            isSelected = false;
+            isHovered = false;
         }
 
         // --- NEW: Subscribe to the drag state event ---
@@ -107,13 +107,13 @@ namespace Systems.Inventory
 
                 if (item.details != null && item.details.maxStack > 1 && item.quantity > 1)
                 {
-                     quantityText.text = item.quantity.ToString();
-                     quantityText.enabled = true;
+                    quantityText.text = item.quantity.ToString();
+                    quantityText.enabled = true;
                 }
                 else
                 {
-                     quantityText.text = "";
-                     quantityText.enabled = false;
+                    quantityText.text = "";
+                    quantityText.enabled = false;
                 }
             }
         }
@@ -121,14 +121,14 @@ namespace Systems.Inventory
         // --- METHODS CALLED BY InventorySelector (FOR SELECTION HIGHLIGHT) ---
         public void ApplySelectionHighlight()
         {
-             isSelected = true;
-             UpdateHighlightVisual(); // Update the visual based on combined state
+            isSelected = true;
+            UpdateHighlightVisual(); // Update the visual based on combined state
         }
 
         public void RemoveSelectionHighlight()
         {
-             isSelected = false;
-             UpdateHighlightVisual(); // Update the visual based on combined state
+            isSelected = false;
+            UpdateHighlightVisual(); // Update the visual based on combined state
         }
         // -------------------------------------------------------------------
 
@@ -136,14 +136,14 @@ namespace Systems.Inventory
         // --- METHODS CALLED BY POINTER EVENTS (FOR HOVER HIGHLIGHT) ---
         public void ApplyHoverHighlight()
         {
-             isHovered = true;
-             UpdateHighlightVisual(); // Update the visual based on combined state
+            isHovered = true;
+            UpdateHighlightVisual(); // Update the visual based on combined state
         }
 
         public void RemoveHoverHighlight()
         {
-             isHovered = false;
-             UpdateHighlightVisual(); // Update the visual based on combined state
+            isHovered = false;
+            UpdateHighlightVisual(); // Update the visual based on combined state
         }
         // ------------------------------------------------------------
 
@@ -153,29 +153,29 @@ namespace Systems.Inventory
         /// </summary>
         private void UpdateHighlightVisual()
         {
-             if (highlightElement != null)
-             {
-                 // Determine if the highlight *should* be active under normal circumstances (selected or hovered)
-                 bool shouldBeActiveNormally = isSelected || isHovered;
+            if (highlightElement != null)
+            {
+                // Determine if the highlight *should* be active under normal circumstances (selected or hovered)
+                bool shouldBeActiveNormally = isSelected || isHovered;
 
-                 // --- NEW: Check if a drag operation is in progress ---
-                 bool dragInProgress = (DragAndDropManager.Instance != null && DragAndDropManager.Instance.IsDragging);
+                // --- NEW: Check if a drag operation is in progress ---
+                bool dragInProgress = (DragAndDropManager.Instance != null && DragAndDropManager.Instance.IsDragging);
 
-                 // The highlight element is active ONLY IF it should be active normally AND NO drag is in progress.
-                 highlightElement.SetActive(shouldBeActiveNormally && !dragInProgress);
-                 // ----------------------------------------------------
-             }
+                // The highlight element is active ONLY IF it should be active normally AND NO drag is in progress.
+                highlightElement.SetActive(shouldBeActiveNormally && !dragInProgress);
+                // ----------------------------------------------------
+            }
         }
 
 
-        // --- Pointer Event Handlers (remain for Drag & Drop) ---
+        // --- Pointer Event Handlers (remain for Drag & Drop and Hover) ---
         public void OnPointerDown(PointerEventData eventData)
         {
             if (eventData.button == PointerEventData.InputButton.Left)
             {
+                // DragAndDropManager handles its own state checks and should only start drag in appropriate game states
                 if (DragAndDropManager.Instance != null)
                 {
-                    // DragAndDropManager's StartDrag will handle the IsDragging flag and event broadcast
                     DragAndDropManager.Instance.StartDrag(this, eventData);
                 }
                 else Debug.LogError("InventorySlotUI: DragAndDropManager Instance is null!", this);
@@ -188,8 +188,9 @@ namespace Systems.Inventory
             {
                  if (DragAndDropManager.Instance != null)
                  {
-                     DragAndDropManager.Instance.Drag(eventData);
+                    DragAndDropManager.Instance.Drag(eventData);
                  }
+                 else Debug.LogError("InventorySlotUI: DragAndDropManager Instance is null!", this);
             }
         }
 
@@ -199,8 +200,7 @@ namespace Systems.Inventory
             {
                  if (DragAndDropManager.Instance != null)
                  {
-                     // DragAndDropManager's EndDrag will handle the IsDragging flag and event broadcast
-                     DragAndDropManager.Instance.EndDrag(eventData);
+                    DragAndDropManager.Instance.EndDrag(eventData);
                  }
                  else Debug.LogError("InventorySlotUI: DragAndDropManager Instance is null!", this);
             }
@@ -209,22 +209,26 @@ namespace Systems.Inventory
         // --- POINTER ENTER AND EXIT HANDLERS FOR HOVER ---
         public void OnPointerEnter(PointerEventData eventData)
         {
-             // Apply hover highlight regardless of drag state here,
-             // the UpdateHighlightVisual method will decide if the visual is shown.
-             if (MenuManager.Instance != null && MenuManager.Instance.currentState == MenuManager.GameState.InInventory)
-             {
-                  ApplyHoverHighlight(); // Sets isHovered = true and calls UpdateHighlightVisual
-             }
+            // --- MODIFIED: Include InCrafting state for hover highlight ---
+            if (MenuManager.Instance != null &&
+               (MenuManager.Instance.currentState == MenuManager.GameState.InInventory ||
+                MenuManager.Instance.currentState == MenuManager.GameState.InCrafting))
+            {
+                 ApplyHoverHighlight(); // Sets isHovered = true and calls UpdateHighlightVisual
+            }
+            // ------------------------------------------------------------
         }
 
         public void OnPointerExit(PointerEventData eventData)
         {
-             // Remove hover highlight regardless of drag state here,
-             // the UpdateHighlightVisual method will decide if the visual is shown.
-             if (MenuManager.Instance != null && MenuManager.Instance.currentState == MenuManager.GameState.InInventory)
-             {
+            // --- MODIFIED: Include InCrafting state for hover highlight ---
+            if (MenuManager.Instance != null &&
+               (MenuManager.Instance.currentState == MenuManager.GameState.InInventory ||
+                MenuManager.Instance.currentState == MenuManager.GameState.InCrafting))
+            {
                  RemoveHoverHighlight(); // Sets isHovered = false and calls UpdateHighlightVisual
-             }
+            }
+            // ------------------------------------------------------------
         }
     }
 }

@@ -15,8 +15,5 @@ MonoBehaviour:
   gameState: 4
   entryActions:
   - {fileID: 11400000, guid: 4ffd3fa1627be944994e810793f8b1ab, type: 2}
-  - {fileID: 11400000, guid: 9e2dad9478ae5b84e9a38b406a790030, type: 2}
-  - {fileID: 11400000, guid: 7b6b983f77496f54aa502ee5f09e9a4b, type: 2}
   exitActions:
   - {fileID: 11400000, guid: baae417531facb7449bdb363915d90d7, type: 2}
-  - {fileID: 11400000, guid: 5efc06b7a44b7ad4c8b51ff31094c7c7, type: 2}

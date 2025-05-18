@@ -69,7 +69,6 @@ namespace VisualStorage // Your namespace
             {
                  // Calculate the total number of available shelf slots
                  totalAvailableShelfSlots = shelves.Sum(shelf => (shelf != null && shelf.ShelfSlots != null) ? shelf.ShelfSlots.Count : 0);
-                 Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Total available ShelfSlots: {totalAvailableShelfSlots}");
             }
 
 
@@ -77,7 +76,6 @@ namespace VisualStorage // Your namespace
             if (itemVisualMappingAsset != null)
             {
                 itemVisualLookup = new ItemVisualLookup(itemVisualMappingAsset);
-                Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Initialized ItemVisualLookup using '{itemVisualMappingAsset.name}'.");
             }
             else
             {
@@ -103,9 +101,6 @@ namespace VisualStorage // Your namespace
                   // Decide fallback behavior: continue using Instantiate/Destroy or disable?
                   // For now, we'll add null checks for poolingManager calls.
              }
-            // ---------------------------------------
-
-
             Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Awake completed.");
         }
 
@@ -142,7 +137,6 @@ namespace VisualStorage // Your namespace
              if (targetInventory != null && targetInventory.InventoryState != null)
              {
                   targetInventory.InventoryState.AnyValueChanged -= HandleInventoryStateChangedEvent;
-                  Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Unsubscribed from InventoryState.AnyValueChanged.");
              }
             // -----------------------------------------------------------------
 
@@ -151,7 +145,6 @@ namespace VisualStorage // Your namespace
             if (dragAndDropManager != null)
             {
                 dragAndDropManager.OnDragDropCompleted -= OnDragDropCompleted;
-                Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Unsubscribed from DragAndDropManager.OnDragDropCompleted.");
             }
             // Removed the 'else' block with the fallback unsubscription
 
@@ -163,7 +156,6 @@ namespace VisualStorage // Your namespace
          private void OnDestroy()
          {
              OnDisable(); // Ensure unsubscription
-              Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Destroyed. Returned visual items to pool.");
          }
 
 
@@ -178,15 +170,10 @@ namespace VisualStorage // Your namespace
         {
             if (DragAndDropManager.Instance != null && DragAndDropManager.Instance.IsDragging)
             {
-                // A drag is happening, ignore this intermediate change event.
-                // The visual update will be triggered by OnDragDropCompleted instead.
-                Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Inventory change detected during drag. Skipping visual update.");
                 return;
             }
-
             // If no drag is in progress, or DragAndDropManager is not available,
             // treat this as a standard inventory change and update visuals.
-            Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Inventory change detected (no drag or D&D Manager missing). Forcing visual update.");
             ForceVisualUpdate();
         }
 
@@ -288,10 +275,10 @@ namespace VisualStorage // Your namespace
                                  remainingSlotsToAllocate--;
                                  if (remainingSlotsToAllocate == 0) break;
                              }
-                             else
-                             {
-                                  Debug.Log($"StorageObjectVisualizer: Inventory slot {inventorySlotIndex} has no more instances available for remainder allocation.");
-                              }
+                            else
+                            {
+                                Debug.Log($"StorageObjectVisualizer: Inventory slot {inventorySlotIndex} has no more instances available for remainder allocation.");
+                            }
                              currentRemainderCandidateIndex++;
                              if (currentRemainderCandidateIndex >= remainderSlots.Count && remainingSlotsToAllocate > 0)
                              {
@@ -434,8 +421,6 @@ namespace VisualStorage // Your namespace
                      Debug.LogWarning($"StorageObjectVisualizer ({gameObject.name}): Proportionally selected instance from inventory slot {instance.OriginalInventorySlotIndex} ({instance.ItemDetails.Name}) could NOT find an available block after checking all shelves (fragmentation?). Remaining slots: {placementPassAvailableSlots.Count}.");
                  }
             }
-            Debug.Log($"StorageObjectVisualizer: Finished placement pass. Determined {finalDesiredPlacements.Count} final desired placements (out of {instancesToPlaceVisually.Count} selected). Total successfully placed in pass: {successfullyPlacedInPass}.");
-
 
             // --- Phase 2: Incremental Visual Update using Pooling ---
             List<CurrentlyPlacedVisualItem> nextPlacedVisualItems = new List<CurrentlyPlacedVisualItem>();
@@ -483,7 +468,6 @@ namespace VisualStorage // Your namespace
             // Destroy/Return Items to Pool
             foreach (var itemToDestroy in itemsToDestroy)
             {
-                Debug.Log($"StorageObjectVisualizer: Returning visual item for Inv Slot {itemToDestroy.ItemInstanceInfo.OriginalInventorySlotIndex} ({itemToDestroy.ItemInstanceInfo.ItemDetails.Name}) to pool.");
                 if (itemToDestroy.VisualGameObject != null && poolingManager != null) // Check poolingManager
                 {
                      // --- RETURN TO POOL ---
@@ -505,7 +489,6 @@ namespace VisualStorage // Your namespace
                      }
                  }
             }
-             Debug.Log($"StorageObjectVisualizer: Returned {itemsToDestroy.Count} visual items to pool (or destroyed).");
 
             // Create/Get Items from Pool
             List<CurrentlyPlacedVisualItem> newlyCreatedItems = new List<CurrentlyPlacedVisualItem>(); // Temporary list for newly created/gotten items
@@ -617,8 +600,6 @@ namespace VisualStorage // Your namespace
 
             // Update the main tracking list
             currentlyPlacedVisualItems = nextPlacedVisualItems;
-
-            Debug.Log($"StorageObjectVisualizer: Incremental update complete. Total visual items currently tracked: {currentlyPlacedVisualItems.Count}.");
         }
 
         /// <summary>
@@ -627,7 +608,6 @@ namespace VisualStorage // Your namespace
         /// </summary>
         private void ReturnAllVisualItemsToPool() // Renamed method
         {
-            Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Returning all tracked visual items to pool.");
             // Iterate through a copy or backwards to avoid issues while modifying the list
             foreach(var placedItem in currentlyPlacedVisualItems.ToList()) // Use ToList() to iterate over a copy
             {
@@ -654,7 +634,6 @@ namespace VisualStorage // Your namespace
                  }
             }
             currentlyPlacedVisualItems.Clear();
-             Debug.Log($"StorageObjectVisualizer ({gameObject.name}): Finished returning all tracked visual items to pool (or destroying).");
         }
 
 
