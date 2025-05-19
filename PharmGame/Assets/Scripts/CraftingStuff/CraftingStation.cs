@@ -294,19 +294,12 @@ namespace Systems.Inventory
 
         // --- Recipe Matching Logic ---
 
-        /// <summary>
-        /// Checks if the current items in the input inventories match any recipe
-        /// and calculates the maximum number of batches that can be crafted.
-        /// Updates the craft button interactability via the UI handler.
-        /// Only relevant in Inputting state.
-        /// </summary>
         private void CheckForRecipeMatch()
         {
             // Only check in the Inputting state
             if (currentState != CraftingState.Inputting)
             {
                 // If we are not in the Inputting state, ensure no recipe is matched and button is off.
-                // This prevents bugs if CheckForRecipeMatch is somehow called externally while not in Inputting.
                 currentMatchedRecipe = null;
                 maxCraftableBatches = 0;
                 if (uiHandler != null) uiHandler.SetCraftButtonInteractable(false);
@@ -315,140 +308,51 @@ namespace Systems.Inventory
 
             if (craftingRecipes == null)
             {
-                 Debug.LogError($"CraftingStation ({gameObject.name}): Cannot check for recipe match, Crafting Recipes SO is null.", this);
-                 currentMatchedRecipe = null;
-                 maxCraftableBatches = 0;
-                 if (uiHandler != null) uiHandler.SetCraftButtonInteractable(false);
-                 return;
+                Debug.LogError($"CraftingStation ({gameObject.name}): Cannot check for recipe match, Crafting Recipes SO is null.", this);
+                currentMatchedRecipe = null;
+                maxCraftableBatches = 0;
+                if (uiHandler != null) uiHandler.SetCraftButtonInteractable(false);
+                return;
             }
 
             if (primaryInputInventory?.Combiner?.InventoryState == null)
             {
-                 Debug.LogError($"CraftingStation ({gameObject.name}): Primary Input Inventory or its components are null. Cannot check recipe.", this);
-                 currentMatchedRecipe = null;
-                 maxCraftableBatches = 0;
-                 if (uiHandler != null) uiHandler.SetCraftButtonInteractable(false);
-                 return;
+                Debug.LogError($"CraftingStation ({gameObject.name}): Primary Input Inventory or its components are null. Cannot check recipe.", this);
+                currentMatchedRecipe = null;
+                maxCraftableBatches = 0;
+                if (uiHandler != null) uiHandler.SetCraftButtonInteractable(false);
+                return;
             }
 
-            // Get the current state of the input inventories (physical slots only)
-            Item[] primaryInputs = primaryInputInventory.Combiner.InventoryState.GetCurrentArrayState()
-                                    .Take(primaryInputInventory.Combiner.PhysicalSlotCount)
-                                    .Where(item => item != null && item.details != null && item.quantity > 0)
-                                    .ToArray();
-
-            Item[] secondaryInputs = null;
-             if (secondaryInputInventory?.Combiner?.InventoryState != null)
-             {
-                 secondaryInputs = secondaryInputInventory.Combiner.InventoryState.GetCurrentArrayState()
-                                     .Take(secondaryInputInventory.Combiner.PhysicalSlotCount)
-                                     .Where(item => item != null && item.details != null && item.quantity > 0)
-                                     .ToArray();
-             }
-
+            // Collect all relevant items from input inventories
             List<Item> allInputItems = new List<Item>();
-            allInputItems.AddRange(primaryInputs);
-             if (secondaryInputs != null)
-             {
-                 allInputItems.AddRange(secondaryInputs);
-             }
+            allInputItems.AddRange(primaryInputInventory.Combiner.InventoryState.GetCurrentArrayState()
+                                    .Take(primaryInputInventory.Combiner.PhysicalSlotCount)
+                                    .Where(item => item != null && item.details != null && item.quantity > 0));
 
-            currentMatchedRecipe = null;
-            maxCraftableBatches = 0; // Reset batches
-
-            // --- Recipe Matching Logic ---
-            // Find a recipe where the *types* of items present exactly match the *types* required by the recipe,
-            // AND calculate the maximum batches based on quantities.
-
-            foreach (var recipe in craftingRecipes.recipes)
+            if (secondaryInputInventory?.Combiner?.InventoryState != null)
             {
-                 // --- Check if input item *types* match recipe inputs (exact set) ---
-                 HashSet<SerializableGuid> distinctInputItemDetailsIds = new HashSet<SerializableGuid>();
-                 foreach (var inputItem in allInputItems)
-                 {
-                     if (inputItem?.details != null && inputItem.details.Id != SerializableGuid.Empty)
-                     {
-                         distinctInputItemDetailsIds.Add(inputItem.details.Id);
-                     }
-                 }
-
-                 // First check: do the *types* of items present exactly match the *types* required by the recipe?
-                 // Ensure no extra types are present, and all required types are present.
-                 bool typesMatchExactly = (distinctInputItemDetailsIds.Count == recipe.inputs.Count) &&
-                                          recipe.inputs.All(required => required?.itemDetails != null && distinctInputItemDetailsIds.Contains(required.itemDetails.Id));
-
-                 if (!typesMatchExactly)
-                 {
-                      // Debug.Log($"Checking recipe '{recipe.recipeName}': Item types do not match exactly."); // Verbose
-                      continue; // Item types don't match this recipe, skip
-                 }
-
-                // --- If types match, calculate max batches based on quantities ---
-                int potentialBatches = int.MaxValue; // Start with a high number
-
-                bool canCraftAtLeastOne = true; // Flag to ensure we can craft at least one batch
-
-                // For each required input in the recipe
-                foreach (var requiredInput in recipe.inputs)
-                {
-                    if (requiredInput.itemDetails == null)
-                    {
-                        Debug.LogWarning($"CraftingStation ({gameObject.name}): Recipe '{recipe.recipeName}' has a required input with null ItemDetails. Cannot check batch count.", this);
-                        canCraftAtLeastOne = false; // Cannot craft this recipe if an input is invalid
-                        break;
-                    }
-                    if (requiredInput.quantity <= 0)
-                    {
-                         Debug.LogWarning($"CraftingStation ({gameObject.name}): Recipe '{recipe.recipeName}' has input '{requiredInput.itemDetails.Name}' with quantity <= 0 ({requiredInput.quantity}). Cannot craft.", this);
-                         canCraftAtLeastOne = false; // Cannot craft if a required quantity is invalid
-                         break;
-                    }
-
-
-                    // Find the total quantity of this item type across all input slots
-                    int totalInputQuantity = allInputItems
-                                            .Where(item => item.details != null && item.details == requiredInput.itemDetails)
-                                            .Sum(item => item.quantity);
-
-                    // If we don't even have the minimum quantity for one batch, this recipe isn't craftable
-                    if (totalInputQuantity < requiredInput.quantity)
-                    {
-                        canCraftAtLeastOne = false;
-                        // Debug.Log($"Checking recipe '{recipe.recipeName}': Not enough quantity for {requiredInput.itemDetails.Name} (needed {requiredInput.quantity}, found {totalInputQuantity})."); // Verbose
-                        break; // Not enough quantity for this ingredient, cannot craft this recipe at all
-                    }
-
-                    // Calculate how many batches *this* ingredient can support
-                    int batchesSupportedByThisIngredient = totalInputQuantity / requiredInput.quantity;
-
-                    // The limiting factor is the ingredient that supports the fewest batches
-                    potentialBatches = Mathf.Min(potentialBatches, batchesSupportedByThisIngredient);
-                }
-
-                // If we can craft at least one batch (all required ingredients are present in sufficient quantity)
-                if (canCraftAtLeastOne && potentialBatches >= 1)
-                {
-                    currentMatchedRecipe = recipe;
-                    maxCraftableBatches = potentialBatches;
-                    break; // Found a match, no need to check other recipes
-                }
-                 else
-                 {
-                      // Debug.Log($"Checking recipe '{recipe.recipeName}': Cannot craft at least one batch."); // Verbose
-                 }
+                allInputItems.AddRange(secondaryInputInventory.Combiner.InventoryState.GetCurrentArrayState()
+                                        .Take(secondaryInputInventory.Combiner.PhysicalSlotCount)
+                                        .Where(item => item != null && item.details != null && item.quantity > 0));
             }
 
-            // --- Update Craft Button ---
+            // --- Delegate recipe matching to the external helper ---
+            RecipeMatchResult matchResult = CraftingMatcher.FindRecipeMatch(craftingRecipes, allInputItems);
+
+            currentMatchedRecipe = matchResult.MatchedRecipe;
+            maxCraftableBatches = matchResult.MaxCraftableBatches;
+
+            // --- Update Craft Button based on result ---
             if (uiHandler != null)
             {
-                // Button is interactable if a recipe is matched AND we can craft at least one batch
-                uiHandler.SetCraftButtonInteractable(currentMatchedRecipe != null && maxCraftableBatches >= 1);
+                uiHandler.SetCraftButtonInteractable(matchResult.HasMatch);
 
-                 if (currentMatchedRecipe != null && maxCraftableBatches >= 1)
-                 {
-                     Debug.Log($"CraftingStation ({gameObject.name}): Recipe matched: {currentMatchedRecipe.recipeName}! Can craft {maxCraftableBatches} batch(es).", this);
-                 }
-                 // else { Debug.Log($"CraftingStation ({gameObject.name}): No recipe matched or cannot craft any batches. Craft button disabled.", this); } // Verbose only if needed
+                if (matchResult.HasMatch)
+                {
+                    Debug.Log($"CraftingStation ({gameObject.name}): Recipe matched: {currentMatchedRecipe.recipeName}! Can craft {maxCraftableBatches} batch(es).", this);
+                }
+                // else { Debug.Log($"CraftingStation ({gameObject.name}): No recipe matched or cannot craft any batches. Craft button disabled.", this); } // Verbose only if needed
             }
         }
 
@@ -478,126 +382,45 @@ namespace Systems.Inventory
 
         /// <summary>
         /// Performs the actual item consumption and creation for the calculated batches.
+        /// Delegates the core logic to CraftingExecutor.
         /// Called internally after the crafting 'time' (currently immediate).
         /// </summary>
         private void CompleteCraft()
         {
-             Debug.Log($"CraftingStation ({gameObject.name}): Completing craft for recipe: {currentMatchedRecipe?.recipeName ?? "Unknown Recipe"}, {maxCraftableBatches} batch(es).", this);
+            Debug.Log($"CraftingStation ({gameObject.name}): Completing craft for recipe: {currentMatchedRecipe?.recipeName ?? "Unknown Recipe"}, {maxCraftableBatches} batch(es).", this);
 
-             if (currentMatchedRecipe == null || maxCraftableBatches <= 0)
-             {
-                 Debug.LogError($"CraftingStation ({gameObject.name}): CompleteCraft called but no recipe is matched or batches are zero! Matched Recipe Null: { (currentMatchedRecipe == null) }, Batches: {maxCraftableBatches}");
-                 // If CompleteCraft is called in a bad state, return to Inputting to allow fixing inputs.
-                 if (currentState != CraftingState.Inputting) SetState(CraftingState.Inputting);
-                 return;
-             }
-
-             if (primaryInputInventory?.Combiner == null || outputInventory?.Combiner == null || craftingRecipes == null)
-             {
-                 Debug.LogError($"CraftingStation ({gameObject.name}): Cannot complete craft, one or more required components/references are null.");
-                 if (currentState != CraftingState.Inputting) SetState(CraftingState.Inputting);
-                 return;
-             }
-             if (secondaryInputInventory != null && secondaryInputInventory.Combiner == null)
-             {
-                  Debug.LogError($"CraftingStation ({gameObject.name}): Secondary Input Inventory is assigned but its Combiner is null. Cannot complete craft.");
-                   if (currentState != CraftingState.Inputting) SetState(CraftingState.Inputting);
-                   return;
-             }
-
-
-            // --- Consume Inputs (based on maxCraftableBatches) ---
-            bool consumptionSuccess = true;
-            foreach (var requiredInput in currentMatchedRecipe.inputs)
+            if (currentMatchedRecipe == null || maxCraftableBatches <= 0)
             {
-                if (requiredInput.itemDetails == null)
-                {
-                     Debug.LogError($"CraftingStation ({gameObject.name}): Recipe '{currentMatchedRecipe.recipeName}' has a required input with null ItemDetails. Aborting consumption.", this);
-                     consumptionSuccess = false;
-                     break;
-                }
-
-                int totalQuantityToConsume = requiredInput.quantity * maxCraftableBatches;
-                Debug.Log($"CraftingStation ({gameObject.name}): Attempting to consume {totalQuantityToConsume} of {requiredInput.itemDetails.Name}.", this);
-
-                int removedFromPrimary = 0;
-                if (primaryInputInventory.Combiner != null)
-                {
-                     removedFromPrimary = primaryInputInventory.Combiner.TryRemoveQuantity(requiredInput.itemDetails, totalQuantityToConsume);
-                }
-
-                int remainingToRemove = totalQuantityToConsume - removedFromPrimary;
-                int removedFromSecondary = 0;
-                if (secondaryInputInventory?.Combiner != null && remainingToRemove > 0)
-                {
-                    removedFromSecondary = secondaryInputInventory.Combiner.TryRemoveQuantity(requiredInput.itemDetails, remainingToRemove);
-                }
-
-                if (removedFromPrimary + removedFromSecondary != totalQuantityToConsume)
-                {
-                     // This is a critical error - indicates discrepancy between batch calculation and actual removal
-                    Debug.LogError($"CraftingStation ({gameObject.name}): CRITICAL ERROR: Failed to fully consume input '{requiredInput.itemDetails.Name}' (needed {totalQuantityToConsume}, removed {removedFromPrimary + removedFromSecondary}) during craft completion! This indicates a major bug in batch calculation or removal logic.");
-                    // TODO: Implement more robust error handling here - maybe try to return consumed items?
-                    consumptionSuccess = false;
-                    break;
-                }
-                 else
-                 {
-                      Debug.Log($"CraftingStation ({gameObject.name}): Successfully consumed {totalQuantityToConsume} of {requiredInput.itemDetails.Name}.");
-                 }
-            }
-
-            if (!consumptionSuccess)
-            {
-                Debug.LogError($"CraftingStation ({gameObject.name}): Input consumption failed. Aborting craft output.");
-                 // If consumption fails, return to Inputting state to allow fixing inputs.
-                 if (currentState != CraftingState.Inputting) SetState(CraftingState.Inputting);
+                Debug.LogError($"CraftingStation ({gameObject.name}): CompleteCraft called but no recipe is matched or batches are zero! Matched Recipe Null: { (currentMatchedRecipe == null) }, Batches: {maxCraftableBatches}");
+                // If CompleteCraft is called in a bad state, return to Inputting to allow fixing inputs.
+                if (currentState != CraftingState.Inputting) SetState(CraftingState.Inputting);
                 return;
             }
 
+            // --- Delegate craft execution to the external helper ---
+            bool executionSuccess = CraftingExecutor.ExecuteCraft(
+                currentMatchedRecipe,
+                maxCraftableBatches,
+                primaryInputInventory,
+                secondaryInputInventory, // Pass secondary, even if null
+                outputInventory);
 
-            // --- Produce Outputs (based on maxCraftableBatches) ---
-            // Note: Even if adding outputs fails (e.g., output inventory full), we still transition to Outputting state
-            // so the player can clear space.
-            foreach (var producedOutput in currentMatchedRecipe.outputs)
+            // --- Handle result and state transition ---
+            if (executionSuccess)
             {
-                if (producedOutput.itemDetails == null)
-                {
-                    Debug.LogError($"CraftingStation ({gameObject.name}): Recipe '{currentMatchedRecipe.recipeName}' has a produced output with null ItemDetails. Skipping this output item.", this);
-                    continue;
-                }
-                 if (producedOutput.quantity <= 0)
-                 {
-                      Debug.LogWarning($"CraftingStation ({gameObject.name}): Recipe '{currentMatchedRecipe.recipeName}' specifies output '{producedOutput.itemDetails.Name}' with zero or negative quantity ({producedOutput.quantity}). Skipping this output item.", this);
-                      continue;
-                 }
-
-                // Calculate total quantity to produce for this output item type
-                int totalQuantityToProduce = producedOutput.quantity * maxCraftableBatches;
-
-                // Create a new Item instance for this output type with the total produced quantity
-                // AddItem will handle stacking in the output inventory if needed.
-                Item outputItemInstance = new Item(producedOutput.itemDetails, totalQuantityToProduce);
-
-                // Attempt to add the output item to the output inventory
-                bool added = outputInventory.Combiner.AddItem(outputItemInstance);
-
-                if (!added)
-                {
-                    Debug.LogError($"CraftingStation ({gameObject.name}): Failed to add output item '{producedOutput.itemDetails.Name}' (Qty: {totalQuantityToProduce}) to output inventory. Output inventory might be full!");
-                    // TODO: Handle this failure. Drop item? Place in player inventory?
-                    // Crafting still succeeds conceptually, but items couldn't be placed.
-                }
-                else
-                 {
-                      Debug.Log($"CraftingStation ({gameObject.name}): Produced and added {totalQuantityToProduce} of {producedOutput.itemDetails.Name} to output inventory.");
-                 }
+                // If consumption succeeded, transition to Outputting
+                SetState(CraftingState.Outputting);
+            }
+            else
+            {
+                // If consumption failed (critical error in theory), return to Inputting
+                Debug.LogError($"CraftingStation ({gameObject.name}): Craft execution failed! Returning to Inputting state.");
+                // This scenario should ideally not happen if CheckForRecipeMatch and ExecuteCraft are consistent.
+                // However, returning to Inputting allows the player to potentially correct things.
+                if (currentState != CraftingState.Inputting) SetState(CraftingState.Inputting);
             }
 
-             // Always transition to Outputting after attempting to produce items
-             SetState(CraftingState.Outputting);
-
-            // Clear the matched recipe and batches NOW, after production is attempted
+            // Clear the matched recipe and batches NOW, after execution is attempted
             currentMatchedRecipe = null;
             maxCraftableBatches = 0;
             // Button interactability is handled by UI handler based on state (will be off in Outputting)

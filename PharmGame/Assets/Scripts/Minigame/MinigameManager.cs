@@ -11,6 +11,8 @@ namespace Systems.Minigame // Your Minigame namespace
     /// <summary>
     /// Central manager for coordinating different minigame types.
     /// Listens to state changes and activates the appropriate minigame component and its UI.
+    /// Delegates completion processing to a separate handler.
+    /// Delegates start information retrieval to a separate handler.
     /// </summary>
     public class MinigameManager : MonoBehaviour
     {
@@ -52,14 +54,14 @@ namespace Systems.Minigame // Your Minigame namespace
                     {
                          if (!minigameConfigMap.ContainsKey(config.type))
                          {
-                              minigameConfigMap.Add(config.type, config);
-                              // Ensure the logic GameObject and UI root are initially inactive
-                              config.minigameLogicGameObject.SetActive(false);
-                              config.minigameUIRootGameObject.SetActive(false);
+                             minigameConfigMap.Add(config.type, config);
+                             // Ensure the logic GameObject and UI root are initially inactive
+                             config.minigameLogicGameObject.SetActive(false);
+                             config.minigameUIRootGameObject.SetActive(false);
                          }
                          else
                          {
-                              Debug.LogWarning($"MinigameManager: Duplicate MinigameConfig found for type {config.type}. Using the first one.", config.minigameLogicGameObject);
+                             Debug.LogWarning($"MinigameManager: Duplicate MinigameConfig found for type {config.type}. Using the first one.", config.minigameLogicGameObject);
                          }
                     }
                     else
@@ -115,6 +117,7 @@ namespace Systems.Minigame // Your Minigame namespace
         /// <summary>
         /// Event handler for MenuManager.OnStateChanged.
         /// Manages the activation, starting, and ending of minigame components and their UI.
+        /// Delegates minigame start information retrieval and completion processing.
         /// </summary>
         private void HandleGameStateChanged(MenuManager.GameState newState, MenuManager.GameState oldState, InteractionResponse response)
         {
@@ -124,7 +127,8 @@ namespace Systems.Minigame // Your Minigame namespace
             if (oldState == MenuManager.GameState.InMinigame)
             {
                  Debug.Log("MinigameManager: Exiting InMinigame state.");
-                 // End and deactivate the currently active minigame logic and UI
+                 // This logic remains here as it's the manager's responsibility to clean up
+                 // the state it manages.
                  if (currentActiveMinigameLogic != null)
                  {
                      currentActiveMinigameLogic.End(); // Call the End method for cleanup
@@ -162,186 +166,96 @@ namespace Systems.Minigame // Your Minigame namespace
             if (newState == MenuManager.GameState.InMinigame)
             {
                  Debug.Log("MinigameManager: Entering InMinigame state.");
-                 // Determine which minigame to start based on the response
 
-                 IMinigame minigameLogicToStart = null;
-                 GameObject minigameUIRootToActivate = null;
-                 object startData = null; // Data to pass to the minigame's SetupAndStart method
+                 // Delegate the process of getting start info to the handler
+                 MinigameStartInfo startInfo = MinigameStartHandler.GetStartInfo(response, minigameConfigMap);
 
-                 if (response is StartMinigameResponse startMinigameResponse)
-                 {
-                     Debug.Log($"MinigameManager: Received StartMinigameResponse for type: {startMinigameResponse.Type}.");
+                // --- If valid start info was found, activate and start the minigame ---
+                if (startInfo.IsValid)
+                {
+                    // Clean up any existing active minigame before starting a new one
+                    if (currentActiveMinigameLogic != null)
+                    {
+                         Debug.LogWarning("MinigameManager: Entering InMinigame state, but there is already an active minigame! Ending the previous one.", this);
+                         // Clean up the previous one before starting a new one
+                         currentActiveMinigameLogic.End();
+                          if (currentActiveMinigameLogic is MonoBehaviour alreadyActiveMono) alreadyActiveMono.gameObject.SetActive(false);
+                          if (currentActiveMinigameUIRoot != null) currentActiveMinigameUIRoot.SetActive(false); // Deactivate old UI
+                          currentActiveMinigameLogic.OnMinigameCompleted -= HandleMinigameCompleted;
+                    }
 
-                     // --- Find the correct minigame config based on the Type ---
-                     if (minigameConfigMap.TryGetValue(startMinigameResponse.Type, out var config))
+                    // Set the new active references from the start info
+                    currentActiveMinigameLogic = startInfo.MinigameLogic;
+                    currentActiveMinigameUIRoot = startInfo.UIRoot;
+
+                    // Activate the GameObject hosting the minigame component
+                     if (currentActiveMinigameLogic is MonoBehaviour enteringMono)
                      {
-                          // Get the logic component from the assigned GameObject
-                          if (config.minigameLogicGameObject != null)
-                          {
-                               minigameLogicToStart = config.minigameLogicGameObject.GetComponent<IMinigame>();
-                               // Get the UI Root GameObject from the assigned field
-                               minigameUIRootToActivate = config.minigameUIRootGameObject;
-
-
-                               if (minigameLogicToStart != null && minigameUIRootToActivate != null)
-                               {
-                                    Debug.Log($"MinigameManager: Identified {config.type} minigame logic and UI root.");
-                                    // Prepare the specific start data based on the minigame type
-                                    switch (config.type)
-                                    {
-                                        case MinigameType.BarcodeScanning:
-                                             startData = new BarcodeMinigameStartData(startMinigameResponse.ItemsToScan, startMinigameResponse.CashRegisterInteractable);
-                                            break;
-                                        // Add cases for other minigame types and their specific data structs
-                                        // case MinigameType.Lockpicking:
-                                        //      startData = new LockpickingMinigameStartData(...); // Define this struct/class
-                                        //     break;
-                                        // ...
-                                        default:
-                                            Debug.LogWarning($"MinigameManager: Unhandled MinigameType during data preparation for type: {config.type}.", this);
-                                            break;
-                                    }
-                               }
-                               else
-                               {
-                                    // Log specific errors if IMinigame component is missing or UI Root is null
-                                    if (minigameLogicToStart == null) Debug.LogError($"MinigameManager: Assigned Logic GameObject '{config.minigameLogicGameObject.name}' does not have an IMinigame component for type {config.type}!", config.minigameLogicGameObject);
-                                    if (minigameUIRootToActivate == null) Debug.LogError($"MinigameManager: Assigned UI Root GameObject is null in config for type {config.type}!", this);
-
-                                    minigameLogicToStart = null; // Prevent starting if logic or UI is missing
-                                    minigameUIRootToActivate = null;
-                               }
-                          }
-                           else
-                           {
-                                Debug.LogError($"MinigameManager: Minigame Logic GameObject is null in config for type {config.type}!", this);
-                           }
+                         enteringMono.gameObject.SetActive(true);
+                         Debug.Log($"MinigameManager: Activated minigame Logic GameObject: {enteringMono.gameObject.name}");
                      }
-                     else
-                     {
-                          Debug.LogWarning($"MinigameManager: No Minigame Config found for type: {startMinigameResponse.Type}. No minigame will start.", this);
-                     }
-                     // ---------------------------------------------------------------------
+                     else Debug.LogWarning("MinigameManager: Minigame logic to start is not a MonoBehaviour. Cannot activate Logic GameObject.");
 
-                 }
-                 // Add checks for other potential minigame-starting response types if they exist
-                 // else if (response is StartSomeOtherMinigameResponse otherResponse) { ... }
-                 else
-                 {
-                      Debug.LogWarning("MinigameManager: Entered InMinigame state but the response was not a StartMinigameResponse.", this);
-                 }
+                    // Activate the UI Root GameObject for this minigame
+                    currentActiveMinigameUIRoot.SetActive(true);
+                    Debug.Log($"MinigameManager: Activated minigame UI Root GameObject: {currentActiveMinigameUIRoot.name}");
 
 
-                 // --- If a minigame logic component and UI root were found, activate and start it ---
-                 if (minigameLogicToStart != null && minigameUIRootToActivate != null)
-                 {
-                     if (currentActiveMinigameLogic != null)
-                     {
-                          Debug.LogWarning("MinigameManager: Entering InMinigame state, but there is already an active minigame! Ending the previous one.", this);
-                          // Clean up the previous one before starting a new one
-                          currentActiveMinigameLogic.End();
-                           if (currentActiveMinigameLogic is MonoBehaviour alreadyActiveMono) alreadyActiveMono.gameObject.SetActive(false);
-                           if (currentActiveMinigameUIRoot != null) currentActiveMinigameUIRoot.SetActive(false); // Deactivate old UI
-                           currentActiveMinigameLogic.OnMinigameCompleted -= HandleMinigameCompleted;
-                     }
+                    currentActiveMinigameLogic.OnMinigameCompleted += HandleMinigameCompleted; // Subscribe to completion
+                    Debug.Log("MinigameManager: Subscribed to active minigame's completion event.");
 
-                     currentActiveMinigameLogic = minigameLogicToStart; // Set the new active logic component
-                     currentActiveMinigameUIRoot = minigameUIRootToActivate; // Set the new active UI root
-
-                     // Activate the GameObject hosting the minigame component
-                      if (currentActiveMinigameLogic is MonoBehaviour enteringMono)
-                      {
-                          enteringMono.gameObject.SetActive(true);
-                          Debug.Log($"MinigameManager: Activated minigame Logic GameObject: {enteringMono.gameObject.name}");
-                      }
-                      else Debug.LogWarning("MinigameManager: Minigame logic to start is not a MonoBehaviour. Cannot activate Logic GameObject.");
-
-                     // Activate the UI Root GameObject for this minigame
-                     currentActiveMinigameUIRoot.SetActive(true);
-                     Debug.Log($"MinigameManager: Activated minigame UI Root GameObject: {currentActiveMinigameUIRoot.name}");
-
-
-                     currentActiveMinigameLogic.OnMinigameCompleted += HandleMinigameCompleted; // Subscribe to completion
-                     Debug.Log("MinigameManager: Subscribed to active minigame's completion event.");
-
-
-                     // Call the minigame's SetupAndStart method with the prepared data
-                     currentActiveMinigameLogic.SetupAndStart(startData);
-                     Debug.Log("MinigameManager: Called SetupAndStart on the active minigame logic component.");
-
-                 }
-                 else
-                 {
-                      Debug.LogWarning("MinigameManager: No valid IMinigame logic component or UI root was selected/found to start for this state entry.");
-                 }
+                    // Call the minigame's SetupAndStart method with the prepared data
+                    currentActiveMinigameLogic.SetupAndStart(startInfo.StartData);
+                    Debug.Log("MinigameManager: Called SetupAndStart on the active minigame logic component.");
+                }
+                // If startInfo was not valid, the MinigameStartHandler already logged warnings/errors.
             }
         }
 
         /// <summary>
         /// Handles the OnMinigameCompleted event from the currently active minigame.
-        /// Processes completion data and transitions the game state.
+        /// Delegates completion data processing and transitions the game state.
         /// </summary>
         /// <param name="completionData">Data provided by the completed minigame.</param>
         private void HandleMinigameCompleted(object completionData)
         {
              Debug.Log("MinigameManager: Received OnMinigameCompleted event from active minigame logic.");
 
-             // --- Process Completion Data (Specific to each minigame type) ---
-             // Check the type of the active minigame logic component to process the data
-             if (currentActiveMinigameLogic is BarcodeMinigame completedBarcodeMinigame)
-             {
-                 Debug.Log("MinigameManager: Completed minigame was Barcode Minigame.");
-                 // Expect completionData to be a Tuple<float, CashRegisterInteractable>
-                 if (completionData is Tuple<float, CashRegisterInteractable> barcodeCompletionData)
-                 {
-                      float totalPayment = barcodeCompletionData.Item1;
-                      CashRegisterInteractable initiatingRegister = barcodeCompletionData.Item2;
-
-                      Debug.Log($"MinigameManager: Received total payment: {totalPayment}");
-
-                      // Process Payment (Add to Player's Currency)
-                      if (EconomyManager.Instance != null)
-                      {
-                          EconomyManager.Instance.AddCurrency(totalPayment);
-                          Debug.Log($"MinigameManager: Added {totalPayment} currency via EconomyManager.");
-                      }
-                      else Debug.LogError("MinigameManager: EconomyManager Instance is null! Cannot process payment.");
-
-                      // Notify the Initiating Register
-                      if (initiatingRegister != null)
-                      {
-                           initiatingRegister.OnMinigameCompleted(totalPayment); // Call the completion method on the register
-                           Debug.Log("MinigameManager: Notified initiating register of completion.");
-                      }
-                      else Debug.LogWarning("MinigameManager: Initiating register reference is null in completion data! Cannot notify completion.");
-                 }
-                  else Debug.LogWarning($"MinigameManager: Barcode Minigame completion data was not the expected Tuple<float, CashRegisterInteractable>. Received type: {completionData?.GetType().Name ?? "null"}.");
-
-             }
-             // Add cases for other minigame types and how to process their completion data:
-             // else if (currentActiveMinigameLogic is LockpickingMinigame completedLockpickingMinigame)
-             // {
-             //     Debug.Log("MinigameManager: Completed minigame was Lockpicking Minigame.");
-             //     // Process Lockpicking specific completion data (e.g., bool success)
-             //     if (completionData is bool success) { ... }
-             // }
-             // ...
-             else
-             {
-                  Debug.LogWarning($"MinigameManager: Completed minigame logic component type ({currentActiveMinigameLogic?.GetType().Name ?? "null"}) is not recognized. Cannot process completion data.");
-             }
+            // --- Delegate Processing Completion Data ---
+            // Check the type of the active minigame logic component and delegate processing
+            if (currentActiveMinigameLogic != null)
+            {
+                if (currentActiveMinigameLogic is BarcodeMinigame) // Check the type of the completed minigame
+                {
+                    MinigameCompletionProcessor.ProcessBarcodeCompletion(completionData);
+                }
+                // Add checks for other minigame types and call their specific processor methods:
+                // else if (currentActiveMinigameLogic is LockpickingMinigame)
+                // {
+                //     MinigameCompletionProcessor.ProcessLockpickingCompletion(completionData);
+                // }
+                // ...
+                else
+                {
+                    Debug.LogWarning($"MinigameManager: Completed minigame logic component type ({currentActiveMinigameLogic.GetType().Name}) is not recognized by the completion handler. Data will not be processed.", this);
+                }
+            }
+            else
+            {
+                 Debug.LogWarning("MinigameManager: Received minigame completed event, but currentActiveMinigameLogic is null. Cannot process data.");
+            }
 
 
-             // --- Transition Game State ---
-             // After processing completion, always transition back to the Playing state.
-             Debug.Log("MinigameManager: Requesting state transition back to Playing.");
-             if (MenuManager.Instance != null)
-             {
-                 MenuManager.Instance.SetState(MenuManager.GameState.Playing, null); // Exit minigame state
-             }
-             else Debug.LogError("MinigameManager: MenuManager Instance is null! Cannot exit minigame state after completion.");
+            // --- Transition Game State ---
+            // After processing completion, always transition back to the Playing state.
+            Debug.Log("MinigameManager: Requesting state transition back to Playing.");
+            if (MenuManager.Instance != null)
+            {
+                MenuManager.Instance.SetState(MenuManager.GameState.Playing, null); // Exit minigame state
+            }
+            else Debug.LogError("MinigameManager: MenuManager Instance is null! Cannot exit minigame state after completion.");
 
-             // The state exit handling in HandleGameStateChanged will now clean up the minigame component and UI.
+            // The state exit handling in HandleGameStateChanged will now clean up the minigame component and UI.
         }
 
 
