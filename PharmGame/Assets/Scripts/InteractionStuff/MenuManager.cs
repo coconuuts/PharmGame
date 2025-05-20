@@ -1,4 +1,6 @@
-// Keep the existing usings and namespace
+// Systems/GameStates/MenuManager.cs
+// Keep existing usings and namespace
+
 using UnityEngine;
 using System;
 using System.Collections.Generic;
@@ -6,10 +8,12 @@ using InventoryClass = Systems.Inventory.Inventory;
 using Systems.Interaction;
 using System.Collections;
 using Systems.CameraControl;
-using Systems.Minigame;
+using Systems.Minigame; // Ensure this is included
 using Systems.Inventory;
-using Systems.UI; // ADDED: Needed to ensure UIManager namespace is known if MenuManager interacts with it directly (it doesn't here, but good practice)
+using Systems.UI;
 using Systems.Player;
+using Systems.CraftingMinigames; // Ensure this is included
+
 
 namespace Systems.GameStates
 {
@@ -23,17 +27,16 @@ namespace Systems.GameStates
             InInventory,
             InPauseMenu,
             InComputer,
-            InMinigame,
-            InCrafting
+            InMinigame, // This state will now be used for crafting minigames too
+            InCrafting  // This state represents the crafting *UI* state
         }
 
         public GameState currentState = GameState.Playing;
         [HideInInspector] public GameState previousState;
 
-        // --- MODIFIED: Delegate signature to include InteractionResponse ---
+        // Delegate signature to include InteractionResponse
         public delegate void StateChangedHandler(GameState newState, GameState oldState, InteractionResponse response);
         public static event StateChangedHandler OnStateChanged;
-        // -------------------------------------------------------------------
 
         [Header("Player Settings")]
         public GameObject player;
@@ -44,21 +47,24 @@ namespace Systems.GameStates
         [SerializeField] private InventorySelector playerToolbarInventorySelector;
         public InventorySelector PlayerToolbarInventorySelector => playerToolbarInventorySelector;
 
-        // Fields to track the currently active UI and data for states like InInventory or InComputer
-        // Keep these internal fields. They are populated by SetState and accessed via public getters.
+        // Fields to track the currently active UI and data for states
         private GameObject currentActiveUIRoot_internal;
         private InventoryClass currentOpenInventoryComponent_internal;
         private ComputerInteractable currentComputerInteractable_internal;
-        private CashRegisterInteractable currentCashRegisterInteractable_internal;
-        private CraftingStation currentCraftingStation_internal;
+        private CashRegisterInteractable currentCashRegisterInteractable_internal; // For cash register minigame
+        private CraftingStation currentCraftingStation_internal; // Reference to the active crafting station
+        private CraftingMinigameBase currentActiveCraftingMinigame_internal; // Reference to the active crafting minigame component
+        private IMinigame currentActiveGeneralMinigame_internal; // Reference for the active general minigame component (from MinigameManager)
+
 
         // Public Getters for UIManager and StateActions to access
-        // These will reflect the data of the *current* state after SetState finishes.
         public GameObject CurrentActiveUIRoot => currentActiveUIRoot_internal;
         public InventoryClass CurrentOpenInventoryComponent => currentOpenInventoryComponent_internal;
         public ComputerInteractable CurrentComputerInteractable => currentComputerInteractable_internal;
         public CashRegisterInteractable CurrentCashRegisterInteractable => currentCashRegisterInteractable_internal;
         public CraftingStation CurrentCraftingStation => currentCraftingStation_internal;
+        public CraftingMinigameBase CurrentActiveCraftingMinigame => currentActiveCraftingMinigame_internal;
+        public IMinigame CurrentActiveGeneralMinigame => currentActiveGeneralMinigame_internal;
 
 
         [Header("Game State Configuration")]
@@ -68,6 +74,15 @@ namespace Systems.GameStates
         // Reference to the Simple Action Dispatcher
         private SimpleActionDispatcher simpleActionDispatcher = new SimpleActionDispatcher();
 
+        // --- MODIFIED: References to the Minigame Managers are now serialized fields ---
+        [Header("Manager References")]
+        [Tooltip("Drag the General MinigameManager GameObject here.")]
+        [SerializeField] private MinigameManager generalMinigameManagerInstance; // Reference to the general MinigameManager
+
+        [Tooltip("Drag the CraftingMinigameManager GameObject here.")]
+        [SerializeField] private CraftingMinigameManager craftingMinigameManagerInstance; // Reference to the CraftingMinigameManager
+        // -----------------------------------------------------------------------------
+
 
         private void Awake()
         {
@@ -75,7 +90,7 @@ namespace Systems.GameStates
             else { Debug.LogWarning("MenuManager: Duplicate instance found. Destroying this one.", this); Destroy(gameObject); return; }
             Debug.Log("MenuManager: Awake completed.");
 
-             // ... (Keep existing logic to find playerToolbarInventorySelector) ...
+            // --- Find static UI roots by tag if not assigned ---
              GameObject playerToolbarObject = GameObject.FindGameObjectWithTag("PlayerToolbarInventory"); // Use your actual toolbar tag
              if (playerToolbarObject != null)
              {
@@ -89,6 +104,19 @@ namespace Systems.GameStates
              {
                   Debug.LogWarning($"MenuManager: Player Toolbar Inventory GameObject with tag 'PlayerToolbarInventory' not found. Cannot manage toolbar highlights.", this);
              }
+
+             // --- Check if serialized manager references are assigned ---
+             if (generalMinigameManagerInstance == null)
+             {
+                 Debug.LogError($"MenuManager: General Minigame Manager reference is not assigned in the inspector!", this);
+                 // Do NOT disable, let other systems potentially work, but minigames won't
+             }
+             if (craftingMinigameManagerInstance == null)
+             {
+                 Debug.LogError($"MenuManager: Crafting Minigame Manager reference is not assigned in the inspector!", this);
+                  // Do NOT disable
+             }
+             // ------------------------------------------------------
         }
 
 
@@ -104,7 +132,7 @@ namespace Systems.GameStates
                     {
                          if (!gameStateConfigMap.ContainsKey(config.gameState))
                          {
-                              gameStateConfigMap.Add(config.gameState, config);
+                             gameStateConfigMap.Add(config.gameState, config);
                          }
                          else
                          {
@@ -121,9 +149,9 @@ namespace Systems.GameStates
             // Basic validation: Check if configs exist for all enum values
             foreach (GameState state in Enum.GetValues(typeof(GameState)))
             {
-                if (!gameStateConfigMap.ContainsKey(state))
+                if (!gameStateConfigMap.ContainsKey(state) && state != GameState.Playing) // Allow Playing to not have a SO if it's the default/fallback
                 {
-                    Debug.LogError($"MenuManager: No GameStateConfigSO assigned for state: {state}!", this);
+                     Debug.LogWarning($"MenuManager: No GameStateConfigSO assigned for state: {state}!", this); // Changed to Warning, maybe not all states *need* a SO
                 }
             }
 
@@ -147,137 +175,235 @@ namespace Systems.GameStates
             currentState = GameState.Playing;
             previousState = currentState; // Initialize previous state
 
-            // Call SetState for the initial state to run its entry actions
             Debug.Log("Menu State: " + currentState + " (Initial Setup)");
             SetState(currentState, null, true); // Pass null response and indicate initial setup
-             // UIManager will listen to the OnStateChanged event triggered by SetState
-             // and activate/deactivate UIs accordingly.
         }
 
         private void Update()
         {
-            // Keep Escape key logic
+            // Handle Escape key
             if (Input.GetKeyDown(KeyCode.Escape))
             {
-                if (currentState != GameState.Playing)
+                // Allow Escape from any state except Playing to return to Playing
+                 if (currentState != GameState.Playing)
                 {
+                    // The Exit actions for the current state (including InMinigame) will handle cleanup.
                     SetState(GameState.Playing, null); // Exiting via Escape (no specific response)
                 }
-                else if (currentState == GameState.Playing)
-                {
-                    OpenPauseMenu();
-                }
+                 else // current state IS Playing
+                 {
+                     OpenPauseMenu();
+                 }
             }
         }
 
-/// <summary>
-/// Sets the current game state and triggers associated entry/exit actions defined in GameStateConfigSO.
-/// Triggers the OnStateChanged event, passing the InteractionResponse.
-/// Updates internal state data references AFTER the event and exit actions.
-/// MODIFIED: Removed access to StartMinigameResponse.MinigameUIRoot.
-/// </summary>
-/// <param name="newState">The state to transition to.</param>
-/// <param name="response">The InteractionResponse that caused this state change, or null if internal.</param>
-/// <param name="isInitialSetup">Flag to indicate if this is the very first state setting in Start.</param>
-public void SetState(GameState newState, InteractionResponse response = null, bool isInitialSetup = false)
-{
-     // Ignore same state transition unless it's the initial setup
-    if (currentState == newState && !isInitialSetup)
-    {
-         Debug.Log($"MenuManager: Already in {currentState} state. Ignoring SetState call (unless initial setup).");
-         return;
-    }
+        /// <summary>
+        /// Sets the current game state and triggers associated entry/exit actions defined in GameStateConfigSO.
+        /// Triggers the OnStateChanged event, passing the InteractionResponse.
+        /// Updates internal state data references AFTER the event and exit actions.
+        /// </summary>
+        /// <param name="newState">The state to transition to.</param>
+        /// <param name="response">The InteractionResponse that caused this state change, or null if internal.</param>
+        /// <param name="isInitialSetup">Flag to indicate if this is the very first state setting in Start.</param>
+        public void SetState(GameState newState, InteractionResponse response = null, bool isInitialSetup = false)
+        {
+            // Ignore same state transition unless it's the initial setup
+             if (currentState == newState && !isInitialSetup)
+            {
+                 return;
+            }
 
-    GameState oldState = currentState; // Capture the old state
+            GameState oldState = currentState; // Capture the old state
 
-    // Find the config for the old state BEFORE changing currentState
-     GameStateConfigSO oldStateConfig = null;
-     if (gameStateConfigMap.TryGetValue(oldState, out var config))
-     {
-          oldStateConfig = config;
-     }
-     else
-     {
-          Debug.LogWarning($"MenuManager: No GameStateConfigSO found for old state {oldState}. Cannot execute exit actions.", this);
-     }
+            // Find the config for the old state BEFORE changing currentState
+             GameStateConfigSO oldStateConfig = null;
+             if (gameStateConfigMap.TryGetValue(oldState, out var config))
+             {
+                 oldStateConfig = config;
+             }
+             else
+             {
+                  Debug.LogWarning($"MenuManager: No GameStateConfigSO found for old state {oldState}. Cannot execute exit actions.", this);
+             }
 
 
-    // --- Execute Exit Actions for the old state ---
-    // These actions (and UIManager listening to event) will use the public getters,
-    // which *still* hold the references from the state being exited at this moment.
-    if (oldStateConfig != null)
-    {
-        oldStateConfig.ExecuteExitActions(response, this); // Pass the response to exit actions
-    }
+            // --- Execute Exit Actions for the old state ---
+            // These actions (and UIManager listening to event) will use the public getters,
+            // which *still* hold the references from the state being exited at this moment.
+            if (oldStateConfig != null)
+            {
+                oldStateConfig.ExecuteExitActions(response, this); // Pass the response to exit actions
+            }
+
+            // --- Handle Specific Exit Logic Here Before Event ---
+            // This is where we trigger manager-level cleanup based on *what state we are leaving*.
+            // This happens BEFORE the OnStateChanged event, so UIManager and others react correctly.
+            // Critically, this happens *after* StateActionSO Exit Actions.
+
+            // If exiting InMinigame TO Playing (e.g., via Escape)
+            if (oldState == GameState.InMinigame && newState == GameState.Playing)
+            {
+                Debug.Log("MenuManager: Explicitly handling exit from InMinigame to Playing (likely via Escape). Triggering minigame managers to abort.");
+                // Tell both crafting and general minigame managers to end their current session, marking it as aborted.
+                 if (craftingMinigameManagerInstance != null)
+                 {
+                     craftingMinigameManagerInstance.EndCurrentMinigame(true); // Call EndCurrentMinigame with ABORT=true
+                 }
+                 else Debug.LogWarning("MenuManager: CraftingMinigameManagerInstance is null when exiting InMinigame. Cannot signal abort for crafting minigame.");
+
+                if (generalMinigameManagerInstance != null)
+                {
+                     generalMinigameManagerInstance.EndCurrentMinigame(true); // Need this method in general MinigameManager
+                }
+                 else Debug.LogWarning("MenuManager: GeneralMinigameManagerInstance is null when exiting InMinigame. Cannot signal abort for general minigame.");
+
+                 // Clear the minigame references held by MenuManager when explicitly exiting InMinigame
+                 currentActiveCraftingMinigame_internal = null;
+                 currentActiveGeneralMinigame_internal = null; // Assume general manager also clears its instance
+            }
+            // No other explicit exit logic needed here for now.
 
 
-    // --- Trigger the OnStateChanged event AFTER exit actions ---
-    // UIManager and other event listeners will react here.
-    // UIManager's oldState logic will run NOW, accessing the public getters (which still hold old data).
-    // UIManager's newState logic will run NOW, accessing the 'response' parameter.
-     OnStateChanged?.Invoke(newState, oldState, response);
+            // --- Trigger the OnStateChanged event AFTER exit actions and specific exit logic ---
+            OnStateChanged?.Invoke(newState, oldState, response);
 
 
-    // --- NOW Update the internal state and references for the NEW state ---
-    previousState = oldState;
-    currentState = newState; // Change the current state here
-    Debug.Log($"Menu State: Transitioning from {oldState} to {currentState}.");
+            // --- NOW Update the internal state and references for the NEW state ---
+            previousState = oldState;
+            currentState = newState; // Change the current state here
+            Debug.Log($"Menu State: Transitioning from {oldState} to {currentState}.");
 
-     // Clear old dynamic references and set new ones based on the response.
-     // This happens AFTER exit logic and the event.
-     currentActiveUIRoot_internal = null; // The specific UI root is handled by the minigame component's GameObject
-     currentOpenInventoryComponent_internal = null;
-     currentComputerInteractable_internal = null; // The specific UI root is handled by the computer interactable
-     currentCashRegisterInteractable_internal = null; // The specific UI root is handled by the minigame component's GameObject
-     currentCraftingStation_internal = null; // The specific UI is handled by the crafting station
+            // Clear old dynamic references and set new ones based on the response or previous state context.
+            // Note: Some references (like CraftingStation) persist across certain state changes (Crafting <-> Minigame <-> Pause).
+            // They are cleared explicitly when exiting the whole flow (e.g., Crafting -> Playing).
 
-     if (response is OpenInventoryResponse openInventoryResponse)
-     {
-         currentOpenInventoryComponent_internal = openInventoryResponse.InventoryComponent;
-         currentActiveUIRoot_internal = openInventoryResponse.InventoryUIRoot;
-     }
-     else if (response is EnterComputerResponse enterComputerResponse)
-     {
-          currentComputerInteractable_internal = enterComputerResponse.ComputerInteractable;
-          currentActiveUIRoot_internal = enterComputerResponse.ComputerUIRoot;
-     }
-     else if (response is StartMinigameResponse startMinigameResponse)
-     {
-          // --- MODIFIED: Store the CashRegisterInteractable, but not MinigameUIRoot ---
-          currentCashRegisterInteractable_internal = startMinigameResponse.CashRegisterInteractable;
-          // currentActiveUIRoot_internal is NOT set from MinigameUIRoot here anymore
-          // The specific minigame's UI Root is part of its GameObject managed by the central MinigameManager
-          Debug.Log("MenuManager: Received StartMinigameResponse. Storing CashRegisterInteractable.");
-          // -----------------------------------------------------------------------------
-     }
-     else if (response is OpenCraftingResponse openCraftingResponse)
-     {
-          currentCraftingStation_internal = openCraftingResponse.CraftingStationComponent;
-          // Crafting UI root reference is managed by the CraftingStation itself
-          // You might need a getter on CraftingStation if a StateAction needs the root reference
-          // currentActiveUIRoot_internal is NOT set from Crafting here
-     }
-     // Add other response types here if they carry data needed by StateActions.
-    // -----------------------------------------------------------------------------
+            // Clear all unless they are explicitly set by the response for the NEW state,
+            // or need to persist (handled in explicit logic below).
+            currentActiveUIRoot_internal = null;
+            currentOpenInventoryComponent_internal = null;
+            currentComputerInteractable_internal = null;
+            currentCashRegisterInteractable_internal = null;
+            // CraftingStation, CraftingMinigame, and GeneralMinigame references are handled explicitly below
 
 
-    // --- Execute Entry Actions for the new state ---
-    // Actions here will use the NEW data now available via the public getters.
-     GameStateConfigSO newStateConfig = null;
-     if (gameStateConfigMap.TryGetValue(currentState, out var config2))
-     {
-          newStateConfig = config2;
-     }
-     else
-     {
-          Debug.LogError($"MenuManager: No GameStateConfigSO found for new state {currentState}. Cannot execute entry actions!", this);
-     }
+             // Handle setting new state references based on the response
+             if (response is OpenInventoryResponse openInventoryResponse)
+             {
+                 currentOpenInventoryComponent_internal = openInventoryResponse.InventoryComponent;
+                 currentActiveUIRoot_internal = openInventoryResponse.InventoryUIRoot;
+                 // Ensure crafting/minigame refs are cleared if entering Inventory
+                 currentCraftingStation_internal = null;
+                 currentActiveCraftingMinigame_internal = null;
+                 currentActiveGeneralMinigame_internal = null;
+             }
+             else if (response is EnterComputerResponse enterComputerResponse)
+             {
+                 currentComputerInteractable_internal = enterComputerResponse.ComputerInteractable;
+                 currentActiveUIRoot_internal = enterComputerResponse.ComputerUIRoot;
+                  // Ensure crafting/minigame refs are cleared if entering Computer
+                 currentCraftingStation_internal = null;
+                 currentActiveCraftingMinigame_internal = null;
+                 currentActiveGeneralMinigame_internal = null;
+             }
+             else if (response is StartMinigameResponse startMinigameResponse) // For non-crafting minigames like Cash Register
+             {
+                 currentCashRegisterInteractable_internal = startMinigameResponse.CashRegisterInteractable;
+                 // The general MinigameManager handles setting its active IMinigame instance.
+                 // MenuManager doesn't need to store IMinigame from this response.
+                  // Ensure crafting refs are cleared if starting a General Minigame (unlikely flow, but safe)
+                 currentCraftingStation_internal = null;
+                 currentActiveCraftingMinigame_internal = null;
+             }
+             // --- Handle StartCraftingMinigameResponse ---
+             else if (response is StartCraftingMinigameResponse startCraftingMinigameResponse)
+             {
+                 Debug.Log("MenuManager: Received StartCraftingMinigameResponse. Storing Crafting Minigame Component.");
+                 currentActiveCraftingMinigame_internal = startCraftingMinigameResponse.MinigameComponent; // Corrected typo
+                 // CraftingStation reference (currentCraftingStation_internal) should persist from OpenCraftingResponse.
+                 // It is NOT cleared here.
+                 currentActiveGeneralMinigame_internal = null; // Clear general minigame ref
+             }
+             // ---------------------------------------------------
+             else if (response is OpenCraftingResponse openCraftingResponse)
+             {
+                 Debug.Log("MenuManager: Received OpenCraftingResponse. Storing Crafting Station.");
+                 currentCraftingStation_internal = openCraftingResponse.CraftingStationComponent;
+                 // ActiveUIRoot is NOT set here; CraftingStation manages its own UI activation.
+                  // Ensure minigame refs are cleared if entering Crafting UI directly
+                 currentActiveCraftingMinigame_internal = null;
+                 currentActiveGeneralMinigame_internal = null;
+             }
+             else // Response is null or a type that doesn't set a modal reference
+             {
+                 // Explicitly clear references based on the NEW state we are entering,
+                 // especially when transitioning to states that shouldn't have modal UIs active.
+                 switch(newState)
+                 {
+                     case GameState.Playing:
+                     case GameState.InPauseMenu:
+                          // If transitioning to Playing or Pause with a null response, clear all modal references.
+                          // This covers exiting Inventory, Computer, Crafting, or Minigame via Escape.
+                          currentOpenInventoryComponent_internal = null;
+                          currentComputerInteractable_internal = null;
+                          currentCashRegisterInteractable_internal = null;
+                          currentCraftingStation_internal = null; // Clear crafting station reference when leaving crafting/minigame flow
+                          currentActiveCraftingMinigame_internal = null;
+                          currentActiveGeneralMinigame_internal = null;
+                          break;
+                     case GameState.InCrafting:
+                          // If transitioning TO InCrafting with a null response (e.g., returning from minigame/pause)
+                          // The CraftingStation reference (currentCraftingStation_internal) *should* still be held
+                          // from the initial OpenCraftingResponse that led into the crafting flow.
+                          // We do NOT clear it here.
+                          // Ensure other references are cleared.
+                          currentOpenInventoryComponent_internal = null;
+                          currentComputerInteractable_internal = null;
+                          currentCashRegisterInteractable_internal = null;
+                          // currentCraftingStation_internal persists
+                          currentActiveCraftingMinigame_internal = null; // Should be cleared when leaving minigame state
+                          currentActiveGeneralMinigame_internal = null;
+                          break;
+                     case GameState.InMinigame:
+                           // If transitioning TO InMinigame with a null response (unlikely for crafting/general minigames which use specific responses)
+                           // This case might be relevant if a minigame starts without a structured response.
+                           // For robustness, clear other modal references, but minigame refs should be set by the responsible manager.
+                           currentOpenInventoryComponent_internal = null;
+                           currentComputerInteractable_internal = null;
+                           currentCashRegisterInteractable_internal = null;
+                           // currentCraftingStation_internal persists if coming from Crafting
+                           currentActiveCraftingMinigame_internal = null; // Should be set by response or manager
+                           currentActiveGeneralMinigame_internal = null; // Should be set by response or manager
+                           break;
+                     default:
+                           // For other states, clear all modal references
+                           currentOpenInventoryComponent_internal = null;
+                           currentComputerInteractable_internal = null;
+                           currentCashRegisterInteractable_internal = null;
+                           currentCraftingStation_internal = null;
+                           currentActiveCraftingMinigame_internal = null;
+                           currentActiveGeneralMinigame_internal = null;
+                           break;
+                 }
+             }
 
-    if (newStateConfig != null)
-    {
-        newStateConfig.ExecuteEntryActions(response, this); // Pass the response to entry actions
-    }
-}
+
+            // --- Execute Entry Actions for the new state ---
+            GameStateConfigSO newStateConfig = null;
+             if (gameStateConfigMap.TryGetValue(currentState, out var config2))
+             {
+                 newStateConfig = config2;
+             }
+             else
+             {
+                  Debug.LogError($"MenuManager: No GameStateConfigSO found for new state {currentState}. Cannot execute entry actions!", this);
+             }
+
+
+            if (newStateConfig != null)
+            {
+                newStateConfig.ExecuteEntryActions(response, this); // Pass the response to entry actions
+            }
+        }
 
         /// <summary>
         /// Receives and processes InteractionResponse objects to trigger state changes and related actions.
@@ -287,81 +413,94 @@ public void SetState(GameState newState, InteractionResponse response = null, bo
         /// <param name="response">The InteractionResponse received from an interactable.</param>
         public void HandleInteractionResponse(InteractionResponse response)
         {
-            if (response == null)
-            {
-                Debug.LogWarning("MenuManager: Received a null interaction response. Ignoring.", this);
-                return;
-            }
+             if (response == null)
+             {
+                  Debug.LogWarning("MenuManager: Received a null interaction response. Ignoring.", this);
+                  return;
+             }
 
-            // Check the type of the response and trigger the appropriate state change OR action
-            // State-changing responses call SetState.
-            if (response is OpenInventoryResponse openInventoryResponse)
-            {
-                 SetState(GameState.InInventory, openInventoryResponse);
-            }
-            else if (response is EnterComputerResponse enterComputerResponse)
-            {
-                 SetState(GameState.InComputer, enterComputerResponse);
-            }
-            else if (response is StartMinigameResponse startMinigameResponse)
-            {
-                 SetState(GameState.InMinigame, startMinigameResponse);
-            }
-            else if (response is OpenCraftingResponse openCraftingResponse)
-            {
-                 SetState(GameState.InCrafting, openCraftingResponse);
-            }
-             // Pass unhandled responses to the Simple Action Dispatcher
+             // Check the type of the response and trigger the appropriate state change OR action
+             // State-changing responses call SetState.
+             if (response is OpenInventoryResponse openInventoryResponse)
+             {
+                  SetState(GameState.InInventory, openInventoryResponse);
+             }
+             else if (response is EnterComputerResponse enterComputerResponse)
+             {
+                  SetState(GameState.InComputer, enterComputerResponse);
+             }
+             else if (response is StartMinigameResponse startMinigameResponse) // For non-crafting minigames like Cash Register
+             {
+                 // Call the general minigame manager to start the minigame.
+                 // The general manager is responsible for instantiating, setting up,
+                 // and transitioning MenuManager.GameState to InMinigame.
+                 // --- MODIFIED: Use the stored manager instance reference ---
+                 if (generalMinigameManagerInstance != null)
+                 {
+                     generalMinigameManagerInstance.StartMinigame(startMinigameResponse); // Assuming StartMinigame method takes the response
+                 }
+                 else
+                 {
+                     Debug.LogError("MenuManager: Cannot start general minigame - GeneralMinigameManagerInstance is null!");
+                 }
+                 // MenuManager will receive the InMinigame state change request from MinigameManager.StartMinigame
+             }
+             // StartCraftingMinigameResponse is handled by CraftingMinigameManager internally calling SetState,
+             // not typically initiated via HandleInteractionResponse from PlayerInteractionManager.
+             else if (response is OpenCraftingResponse openCraftingResponse)
+             {
+                  SetState(GameState.InCrafting, openCraftingResponse); // Transition to InCrafting
+             }
+              // Pass unhandled responses to the Simple Action Dispatcher
              else
              {
-                 simpleActionDispatcher.Dispatch(response);
+                  simpleActionDispatcher.Dispatch(response);
              }
         }
 
         // Helper method to clear hover highlights for any given inventory
-        // Keep this public as StateActions or UIManager might call it
         public void ClearHoverHighlights(InventoryClass inventory)
         {
-            if (inventory != null)
-            {
-                Visualizer visualizer = inventory.GetComponent<Visualizer>(); // Assuming Visualizer exists
-                if (visualizer != null && visualizer.SlotUIComponents != null) // Assuming SlotUIComponents is a public list
-                {
-                    foreach (var slotUI in visualizer.SlotUIComponents)
-                    {
-                        if (slotUI != null) // Ensure the slotUI is not null in the list
-                        {
-                            slotUI.RemoveHoverHighlight(); // Assuming RemoveHoverHighlight exists on SlotUI component
-                        }
-                    }
-                }
-                 // Added checks for null visualizer or empty SlotUIComponents list
-                else if (visualizer == null) Debug.LogWarning($"MenuManager: Could not find Visualizer component on Inventory GameObject '{inventory.gameObject.name}' to clear hover highlights.", inventory?.gameObject);
-                else if (visualizer.SlotUIComponents == null) Debug.LogWarning($"MenuManager: SlotUIComponents list is null on Visualizer component of Inventory GameObject '{inventory.gameObject.name}'.", inventory?.gameObject);
-                else if (visualizer.SlotUIComponents.Count == 0) Debug.LogWarning($"MenuManager: SlotUIComponents list is empty on Visualizer component of Inventory GameObject '{inventory.gameObject.name}'.", inventory?.gameObject);
-            }
-            else Debug.LogWarning("MenuManager: Cannot clear hover highlights - Inventory reference is null.", this);
+             if (inventory != null)
+             {
+                  Visualizer visualizer = inventory.GetComponent<Visualizer>(); // Assuming Visualizer exists
+                  if (visualizer != null && visualizer.SlotUIComponents != null) // Assuming SlotUIComponents is a public list
+                  {
+                       foreach (var slotUI in visualizer.SlotUIComponents)
+                       {
+                            if (slotUI != null) // Ensure the slotUI is not null in the list
+                            {
+                                 slotUI.RemoveHoverHighlight(); // Assuming RemoveHoverHighlight exists on SlotUI component
+                            }
+                       }
+                  }
+                 else if (visualizer == null) Debug.LogWarning($"MenuManager: Could not find Visualizer component on Inventory GameObject '{inventory?.gameObject?.name}' to clear hover highlights.", inventory?.gameObject);
+                 else if (visualizer.SlotUIComponents == null) Debug.LogWarning($"MenuManager: SlotUIComponents list is null on Visualizer component of Inventory GameObject '{inventory?.gameObject?.name}'.", inventory?.gameObject);
+                 else if (visualizer.SlotUIComponents.Count == 0) Debug.LogWarning($"MenuManager: SlotUIComponents list is empty on Visualizer component of Inventory GameObject '{inventory?.gameObject?.name}'.", inventory?.gameObject);
+             }
+             else Debug.LogWarning("MenuManager: Cannot clear hover highlights - Inventory reference is null.", this);
         }
 
+
         // Public methods to open/close pause menu still call SetState
+
         public void OpenPauseMenu()
         {
-            // Ensure we use the correct enum name
+            // Only open pause menu if not already in a modal state like InMinigame or InCrafting
+             if (currentState != GameState.Playing)
+             {
+                 Debug.LogWarning($"MenuManager: Attempted to open Pause Menu from {currentState} state. Only allowed from Playing.");
+                 return;
+             }
             SetState(GameState.InPauseMenu, null);
         }
 
         public void ClosePauseMenu()
         {
              // When exiting PauseMenu via a dedicated button, return to the state it was in BEFORE PauseMenu.
-             // This uses previousState.
-             // The Escape key logic in Update already handles returning to Playing from PauseMenu.
-             // Let's use previousState here for more flexible Pause Menu exits (e.g., from Inventory -> Pause -> back to Inventory).
-             // Ensure previousState is valid and not PauseMenu itself to prevent infinite loops.
-
-             // --- CORRECTED: Use GameState.InPauseMenu ---
-             GameState stateAfterPause = (previousState != GameState.InPauseMenu && previousState != GameState.Playing) ? previousState : GameState.Playing;
+             // Use previousState, but prevent infinite loops or returning to states that shouldn't be returned to directly.
+             GameState stateAfterPause = (previousState == GameState.InPauseMenu || previousState == GameState.Playing) ? GameState.Playing : previousState;
              SetState(stateAfterPause, null);
-             // -------------------------------------------
         }
     }
 }

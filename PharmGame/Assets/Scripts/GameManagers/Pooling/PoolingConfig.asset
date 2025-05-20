@@ -25,3 +25,19 @@ MonoBehaviour:
     initialSize: 10
     maxSize: 30
     canGrow: 1
+  - prefab: {fileID: 8676497277231579038, guid: dce01983a9912634da084658c164e8b5, type: 3}
+    initialSize: 1
+    maxSize: 3
+    canGrow: 1
+  - prefab: {fileID: 5584495827091083872, guid: c933442d2698a034c8ed4ed6be9e0c07, type: 3}
+    initialSize: 1
+    maxSize: 3
+    canGrow: 1
+  - prefab: {fileID: 5754999614856399764, guid: d4692a07e12764a40b96a50db5228f39, type: 3}
+    initialSize: 30
+    maxSize: 50
+    canGrow: 1
+  - prefab: {fileID: 1796888741311491543, guid: b2ff986226d89964c8f4ed9799358506, type: 3}
+    initialSize: 1
+    maxSize: 1
+    canGrow: 0

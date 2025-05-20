@@ -21,4 +21,4 @@ MonoBehaviour:
     outputs:
     - itemDetails: {fileID: 11400000, guid: 95b4a37ff1d45cc43b8f2cd605fa26fa, type: 2}
       quantity: 1
-    recipeName: TestRecipe
+    recipeName: PillRecipe

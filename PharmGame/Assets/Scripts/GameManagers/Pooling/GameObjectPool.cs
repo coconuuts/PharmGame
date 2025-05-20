@@ -5,10 +5,6 @@ using System.Linq; // --- FIX for CS1061: Add System.Linq ---
 
 namespace Utils.Pooling // Same namespace
 {
-    // PooledObjectInfo is defined in its own script: PooledObjectInfo.cs
-    // internal class PooledObjectInfo : MonoBehaviour { ... } // Removed from here
-
-
     /// <summary>
     /// An object pool specifically for managing GameObject instances directly.
     /// Uses a configuration struct to define behavior.

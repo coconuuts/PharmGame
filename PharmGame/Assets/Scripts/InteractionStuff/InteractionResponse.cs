@@ -4,6 +4,7 @@ using Systems.Inventory; // Needed for ItemDetails
 using System.Collections.Generic; // Needed for List
 using System.Linq;
 using Systems.Minigame;
+using Systems.CraftingMinigames;
 
 // Assuming this is within your Systems.Interaction namespace file (e.g., InteractionResponses.cs)
 namespace Systems.Interaction
@@ -60,49 +61,46 @@ namespace Systems.Interaction
     }
 
     /// <summary>
-    /// Response indicating that a minigame should be started.
-    /// Contains data needed for camera movement, UI activation, minigame setup, and a reference to the interactable.
-    /// MODIFIED: Now includes a MinigameType to specify which minigame to start.
+    /// Response indicating that a general (non-crafting) minigame should be started.
+    /// Contains data needed for camera movement, minigame setup, and a reference to the interactable.
+    /// --- MODIFIED: Ensures camera properties are carried ---
     /// </summary>
-    public class StartMinigameResponse : InteractionResponse // Inherits from InteractionResponse
+    public class StartMinigameResponse : InteractionResponse
     {
-        // Keep existing fields for camera, UI root, click count (derived), and register
-        public Transform CameraTargetView { get; }
-        public float CameraMoveDuration { get; }
-        // Removed MinigameUIRoot - UI activation is handled by UIManager based on state and minigame component
+        // --- MODIFIED: Renamed CameraTargetView to InitialCameraTarget for consistency ---
+        public Transform InitialCameraTarget { get; }
+        // --- MODIFIED: Renamed CameraMoveDuration to InitialCameraDuration for consistency ---
+        public float InitialCameraDuration { get; }
+        // Removed MinigameUIRoot - UI activation is handled by the minigame's config
+
         public int TargetClickCount { get; } // Still useful for the BarcodeMinigame setup data
-        public CashRegisterInteractable CashRegisterInteractable { get; }
+        public CashRegisterInteractable CashRegisterInteractable { get; } // Reference to the initiating Interactable
 
-        // --- ADDED: Field to specify the type of minigame ---
-        public MinigameType Type { get; }
-        // --------------------------------------------------
+        public MinigameType Type { get; } // The type of minigame to start
 
-        // Field to store the list of items to scan (specific to BarcodeScanning)
-        public List<(ItemDetails details, int quantity)> ItemsToScan { get; }
+        public List<(ItemDetails details, int quantity)> ItemsToScan { get; } // Specific data for BarcodeScanning
 
 
         /// <summary>
         /// Constructor for StartMinigameResponse.
-        /// MODIFIED: Added MinigameType parameter. Removed minigameUIRoot parameter.
+        /// --- MODIFIED: Parameter names updated for consistency ---
         /// </summary>
         /// <param name="minigameType">The type of minigame to start.</param>
-        /// <param name="cameraTargetView">The transform for the minigame camera view.</param>
-        /// <param name="cameraMoveDuration">The duration for the camera movement.</param>
+        /// <param name="initialCameraTarget">The transform for the minigame camera view.</param>
+        /// <param name="initialCameraDuration">The duration for the camera movement.</param>
         /// <param name="itemsToScan">The list of items the customer is purchasing (for BarcodeScanning).</param>
         /// <param name="cashRegisterInteractable">Reference to the initiating CashRegisterInteractable.</param>
-        // --- Modified Constructor: Accept MinigameType, Removed UI Root ---
-        public StartMinigameResponse(MinigameType minigameType, Transform cameraTargetView, float cameraMoveDuration, List<(ItemDetails details, int quantity)> itemsToScan, CashRegisterInteractable cashRegisterInteractable) // : base(...) // Add if using a base constructor in InteractionResponse
+        public StartMinigameResponse(MinigameType minigameType, Transform initialCameraTarget, float initialCameraDuration, List<(ItemDetails details, int quantity)> itemsToScan, CashRegisterInteractable cashRegisterInteractable)
         {
-            Type = minigameType; // Assign the minigame type
-            CameraTargetView = cameraTargetView;
-            CameraMoveDuration = cameraMoveDuration;
-            ItemsToScan = itemsToScan; // Assign the item list (used by BarcodeMinigame)
-            // Calculate TargetClickCount from the assigned list for BarcodeMinigame setup data
+            Type = minigameType;
+            InitialCameraTarget = initialCameraTarget; // Assign the camera target
+            InitialCameraDuration = initialCameraDuration; // Assign the camera duration
+            ItemsToScan = itemsToScan;
             TargetClickCount = ItemsToScan != null ? ItemsToScan.Sum(item => item.quantity) : 0;
-            CashRegisterInteractable = cashRegisterInteractable; // Assign the register instance
+            CashRegisterInteractable = cashRegisterInteractable;
         }
     }
-    
+
     /// <summary>
     /// Response indicating that the player is interacting with a crafting station.
     /// Contains a reference to the CraftingStation component.
@@ -118,6 +116,30 @@ namespace Systems.Interaction
         public OpenCraftingResponse(CraftingStation craftingStation) // : base(...) // Add if using a base constructor in InteractionResponse
         {
             CraftingStationComponent = craftingStation;
+        }
+    }
+    
+    /// <summary>
+    /// Response indicating that a CRAFTING minigame should be started.
+    /// Contains a reference to the instantiated minigame component.
+    /// </summary>
+    public class StartCraftingMinigameResponse : InteractionResponse
+    {
+        public CraftingMinigameBase MinigameComponent { get; }
+        public CraftingRecipe Recipe { get; }
+        public int Batches { get; }
+
+        public Transform InitialCameraTarget { get; }
+        public float InitialCameraDuration { get; }
+
+
+        public StartCraftingMinigameResponse(CraftingMinigameBase minigameComponent, CraftingRecipe recipe, int batches, Transform initialCameraTarget, float initialCameraDuration)
+        {
+            MinigameComponent = minigameComponent;
+            Recipe = recipe;
+            Batches = batches;
+            InitialCameraTarget = initialCameraTarget;
+            InitialCameraDuration = initialCameraDuration;
         }
     }
 }

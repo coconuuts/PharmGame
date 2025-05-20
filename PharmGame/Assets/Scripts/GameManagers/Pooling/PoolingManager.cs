@@ -1,14 +1,10 @@
 using UnityEngine;
 using System.Collections.Generic;
 using System;
-using System.Linq; // Needed for FirstOrDefault and ToList()
+using System.Linq;
 
-namespace Utils.Pooling // Same namespace as pools
+namespace Utils.Pooling
 {
-    // PooledObjectInfo is now in its own script: PooledObjectInfo.cs
-    // internal class PooledObjectInfo : MonoBehaviour { ... } // Removed from here
-
-
     /// <summary>
     /// Singleton manager for accessing various object pools (GameObject and Component).
     /// Initializes pools based on a configuration ScriptableObject.
@@ -19,22 +15,15 @@ namespace Utils.Pooling // Same namespace as pools
         public static PoolingManager Instance { get; private set; }
 
         [Tooltip("Assign the ScriptableObject with pooling configurations.")]
-        [SerializeField] private PoolingConfigSO poolingConfig; // Assign the SO in the inspector
+        [SerializeField] private PoolingConfigSO poolingConfig;
 
-        // Dictionary to hold GameObject pools, keyed by the prefab GameObject
         private Dictionary<GameObject, GameObjectPool> gameObjectPools = new Dictionary<GameObject, GameObjectPool>();
-
-        // Dictionary to hold Component pools (if needed later)
-        // private Dictionary<(GameObject prefab, Type componentType), IComponentPool> componentPools; // Example
-
 
         private void Awake()
         {
-            // Implement singleton pattern
             if (Instance == null)
             {
                 Instance = this;
-                // Optional: DontDestroyOnLoad(gameObject); // If the manager should persist between scenes
             }
             else
             {
@@ -44,10 +33,7 @@ namespace Utils.Pooling // Same namespace as pools
             }
 
             Debug.Log("PoolingManager: Awake completed.");
-
-            // --- Pre-initialize pools based on configuration ---
             InitializePoolsFromConfig();
-            // -------------------------------------------------
         }
 
         private void OnDestroy()
@@ -55,16 +41,11 @@ namespace Utils.Pooling // Same namespace as pools
             if (Instance == this)
             {
                 Instance = null;
-                 // Clean up all managed pools when the manager is destroyed
-                 DestroyAllManagedPools();
+                DestroyAllManagedPools();
             }
-             Debug.Log("PoolingManager: OnDestroy completed.");
+            Debug.Log("PoolingManager: OnDestroy completed.");
         }
 
-        /// <summary>
-        /// Initializes pools based on the assigned PoolingConfigSO.
-        /// Called in Awake.
-        /// </summary>
         private void InitializePoolsFromConfig()
         {
             if (poolingConfig == null)
@@ -80,47 +61,28 @@ namespace Utils.Pooling // Same namespace as pools
                 {
                     if (poolConfig.prefab != null)
                     {
-                        // Check if a pool already exists for this prefab (shouldn't if called only in Awake)
                         if (gameObjectPools.ContainsKey(poolConfig.prefab))
                         {
                             Debug.LogWarning($"PoolingManager: Pool for prefab '{poolConfig.prefab.name}' already exists during initialization from config. Skipping.");
-                            continue; // Skip if pool already exists
+                            continue;
                         }
 
-                        // Create a new GameObjectPool instance with the config
-                        Transform poolParent = this.transform; // Parent pooled objects under the PoolingManager GO
+                        Transform poolParent = this.transform;
                         GameObjectPool newPool = new GameObjectPool(poolConfig, poolParent);
                         gameObjectPools.Add(poolConfig.prefab, newPool);
                     }
                     else
                     {
-                         Debug.LogWarning("PoolingManager: Skipping pool configuration with null prefab.");
+                        Debug.LogWarning("PoolingManager: Skipping pool configuration with null prefab.");
                     }
                 }
             }
-             else
-             {
-                 Debug.LogWarning("PoolingManager: GameObject pool configurations list in the ScriptableObject is null or empty.");
-             }
-
-            // Initialize Component pools here if needed later...
+            else
+            {
+                Debug.LogWarning("PoolingManager: GameObject pool configurations list in the ScriptableObject is null or empty.");
+            }
         }
 
-
-        /// <summary>
-        /// Gets a pooled GameObject instance for the specified prefab.
-        /// Creates a new pool lazily if it wasn't pre-initialized by config.
-        /// Uses the configuration (if found) for growth/size rules.
-        /// </summary>
-        /// <param name="prefab">The prefab to get a pooled instance of.</param>
-        /// <returns>An active GameObject instance from the pool, or null if none available and cannot grow.</returns>
-/// <summary>
-        /// Gets a pooled GameObject instance for the specified prefab.
-        /// Creates a new pool lazily if it wasn't pre-initialized by config.
-        /// Uses the configuration (if found) for growth/size rules.
-        /// </summary>
-        /// <param name="prefab">The prefab to get a pooled instance of.</param>
-        /// <returns>An active GameObject instance from the pool, or null if none available and cannot grow.</returns>
         public GameObject GetPooledObject(GameObject prefab)
         {
             if (prefab == null)
@@ -129,64 +91,43 @@ namespace Utils.Pooling // Same namespace as pools
                 return null;
             }
 
-            // Find or create the pool for this prefab
             if (!gameObjectPools.TryGetValue(prefab, out GameObjectPool pool))
             {
-                // Pool doesn't exist. Determine its configuration based on SO or defaults.
-
-                // --- Initialize configToUse with the default configuration ---
-                // This guarantees configToUse has a value regardless of the subsequent checks.
                 GameObjectPoolConfig configToUse = new GameObjectPoolConfig { prefab = prefab, initialSize = 0, maxSize = 0, canGrow = true };
                 Debug.LogWarning($"PoolingManager: Pool for '{prefab.name}' not found. Initializing config with default settings (size 0, no max, can grow).");
-                // ----------------------------------------------------------
 
-
-                // Try to find configuration for this prefab in the SO
                 if (poolingConfig != null && poolingConfig.gameObjectPoolConfigs != null)
                 {
-                     GameObjectPoolConfig foundPoolConfig = poolingConfig.gameObjectPoolConfigs.FirstOrDefault(c => c.prefab == prefab);
-
-                     // Check if FirstOrDefault actually found an entry for this prefab with a matching prefab.
-                     // FirstOrDefault on a list of structs returns the default struct if not found.
-                     // The default struct has all fields as default values (prefab would be null or default).
-                     // So, checking if foundPoolConfig.prefab matches the requested prefab and isn't null
-                     // is a way to confirm a valid configuration entry was found in the list.
-                     if (foundPoolConfig.prefab == prefab && prefab != null)
-                     {
-                         // --- Overwrite configToUse with the configuration from the SO ---
-                         configToUse = foundPoolConfig;
-                         Debug.Log($"PoolingManager: Found and applied configuration from SO for '{prefab.name}'.");
-                         // -------------------------------------------------------------
-                     }
-                      else
-                     {
-                         // If FirstOrDefault returned the default struct, it means the prefab wasn't in the list.
-                         Debug.Log($"PoolingManager: No specific configuration found in SO for '{prefab.name}'. Using initial default config.");
-                     }
+                    GameObjectPoolConfig foundPoolConfig = poolingConfig.gameObjectPoolConfigs.FirstOrDefault(c => c.prefab == prefab);
+                    if (foundPoolConfig.prefab == prefab && prefab != null)
+                    {
+                        configToUse = foundPoolConfig;
+                        Debug.Log($"PoolingManager: Found and applied configuration from SO for '{prefab.name}'.");
+                    }
+                    else
+                    {
+                        Debug.Log($"PoolingManager: No specific configuration found in SO for '{prefab.name}'. Using initial default config.");
+                    }
                 }
-                 else
-                 {
-                     // If poolingConfig or its list is null, we'll stick with the initial default config.
-                     Debug.LogWarning("PoolingManager: Pooling Configuration ScriptableObject or its list is null. Using initial default config.");
-                 }
+                else
+                {
+                    Debug.LogWarning("PoolingManager: Pooling Configuration ScriptableObject or its list is null. Using initial default config.");
+                }
 
-                // At this point, configToUse is GUARANTEED to be assigned (either the initial default or overwritten by SO config).
-
-                // Create the pool using the determined config
-                Transform poolParent = this.transform; // Parent pooled objects under the PoolingManager GO
-                pool = new GameObjectPool(configToUse, poolParent); // Use the guaranteed assigned configToUse
+                Transform poolParent = this.transform;
+                pool = new GameObjectPool(configToUse, poolParent);
                 gameObjectPools.Add(prefab, pool);
             }
 
-            // Now that we have the pool, get an object from it
-            return pool.Get();
+            GameObject pooledObject = pool.Get();
+            // Call the reset method immediately after getting the object from the pool
+            if (pooledObject != null)
+            {
+                ResetPooledObject(pooledObject);
+            }
+            return pooledObject;
         }
 
-        /// <summary>
-        /// Returns a pooled GameObject instance back to its pool.
-        /// It finds the correct pool based on the object's original prefab via PooledObjectInfo.
-        /// </summary>
-        /// <param name="objectToReturn">The GameObject instance to return.</param>
         public void ReturnPooledObject(GameObject objectToReturn)
         {
             if (objectToReturn == null)
@@ -195,65 +136,98 @@ namespace Utils.Pooling // Same namespace as pools
                 return;
             }
 
-             PooledObjectInfo poolInfo = objectToReturn.GetComponent<PooledObjectInfo>();
+            PooledObjectInfo poolInfo = objectToReturn.GetComponent<PooledObjectInfo>();
 
-             if (poolInfo == null || poolInfo.OriginalPrefab == null)
-             {
-                 Debug.LogWarning($"PoolingManager: Object '{objectToReturn.name}' does not have PooledObjectInfo or OriginalPrefab assigned. Cannot return to pool. Destroying instead.", objectToReturn);
-                 GameObject.Destroy(objectToReturn); // Destroy if it can't be pooled
-                 return;
-             }
+            if (poolInfo == null || poolInfo.OriginalPrefab == null)
+            {
+                Debug.LogWarning($"PoolingManager: Object '{objectToReturn.name}' does not have PooledObjectInfo or OriginalPrefab assigned. Cannot return to pool. Destroying instead.", objectToReturn);
+                GameObject.Destroy(objectToReturn);
+                return;
+            }
 
-             // Find the correct pool based on the original prefab
-             if (gameObjectPools.TryGetValue(poolInfo.OriginalPrefab, out GameObjectPool pool))
-             {
-                 pool.Return(objectToReturn);
-             }
-             else
-             {
-                 // This can happen if an object from a pool that was destroyed is returned,
-                 // or if it was created lazily and the manager was reloaded/reset.
-                 Debug.LogWarning($"PoolingManager: Pool for prefab '{poolInfo.OriginalPrefab.name}' not found for object '{objectToReturn.name}'. Cannot return to pool. Destroying instead.", objectToReturn);
-                 GameObject.Destroy(objectToReturn); // Destroy if pool is missing
-             }
+            // Find the correct pool based on the original prefab
+            if (gameObjectPools.TryGetValue(poolInfo.OriginalPrefab, out GameObjectPool pool))
+            {
+                // Before returning, deactivate it and potentially reset some common properties here if needed.
+                // However, it's often better to reset *before* getting, as individual components might need
+                // to react to activation/deactivation during their own OnEnable/OnDisable.
+                // For now, the ResetPooledObject is called upon GetPooledObject.
+                pool.Return(objectToReturn);
+            }
+            else
+            {
+                Debug.LogWarning($"PoolingManager: Pool for prefab '{poolInfo.OriginalPrefab.name}' not found for object '{objectToReturn.name}'. Cannot return to pool. Destroying instead.", objectToReturn);
+                GameObject.Destroy(objectToReturn);
+            }
         }
 
-         /// <summary>
-         /// Helper method called by pools to add PooledObjectInfo to a new instance.
-         /// Needs to be public or internal so pools can access it.
-         /// </summary>
-         /// <param name="instanceGo">The newly created GameObject instance.</param>
-         /// <param name="originalPrefab">The original prefab this instance came from.</param>
-         public void AddPooledObjectInfo(GameObject instanceGo, GameObject originalPrefab)
-         {
-              if (instanceGo == null || originalPrefab == null) return;
-              // Ensure we don't add multiple PooledObjectInfo components
-              if (instanceGo.GetComponent<PooledObjectInfo>() == null)
-              {
-                  PooledObjectInfo poolInfo = instanceGo.AddComponent<PooledObjectInfo>();
-                  poolInfo.OriginalPrefab = originalPrefab;
-              }
-              else
-              {
-                  Debug.LogWarning($"PoolingManager: Tried to add PooledObjectInfo to '{instanceGo.name}' which already has one.", instanceGo);
-              }
-         }
+        public void AddPooledObjectInfo(GameObject instanceGo, GameObject originalPrefab)
+        {
+            if (instanceGo == null || originalPrefab == null) return;
+            if (instanceGo.GetComponent<PooledObjectInfo>() == null)
+            {
+                PooledObjectInfo poolInfo = instanceGo.AddComponent<PooledObjectInfo>();
+                poolInfo.OriginalPrefab = originalPrefab;
+            }
+            else
+            {
+                Debug.LogWarning($"PoolingManager: Tried to add PooledObjectInfo to '{instanceGo.name}' which already has one.", instanceGo);
+            }
+        }
 
+        /// <summary>
+        /// Resets common properties of a pooled GameObject to ensure it's ready for reuse.
+        /// Call this immediately after getting an object from the pool.
+        /// </summary>
+        /// <param name="obj">The GameObject to reset.</param>
+        public void ResetPooledObject(GameObject obj)
+        {
+            if (obj == null) return;
 
-         /// <summary>
-         /// Destroys all objects across all managed pools.
-         /// </summary>
+            // Reset Transform:
+            obj.transform.localPosition = Vector3.zero; // Reset local position
+            obj.transform.localRotation = Quaternion.identity; // Reset local rotation
+            obj.transform.localScale = Vector3.one; // Reset local scale
+
+            // Reset Rigidbody (if present):
+            Rigidbody rb = obj.GetComponent<Rigidbody>();
+            if (rb != null)
+            {
+                rb.linearVelocity = Vector3.zero;
+                rb.angularVelocity = Vector3.zero;
+                rb.isKinematic = false; // Ensure physics is enabled unless specific for the prefab
+                rb.useGravity = true; // Ensure gravity is enabled unless specific for the prefab
+                // If you have specific physics layers, you might need to reset them here as well
+            }
+
+            // Reset Collider (if present):
+            Collider col = obj.GetComponent<Collider>();
+            if (col != null)
+            {
+                col.enabled = true; // Ensure collider is enabled
+            }
+
+            // Reset other common components or states:
+            // For example, if your pills have a custom script that manages their state:
+            // PillScript pillScript = obj.GetComponent<PillScript>();
+            // if (pillScript != null)
+            // {
+            //     pillScript.ResetPillState(); // A custom method to reset specific pill properties
+            // }
+
+            // Ensure the object is active (though Get() usually handles this)
+            obj.SetActive(true);
+        }
+
         private void DestroyAllManagedPools()
         {
             Debug.Log("PoolingManager: Destroying all managed pools.");
-            // Iterate over a copy in case DestroyAllPooledObjects modifies the collection
-            foreach(var pool in gameObjectPools.Values.ToList()) // ToList() is fine here with System.Linq
+            foreach (var pool in gameObjectPools.Values.ToList())
             {
                 pool.DestroyAllPooledObjects();
             }
             gameObjectPools.Clear();
-            // Destroy Component pools here if needed later...
-             Debug.Log("PoolingManager: All pools destroyed.");
+            Debug.Log("PoolingManager: All pools destroyed.");
         }
     }
 }

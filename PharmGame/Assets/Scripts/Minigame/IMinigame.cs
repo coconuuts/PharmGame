@@ -1,44 +1,48 @@
 using System;
-using UnityEngine; // UnityEngine is often needed for interfaces if they use Unity types like GameObject, Transform, MonoBehaviour
+using UnityEngine; // Added for Transform
 
-namespace Systems.Minigame // Or the namespace where your other minigame scripts reside
+namespace Systems.Minigame
 {
     /// <summary>
-    /// Interface defining the contract for all minigame components.
-    /// Any script implementing this interface can be treated as a minigame by the system.
+    /// Interface defining the contract for all general minigame components.
+    /// Any script implementing this interface can be treated as a minigame.
     /// </summary>
     public interface IMinigame
     {
         /// <summary>
-        /// Sets up and starts the minigame with specific data.
+        /// Gets the Transform the camera should move to when the minigame *initially* starts (entering Minigame state).
         /// </summary>
-        /// <param name="data">An object containing setup data for the minigame (e.g., items to scan, difficulty level).
-        /// The specific minigame implementation will need to cast this to the expected type.</param>
-        void SetupAndStart(object data);
+        Transform InitialCameraTarget { get; } // ADDED
 
         /// <summary>
-        /// Resets the minigame's state to its initial condition without deactivating the GameObject or UI.
-        /// Useful for restarting or cleaning up before ending.
+        /// Gets the duration for the initial camera movement when the minigame starts.
         /// </summary>
-        void Reset();
+        float InitialCameraDuration { get; } // ADDED
+
+
+        /// <summary>
+        /// Sets up and starts the minigame with initial data.
+        /// The type of data passed depends on the specific minigame.
+        /// </summary>
+        /// <param name="data">Initial setup data for the minigame.</param>
+        void SetupAndStart(object data);
 
         /// <summary>
         /// Performs final cleanup for the minigame, often involving hiding UI or preparing for deactivation.
         /// This is called when the minigame session ends (either by completion or early exit).
+        /// --- MODIFIED: Added parameter to indicate if the ending was an abort ---
         /// </summary>
-        void End();
+        /// <param name="wasAborted">True if the minigame was aborted (e.g., by player pressing Escape), false if it reached a natural end state.</param>
+        void End(bool wasAborted);
 
         /// <summary>
-        /// Event triggered when the minigame is successfully completed.
+        /// Event triggered when the minigame session is completed or aborted.
+        /// --- MODIFIED: The object parameter indicates success (true) or failure/abort (false). ---
         /// </summary>
         /// <remarks>
-        /// The object parameter can carry completion data, such as score, currency earned, or items won.
+        /// The object parameter should be a boolean: true for success, false for failure/abort.
         /// The central MinigameManager will subscribe to this event.
         /// </remarks>
         event Action<object> OnMinigameCompleted;
-
-        // You might add other members here later if needed by all minigames, e.g.:
-        // GameObject GetUIRoot();
-        // MinigameType Type { get; } // If you use an enum to identify types
     }
 }
