@@ -128,12 +128,43 @@ Transform:
   m_GameObject: {fileID: 1277355654502649584}
   serializedVersion: 2
   m_LocalRotation: {x: 0.5, y: -0.5, z: 0.5, w: 0.5}
-  m_LocalPosition: {x: 0, y: 0.553, z: 0}
+  m_LocalPosition: {x: 0.082, y: 0.647, z: -0.033}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 3222029443490049973}
+  m_Father: {fileID: 2659492888225055372}
   m_LocalEulerAnglesHint: {x: 90, y: -90, z: 0}
+--- !u!1 &1472849320316484624
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 6602271550247732343}
+  m_Layer: 0
+  m_Name: PrescriptionContainer
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &6602271550247732343
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1472849320316484624}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0.6830127, y: -0.18301266, z: -0.18301266, w: 0.6830127}
+  m_LocalPosition: {x: -0.101, y: 0.1, z: 0.357}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 8596638159461347045}
+  m_LocalEulerAnglesHint: {x: -90, y: -30, z: 0}
 --- !u!1 &1796888741311491543
 GameObject:
   m_ObjectHideFlags: 0
@@ -144,6 +175,7 @@ GameObject:
   m_Component:
   - component: {fileID: 3222029443490049973}
   - component: {fileID: 6178134506760372332}
+  - component: {fileID: 5108949264093737488}
   m_Layer: 0
   m_Name: PillMinigame
   m_TagString: Untagged
@@ -164,14 +196,10 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 5286990515845679867}
-  - {fileID: 492669359004013208}
-  - {fileID: 618289815781817175}
-  - {fileID: 3718220301897162893}
-  - {fileID: 652256661814961118}
-  - {fileID: 8474592919875316568}
-  - {fileID: 4767006663442372292}
+  - {fileID: 2659492888225055372}
+  - {fileID: 6786785885185017374}
   - {fileID: 7425371153858153642}
+  - {fileID: 8596638159461347045}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &6178134506760372332
@@ -187,29 +215,93 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   currentMinigameState: 0
-  containerPrefab: {fileID: 8676497277231579038, guid: dce01983a9912634da084658c164e8b5, type: 3}
+  minigameSuccessStatus: 0
+  containerPrefab: {fileID: 7931329014851535385, guid: 5aa6f53b2e285e848aec22cb6351813a, type: 3}
   pillPrefab: {fileID: 5754999614856399764, guid: d4692a07e12764a40b96a50db5228f39, type: 3}
   prescriptionContainerPrefab: {fileID: 5584495827091083872, guid: c933442d2698a034c8ed4ed6be9e0c07, type: 3}
+  prescriptionContainerLidPrefab: {fileID: 1423909791935238396, guid: 4591431d19feab54facf96040385447a, type: 3}
+  prescriptionContainerLidScale: {x: 1.35, y: 1.35, z: 1.35}
   pouringCameraTarget: {fileID: 5286990515845679867}
   countingCameraTarget: {fileID: 492669359004013208}
   packagingCameraTarget: {fileID: 618289815781817175}
+  pouringContainerSpawnPoint: {fileID: 5834862900856911783}
+  prescriptionContainerSpawnPoint: {fileID: 6602271550247732343}
+  prescriptionContainerLidSpawnPoint: {fileID: 1230414024870499350}
+  stockContainerSetdown: {fileID: 5884314139350450703}
   pillSpawnPoint: {fileID: 3718220301897162893}
   pillDiscardPoint: {fileID: 652256661814961118}
   pillReclaimPoint: {fileID: 8474592919875316568}
-  pillRepackagePoint: {fileID: 4767006663442372292}
   countingUIRoot: {fileID: 664641041993686582}
   countText: {fileID: 2675939998936368011}
   finishCountingButton: {fileID: 2540492462057327824}
-  pouringDuration: 1
+  pouringDuration: 0.25
   minTargetPills: 10
   maxTargetPills: 20
-  cameraMoveDuration: 0.75
+  cameraMoveDuration: 0.3
   minExcessPills: 5
-  maxExcessPills: 15
-  packagingScatterRadius: 0.1
+  maxExcessPills: 10
+  packagingScatterRadius: 0.05
   pillLayer:
     serializedVersion: 2
     m_Bits: 64
+  minPhysicsEnableDelay: 0.02
+  maxPhysicsEnableDelay: 0.05
+--- !u!114 &5108949264093737488
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1796888741311491543}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c594c2a4e1944f14087f3852540b7bf3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  pillStockContainerTransform: {fileID: 5834862900856911783}
+  prescriptionContainerTransform: {fileID: 6602271550247732343}
+  pillStockPourPoint: {fileID: 3718220301897162893}
+  pillPackageMidpoint: {fileID: 6372604492038283951}
+  prescriptionPillDropPoint: {fileID: 4767006663442372292}
+  pourTiltAngle: 133
+  pourTiltDuration: 0.45
+  pourReturnDuration: 0.25
+  lidAnimateDuration: 0.75
+  lidOpenLocalEuler: {x: -45, y: -30, z: 0}
+  lidClosedLocalEuler: {x: -90, y: -30, z: 0}
+  pillPackageAnimateDuration: 0.75
+  pillsDropIntervalDuration: 0.6
+--- !u!1 &1948865637470461540
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 5834862900856911783}
+  m_Layer: 0
+  m_Name: PillStockContainer
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &5834862900856911783
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1948865637470461540}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0.7071068, z: 0, w: 0.7071068}
+  m_LocalPosition: {x: 0, y: 0.355, z: -0.283}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 8596638159461347045}
+  m_LocalEulerAnglesHint: {x: 0, y: 90, z: 0}
 --- !u!1 &2094670712021937129
 GameObject:
   m_ObjectHideFlags: 0
@@ -234,12 +326,12 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2094670712021937129}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0.667, z: 0}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0.202, z: -0.153}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 3222029443490049973}
+  m_Father: {fileID: 6786785885185017374}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &2324546504966802564
 GameObject:
@@ -377,6 +469,41 @@ MonoBehaviour:
   m_hasFontAssetChanged: 0
   m_baseMaterial: {fileID: 0}
   m_maskOffset: {x: 0, y: 0, z: 0, w: 0}
+--- !u!1 &2632202673705089283
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 8596638159461347045}
+  m_Layer: 0
+  m_Name: ContainerTransforms
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &8596638159461347045
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2632202673705089283}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 5834862900856911783}
+  - {fileID: 5884314139350450703}
+  - {fileID: 6602271550247732343}
+  - {fileID: 1230414024870499350}
+  m_Father: {fileID: 3222029443490049973}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &3469031289355794525
 GameObject:
   m_ObjectHideFlags: 0
@@ -401,12 +528,12 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3469031289355794525}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.212, y: 0.112, z: -0.283}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0.176, y: 0.1, z: -0.23}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 3222029443490049973}
+  m_Father: {fileID: 6786785885185017374}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &3926536081724916722
 GameObject:
@@ -433,12 +560,74 @@ Transform:
   m_GameObject: {fileID: 3926536081724916722}
   serializedVersion: 2
   m_LocalRotation: {x: 0.18301274, y: -0.6830127, z: 0.18301274, w: 0.6830127}
-  m_LocalPosition: {x: 0.5840001, y: 0.50999975, z: 0}
+  m_LocalPosition: {x: 0.544, y: 0.399, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 3222029443490049973}
+  m_Father: {fileID: 2659492888225055372}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 30}
+--- !u!1 &4066538095999649366
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1230414024870499350}
+  m_Layer: 0
+  m_Name: PrescriptionContainerLid
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1230414024870499350
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4066538095999649366}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0.6830127, y: -0.18301266, z: -0.18301266, w: 0.6830127}
+  m_LocalPosition: {x: -0.107, y: 0.1, z: 0.367}
+  m_LocalScale: {x: 1.4, y: 1.4, z: 1.4}
+  m_ConstrainProportionsScale: 1
+  m_Children: []
+  m_Father: {fileID: 8596638159461347045}
+  m_LocalEulerAnglesHint: {x: -90, y: -30, z: 0}
+--- !u!1 &5101476744590189995
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 5884314139350450703}
+  m_Layer: 0
+  m_Name: PillStockSetDown
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &5884314139350450703
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5101476744590189995}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0.7071068, z: 0, w: 0.7071068}
+  m_LocalPosition: {x: 0.028, y: 0, z: -0.385}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 8596638159461347045}
+  m_LocalEulerAnglesHint: {x: 0, y: 90, z: 0}
 --- !u!1 &5850563779250246166
 GameObject:
   m_ObjectHideFlags: 0
@@ -463,13 +652,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 5850563779250246166}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.18301274, y: -0.6830127, z: 0.18301274, w: 0.6830127}
-  m_LocalPosition: {x: 0.584, y: 0.51, z: 0}
+  m_LocalRotation: {x: 0.27059805, y: -0.6532815, z: 0.27059805, w: 0.6532815}
+  m_LocalPosition: {x: 0.633, y: 0.797, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 3222029443490049973}
-  m_LocalEulerAnglesHint: {x: 30, y: -90, z: 0}
+  m_Father: {fileID: 2659492888225055372}
+  m_LocalEulerAnglesHint: {x: 45, y: -90, z: 0}
 --- !u!1 &6499305218400074220
 GameObject:
   m_ObjectHideFlags: 0
@@ -494,12 +683,12 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 6499305218400074220}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.093, y: 0.125, z: -0.059}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0.067, y: 0.1, z: -0.066}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 3222029443490049973}
+  m_Father: {fileID: 6786785885185017374}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &6948532317344620666
 GameObject:
@@ -537,7 +726,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: -224.96}
+  m_AnchoredPosition: {x: 0, y: -421.96}
   m_SizeDelta: {x: 160, y: 100}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &8600531580868862278
@@ -656,7 +845,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: 315.9}
+  m_AnchoredPosition: {x: 0, y: 400}
   m_SizeDelta: {x: 500, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &2275833390247944099
@@ -758,6 +947,107 @@ MonoBehaviour:
   m_hasFontAssetChanged: 0
   m_baseMaterial: {fileID: 0}
   m_maskOffset: {x: 0, y: 0, z: 0, w: 0}
+--- !u!1 &7530992156680912144
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 6372604492038283951}
+  m_Layer: 0
+  m_Name: pillRepackagePoint 1
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &6372604492038283951
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7530992156680912144}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0.0223, y: 0.1, z: 0.1483}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 6786785885185017374}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &7993514742499107170
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 6786785885185017374}
+  m_Layer: 0
+  m_Name: PillPoints
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &6786785885185017374
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7993514742499107170}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 3718220301897162893}
+  - {fileID: 652256661814961118}
+  - {fileID: 8474592919875316568}
+  - {fileID: 4767006663442372292}
+  - {fileID: 6372604492038283951}
+  m_Father: {fileID: 3222029443490049973}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &8001547661420882103
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2659492888225055372}
+  m_Layer: 0
+  m_Name: CameraTargets
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &2659492888225055372
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8001547661420882103}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 5286990515845679867}
+  - {fileID: 492669359004013208}
+  - {fileID: 618289815781817175}
+  m_Father: {fileID: 3222029443490049973}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &8514026609743134238
 GameObject:
   m_ObjectHideFlags: 0
@@ -768,7 +1058,7 @@ GameObject:
   m_Component:
   - component: {fileID: 4767006663442372292}
   m_Layer: 0
-  m_Name: pillRepackagePoint
+  m_Name: pillRepackagePoint 2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -782,10 +1072,10 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 8514026609743134238}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0.056, y: 0.143, z: 0.415}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -0.067, y: 0.1, z: 0.298}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 3222029443490049973}
+  m_Father: {fileID: 6786785885185017374}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}

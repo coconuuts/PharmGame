@@ -8,9 +8,17 @@ using UnityEngine.UI;
 using Systems.CameraControl;
 using Utils.Pooling;
 using System.Linq;
+using DG.Tweening; // Needed for DOTween Sequence/Tween
+using Systems.Minigame.Animation; // Needed for PillCraftingAnimator
+
 
 namespace Systems.CraftingMinigames
 {
+    /// <summary>
+    /// Specific implementation of the Crafting Minigame for creating pills.
+    /// Manages game state (Pouring, Counting, Packaging), handles player input for counting,
+    /// and delegates visual animations to PillCraftingAnimator.
+    /// </summary>
     public class PillCraftingMinigame : CraftingMinigameBase
     {
         [Header("Pill Minigame References")]
@@ -21,6 +29,15 @@ namespace Systems.CraftingMinigames
         [Tooltip("Prefab for the finished prescription container.")]
         [SerializeField] private GameObject prescriptionContainerPrefab;
 
+        // --- MODIFIED: Added Lid Prefab ---
+        [Tooltip("Prefab for the lid of the finished prescription container.")]
+        [SerializeField] private GameObject prescriptionContainerLidPrefab;
+
+        [Tooltip("The desired local scale for the instantiated Prescription Container Lid.")]
+         [SerializeField] private Vector3 prescriptionContainerLidScale = Vector3.one;
+        // ----------------------------------
+
+
         [Tooltip("Transform representing where the camera should be during pouring (Initial).")]
         [SerializeField] private Transform pouringCameraTarget;
         [Tooltip("Transform representing where the camera should be during counting.")]
@@ -28,14 +45,29 @@ namespace Systems.CraftingMinigames
         [Tooltip("Transform representing where the camera should be during packaging.")]
         [SerializeField] private Transform packagingCameraTarget;
 
-        [Tooltip("Transform representing the point where pills spawn.")]
-        [SerializeField] private Transform pillSpawnPoint;
+        [Tooltip("Transform where the Pill Stock Container should be instantiated.")]
+        [SerializeField] private Transform pouringContainerSpawnPoint;
+        [Tooltip("Transform where the Prescription Container should be instantiated.")]
+        [SerializeField] private Transform prescriptionContainerSpawnPoint;
+        [Tooltip("Transform where the Prescription Container Lid should be instantiated.")]
+        [SerializeField] private Transform prescriptionContainerLidSpawnPoint;
+        [Tooltip("Transform where the Pill Stock Container should move after pouring.")]
+        [SerializeField] private Transform stockContainerSetdown;
+
+
+        [Tooltip("Transform representing the point where pills are logically poured from (Fallback).")]
+        [SerializeField] private Transform pillSpawnPoint; // Fallback if animator point is missing
+
         [Tooltip("Transform representing the point where discarded pills are moved.")]
         [SerializeField] private Transform pillDiscardPoint;
         [Tooltip("Transform representing the point where reclaimed pills are moved back to.")]
         [SerializeField] private Transform pillReclaimPoint;
-        [Tooltip("Transform representing the point where the prescription container appears, and pills are moved into it.")]
-        [SerializeField] private Transform pillRepackagePoint; // Changed tooltip
+        // --- MODIFIED: Pill Repackage Point might not be needed anymore as animation goes to container ---
+        // Let's keep it for now as a fallback or potential additional reference if needed.
+        // [Tooltip("Transform representing the point where the prescription container appears (Fallback).")]
+        // [SerializeField] private Transform pillRepackagePoint;
+        // ------------------------------------------------------------------------------------------------
+
 
         [Tooltip("Root GameObject for the Pill Counting UI.")]
         [SerializeField] private GameObject countingUIRoot;
@@ -46,7 +78,7 @@ namespace Systems.CraftingMinigames
 
         [Header("Pill Minigame Settings")]
         [Tooltip("Duration of the pouring animation/sequence.")]
-        [SerializeField] private float pouringDuration = 5.0f;
+        [SerializeField] private float pouringDuration = 5.0f; // Used for fallback spawn timing
         [Tooltip("Minimum random number of pills to require packaging.")]
         [SerializeField] private int minTargetPills = 10;
         [Tooltip("Maximum random number of pills to require packaging.")]
@@ -59,59 +91,89 @@ namespace Systems.CraftingMinigames
         [Tooltip("Maximum excess pills to pour (beyond target).")]
         [SerializeField] private int maxExcessPills = 15;
 
-        [Tooltip("Radius for scattering pills as they enter the container.")]
-        [SerializeField] private float packagingScatterRadius = 0.1f;
+        [Tooltip("Radius for scattering pills as they enter the container (Used by Animator).")]
+        [SerializeField] private float packagingScatterRadius = 0.1f; // Pass this to the animator or let animator have its own setting
         [Tooltip("The LayerMask for detecting clickable pills.")]
         [SerializeField] private LayerMask pillLayer;
 
+         [Tooltip("Minimum delay after spawning a pill before enabling physics to prevent phasing.")]
+         [SerializeField] private float minPhysicsEnableDelay = 0.02f;
+         [Tooltip("Maximum delay after spawning a pill before enabling physics to prevent phasing.")]
+         [SerializeField] private float maxPhysicsEnableDelay = 0.05f;
+
+        // Reference to the specific Animator component
+        [Header("Animator")]
+        [Tooltip("The PillCraftingAnimator component on this GameObject.")]
+        private PillCraftingAnimator pillCraftingAnimator; // Get this in Awake
 
         private GameObject instantiatedContainer;
         private GameObject instantiatedPrescriptionContainer;
-        private List<GameObject> instantiatedPills = new List<GameObject>();
-        private List<GameObject> discardedPills = new List<GameObject>();
+        // --- ADDED: Field for instantiated Lid ---
+        private GameObject instantiatedPrescriptionContainerLid;
+        // -----------------------------------------
+
+        private HashSet<GameObject> instantiatedPills = new HashSet<GameObject>();
+        private HashSet<GameObject> discardedPills = new HashSet<GameObject>();
         private List<GameObject> countedPills = new List<GameObject>();
+
 
         private int currentPillCountOnTable = 0;
         private int targetPillCount = 0;
 
-        // The base class CraftingMinigameBase now has minigameSuccessStatus.
-        // We don't need a separate finalMinigameResult here unless we pass other data.
-        private object finalMinigameData = null; // Stored optional data (not used by this minigame but kept for pattern)
+        private object finalMinigameData = null;
 
 
-        // Marked as virtual in base class
+        // Get animator reference in Awake
+         private void Awake()
+         {
+             pillCraftingAnimator = GetComponent<PillCraftingAnimator>();
+             if (pillCraftingAnimator == null)
+             {
+                 Debug.LogError($"PillCraftingMinigame ({gameObject.name}): PillCraftingAnimator component is missing on this GameObject!", this);
+                 enabled = false;
+                 return;
+             }
+         }
+
         public override void SetupAndStart(CraftingRecipe recipe, int batches)
         {
-            // Assign the initial camera target and duration from *this specific minigame*
             _initialCameraTarget = pouringCameraTarget;
             _initialCameraDuration = cameraMoveDuration;
 
-            // Initialize result data
-            minigameSuccessStatus = false; // Inherited from base class, reset
+            minigameSuccessStatus = false;
             finalMinigameData = null;
 
-            // Call the base setup to initialize recipe/batches and transition to Beginning state
+            instantiatedPills.Clear();
+            discardedPills.Clear();
+            countedPills.Clear();
+            currentPillCountOnTable = 0;
+
             base.SetupAndStart(recipe, batches);
         }
 
-         // Override EndMinigame with the correct signature
          public override void EndMinigame(bool wasAborted)
          {
              Debug.Log($"PillCraftingMinigame: EndMinigame called. Aborted: {wasAborted}.", this);
-             // CleanupAssets is now called by base.EndMinigame via PerformCleanup().
-             // Call base class EndMinigame. It will handle state transition to None
-             // and trigger the completion event with the correct success/abort status.
-             base.EndMinigame(wasAborted);
+             base.EndMinigame(wasAborted); // This calls PerformCleanup()
          }
 
          /// <summary>
          /// Implements the abstract method from CraftingMinigameBase to perform specific cleanup.
-         /// --- MODIFIED: Implement the new abstract method ---
+         /// Calls the animator cleanup and handles pooling.
          /// </summary>
         protected override void PerformCleanup()
         {
-            Debug.Log("PillCraftingMinigame: Performing specific cleanup (returning pooled assets).", this);
-            CleanupMinigameAssets(); // Move the asset cleanup logic here
+            Debug.Log("PillCraftingMinigame: Performing specific cleanup.", this);
+
+            if (pillCraftingAnimator != null)
+            {
+                // --- MODIFIED: Call cleanup without passing runtime refs, animator should null them ---
+                pillCraftingAnimator.PerformAnimatorCleanup(); // This stops all tweens and clears animator refs
+                // --------------------------------------------------------------------------------------
+            }
+            else Debug.LogWarning("PillCraftingMinigame: Animator reference is null during cleanup.", this);
+
+            CleanupMinigameAssets(); // Pool the actual game objects and clear lists
         }
 
 
@@ -125,9 +187,6 @@ namespace Systems.CraftingMinigames
             targetPillCount = Mathf.Max(1, targetPillCount);
             Debug.Log($"PillCraftingMinigame: Target Pill Count generated: {targetPillCount}.", this);
 
-            instantiatedPills.Clear();
-            discardedPills.Clear();
-            countedPills.Clear();
             currentPillCountOnTable = 0;
 
             StartCoroutine(PouringSequence());
@@ -139,29 +198,24 @@ namespace Systems.CraftingMinigames
         protected override void OnExitBeginningState()
         {
             Debug.Log("PillCraftingMinigame: Exiting Beginning (Pouring) State.", this);
-            // Asset cleanup moved to PerformCleanup()
-            if (instantiatedContainer != null)
-            {
-                // Only return the container here if it's specific to the pouring phase's exit
-                // If it persists into other states, return it in PerformCleanup().
-                // Assuming the pouring container is only used in the Beginning state visual.
-                PoolingManager.Instance.ReturnPooledObject(instantiatedContainer);
-                instantiatedContainer = null;
-            }
+             // Ensure the container is cleaned up if we exit this state for any reason other than completing the sequence
+             // (e.g. if the minigame is aborted during pouring). PerformCleanup handles this now.
         }
 
         protected override void OnEnterMiddleState()
         {
             Debug.Log("PillCraftingMinigame: Entering Middle (Counting) State.", this);
 
-            // Camera setting for state transition *within* the minigame
             if (countingCameraTarget != null)
             {
                 CameraManager.Instance.SetCameraMode(CameraManager.CameraMode.CinematicView, countingCameraTarget, cameraMoveDuration);
             }
             else Debug.LogWarning("PillCraftingMinigame: Counting Camera Target not assigned!", this);
 
-            currentPillCountOnTable = instantiatedPills.Count; // Initial count is all pills poured
+            // --- MODIFIED: Ensure current count reflects actual pills *not* discarded ---
+            currentPillCountOnTable = instantiatedPills.Count - discardedPills.Count;
+            // -------------------------------------------------------------------------
+
 
             UpdateCountUI();
             if (countingUIRoot != null) countingUIRoot.SetActive(true);
@@ -173,7 +227,7 @@ namespace Systems.CraftingMinigames
             }
             else Debug.LogError("PillCraftingMinigame: Finish Counting Button not assigned!", this);
 
-            EnablePillClicking();
+            EnablePillClicking(); // TODO
         }
 
         protected override void OnExitMiddleState()
@@ -181,14 +235,13 @@ namespace Systems.CraftingMinigames
             Debug.Log("PillCraftingMinigame: Exiting Middle (Counting) State.", this);
             if (countingUIRoot != null) countingUIRoot.SetActive(false);
             if (finishCountingButton != null) finishCountingButton.onClick.RemoveListener(OnFinishCountingClicked);
-            DisablePillClicking();
+            DisablePillClicking(); // TODO
         }
 
         protected override void OnEnterEndState()
         {
             Debug.Log("PillCraftingMinigame: Entering End (Packaging) State.", this);
 
-            // Camera setting for state transition *within* the minigame
             if (packagingCameraTarget != null)
             {
                 CameraManager.Instance.SetCameraMode(CameraManager.CameraMode.CinematicView, packagingCameraTarget, cameraMoveDuration);
@@ -201,57 +254,14 @@ namespace Systems.CraftingMinigames
         protected override void OnExitEndState()
         {
             Debug.Log("PillCraftingMinigame: Exiting End state.", this);
-            // Asset cleanup moved to PerformCleanup()
-            // if (instantiatedPrescriptionContainer != null) { ... } // This should be pooled in PerformCleanup
+             // Ensure packaging assets are cleaned up if we exit this state for any reason
+             // (e.g. if the minigame is aborted during packaging). PerformCleanup handles this now.
         }
 
-         protected override void OnEnterNoneState() // Implement base class virtual method
+         protected override void OnEnterNoneState()
          {
               Debug.Log("PillCraftingMinigame: Entering None state.", this);
          }
-
-         /// <summary>
-         /// This contains the logic that cleans up the specific assets for THIS minigame.
-         /// It is called by the base class's EndMinigame(bool) method via PerformCleanup().
-         /// --- MOVED logic from OnExitEndState and CleanupMinigameAssets method here ---
-         /// </summary>
-        private void CleanupMinigameAssets()
-        {
-            Debug.Log("PillCraftingMinigame: Cleaning up instantiated (pooled) assets.", this);
-
-            // Clean up assets that persist across states (pills, prescription container)
-            if (instantiatedContainer != null) // Pouring container cleanup kept in OnExitBeginningState
-            {
-                PoolingManager.Instance.ReturnPooledObject(instantiatedContainer);
-                instantiatedContainer = null;
-            }
-             if (instantiatedPrescriptionContainer != null)
-             {
-                 PoolingManager.Instance.ReturnPooledObject(instantiatedPrescriptionContainer);
-                 instantiatedPrescriptionContainer = null;
-             }
-
-
-            foreach (GameObject pillGO in instantiatedPills.ToList()) // Use ToList() because we modify the list inside loop
-            {
-                if (pillGO != null)
-                {
-                     Rigidbody rb = pillGO.GetComponent<Rigidbody>();
-                     if (rb != null) rb.isKinematic = true;
-                     Collider col = pillGO.GetComponent<Collider>();
-                     if (col != null) col.enabled = false;
-
-                    PoolingManager.Instance.ReturnPooledObject(pillGO);
-                }
-            }
-            instantiatedPills.Clear();
-            discardedPills.Clear();
-            countedPills.Clear();
-
-            // Clean up UI state
-            if (countingUIRoot != null) countingUIRoot.SetActive(false);
-            if (finishCountingButton != null) finishCountingButton.onClick.RemoveListener(OnFinishCountingClicked); // Ensure listener is removed
-        }
 
 
         protected override void Update()
@@ -264,68 +274,171 @@ namespace Systems.CraftingMinigames
             }
         }
 
-        // --- Pill Minigame Specific Logic --- (Coroutines now call MarkMinigameCompleted or base.EndMinigame)
+        // --- Pill Minigame Specific Logic ---
 
         private IEnumerator PouringSequence()
         {
-            if (containerPrefab == null || pillSpawnPoint == null || pillPrefab == null || PoolingManager.Instance == null)
+            if (containerPrefab == null || pillSpawnPoint == null || pillPrefab == null || PoolingManager.Instance == null || pillCraftingAnimator == null || pouringContainerSpawnPoint == null || stockContainerSetdown == null)
             {
-                Debug.LogError("PillCraftingMinigame: Missing essential references for pouring sequence! Signalling internal failure.", this);
-                 minigameSuccessStatus = false; // Inherited from base
-                 EndMinigame(false); // Call base EndMinigame (it wasn't aborted externally)
+                Debug.LogError("PillCraftingMinigame: Missing essential references for pouring sequence or animator or spawn point!", this);
+                 minigameSuccessStatus = false;
+                 EndMinigame(false);
                 yield break;
             }
 
+            // Instantiate container at the designated spawn point
             instantiatedContainer = PoolingManager.Instance.GetPooledObject(containerPrefab);
             if (instantiatedContainer != null)
             {
-                instantiatedContainer.transform.SetPositionAndRotation(transform.position, transform.rotation);
+                // --- MODIFIED: Use the pouringContainerSpawnPoint Transform ---
+                instantiatedContainer.transform.SetPositionAndRotation(pouringContainerSpawnPoint.position, pouringContainerSpawnPoint.rotation);
+                // -------------------------------------------------------------
                 instantiatedContainer.SetActive(true);
             }
             else
             {
                 Debug.LogError("PillCraftingMinigame: Failed to get container from pool! Signalling internal failure.", this);
-                 minigameSuccessStatus = false; // Inherited from base
-                 EndMinigame(false); // Call base EndMinigame (it wasn't aborted externally)
+                 minigameSuccessStatus = false;
+                 EndMinigame(false);
                 yield break;
             }
 
-            yield return new WaitForSeconds(0.5f);
+            pillCraftingAnimator.SetRuntimeReferences(instantiatedContainer.transform, null, null);
+            yield return new WaitForSeconds(0.25f); // Initial brief wait
+
 
             int excessPillsToPour = Random.Range(minExcessPills, maxExcessPills + 1);
             int totalPillsToSpawn = targetPillCount + excessPillsToPour;
             Debug.Log($"PillCraftingMinigame: Spawning {totalPillsToSpawn} pills (Target: {targetPillCount}, Excess: {excessPillsToPour}).", this);
 
-            for (int i = 0; i < totalPillsToSpawn; i++)
-            {
-                GameObject pillGO = PoolingManager.Instance.GetPooledObject(pillPrefab);
-                if (pillGO != null)
-                {
-                    pillGO.transform.SetPositionAndRotation(pillSpawnPoint.position, Quaternion.identity);
-                    pillGO.SetActive(true);
-                    instantiatedPills.Add(pillGO);
+            // Start the pouring animation sequence
+             Sequence pouringAnimSequence = pillCraftingAnimator.AnimatePouring();
 
-                    Collider pillCollider = pillGO.GetComponent<Collider>();
-                    if (pillCollider != null) pillCollider.enabled = true;
-                    Rigidbody rb = pillGO.GetComponent<Rigidbody>();
-                    if (rb != null) rb.isKinematic = false;
+             if (pouringAnimSequence != null)
+             {
+                 yield return new WaitForSeconds(0.28f);
+                 StartCoroutine(SpawnPillsDuringPour(totalPillsToSpawn, pouringDuration));
 
-                }
-                else
-                {
-                    Debug.LogError($"PillCraftingMinigame: Failed to get pill {i} from pool! Aborting minigame.", this);
-                     minigameSuccessStatus = false; // Inherited from base
-                     EndMinigame(false); // Call base EndMinigame (it wasn't aborted externally)
-                    yield break;
-                }
+                 yield return pouringAnimSequence.WaitForCompletion(); // Wait for the whole animation sequence to finish
+                 Debug.Log("PillCraftingMinigame: Pouring animation sequence finished.");
+             }
+             else
+             {
+                 Debug.LogError("PillCraftingMinigame: Pouring animation sequence failed to start.");
+             }
 
-                yield return new WaitForSeconds(pouringDuration / totalPillsToSpawn);
-            }
 
-            yield return new WaitForSeconds(pouringDuration * 0.5f);
+            currentPillCountOnTable = instantiatedPills.Count;
+            Debug.Log($"PillCraftingMinigame: Pouring sequence finished. Initial pills on table: {currentPillCountOnTable}.");
+
+            if (instantiatedContainer != null && stockContainerSetdown != null)
+             {
+                 Debug.Log($"PillCraftingMinigame: Moving stock container to setdown position ({stockContainerSetdown.position}).", this);
+                // Use DOMove for smooth position animation without Rigidbody
+                Tween setdownTween = instantiatedContainer.transform.DOMove(stockContainerSetdown.position, 0.5f);
+                                                                     // Example ease
+
+                 Debug.Log("PillCraftingMinigame: Stock container setdown animation finished.");
+             }
+             else
+             {
+                 // This should be caught by the initial null check, but defensive logging.
+                 Debug.LogWarning("PillCraftingMinigame: Stock container or setdown point is null. Skipping setdown animation.", this);
+             }
+
 
             SetMinigameState(MinigameState.Middle);
         }
+
+        /// <summary>
+        /// Coroutine to spawn pills over a given duration, synchronized with the pouring animation.
+        /// </summary>
+        private IEnumerator SpawnPillsDuringPour(int totalPillsToSpawn, float spawnDuration)
+        {
+             if (pillPrefab == null || PoolingManager.Instance == null || pillSpawnPoint == null || pillCraftingAnimator == null)
+             {
+                  Debug.LogError("PillCraftingMinigame: Missing references for spawning pills during pour!", this);
+                  yield break;
+             }
+
+             // Ensure spawnDuration is positive if totalPillsToSpawn > 0 to avoid instantaneous loop
+             if (totalPillsToSpawn > 0 && spawnDuration <= 0)
+             {
+                 Debug.LogWarning("PillCraftingMinigame: Spawn duration is zero or negative but pills need spawning. Spawning instantly.", this);
+                 spawnDuration = 0.01f; // Use a tiny duration
+             }
+
+             float timePerPill = totalPillsToSpawn > 0 ? spawnDuration / totalPillsToSpawn : 0;
+
+             for (int i = 0; i < totalPillsToSpawn; i++)
+             {
+                 // Check if the minigame has ended externally during the spawn loop
+                 if (currentMinigameState == MinigameState.None || currentMinigameState == MinigameState.End)
+                 {
+                      Debug.Log("PillCraftingMinigame: Aborting pill spawn coroutine due to minigame ending.");
+                      yield break; // Exit coroutine if state changes
+                 }
+
+
+                 GameObject pillGO = PoolingManager.Instance.GetPooledObject(pillPrefab);
+                 if (pillGO != null)
+                 {
+                     // Use the Animator's pour point if available, otherwise fall back
+                     Transform spawnPoint = pillCraftingAnimator?.pillStockPourPoint != null ? pillCraftingAnimator.pillStockPourPoint : pillSpawnPoint;
+                     if (spawnPoint == null)
+                     {
+                         Debug.LogError("PillCraftingMinigame: Pill spawn point is null after checks!", this);
+                         PoolingManager.Instance.ReturnPooledObject(pillGO); // Return the acquired object
+                         yield break; // Cannot proceed
+                     }
+
+                     pillGO.transform.SetPositionAndRotation(spawnPoint.position, Quaternion.identity);
+                     pillGO.SetActive(true);
+                     instantiatedPills.Add(pillGO);
+
+                     // Physics and collider are enabled after a delay by ActivatePhysicsAfterDelay coroutine
+                     // Ensure they are initially off/kinematic
+                     Rigidbody pillRB = pillGO.GetComponent<Rigidbody>();
+                     Collider pillCollider = pillGO.GetComponent<Collider>();
+                     if (pillRB != null) pillRB.isKinematic = true;
+                     if (pillCollider != null) pillCollider.enabled = false;
+
+                     StartCoroutine(ActivatePhysicsAfterDelay(pillRB, pillCollider, UnityEngine.Random.Range(minPhysicsEnableDelay, maxPhysicsEnableDelay)));
+                 }
+                 else
+                 {
+                     Debug.LogError($"PillCraftingMinigame: Failed to get pill {i} from pool during pour! Aborting spawning.", this);
+                     yield break;
+                 }
+
+                 if (timePerPill > 0) // Only yield if there's time between pills
+                 {
+                     yield return new WaitForSeconds(timePerPill);
+                 }
+                 // If timePerPill is 0, pills spawn instantly within one frame iteration (or as fast as Unity allows)
+             }
+             Debug.Log("PillCraftingMinigame: Finished starting pill spawns.");
+        }
+
+
+         private IEnumerator ActivatePhysicsAfterDelay(Rigidbody rb, Collider col, float delay)
+         {
+             if (rb == null) yield break; // Cannot enable physics without Rigidbody
+
+             // Ensure they are off before the delay
+             rb.isKinematic = true;
+             if (col != null) col.enabled = false;
+
+             yield return new WaitForSeconds(delay);
+
+             // Re-enable if the GameObject is still active and hasn't been discarded/reclaimed/pooled
+             if (rb != null && rb.gameObject.activeInHierarchy)
+             {
+                rb.isKinematic = false;
+                if (col != null) col.enabled = true;
+             }
+         }
+
 
         private void HandlePillClickInput()
         {
@@ -413,8 +526,8 @@ namespace Systems.CraftingMinigames
             }
         }
 
-        private void EnablePillClicking() { /* TODO */ }
-        private void DisablePillClicking() { /* TODO */ }
+        private void EnablePillClicking() { /* TODO: Potentially activate a click handler component */ }
+        private void DisablePillClicking() { /* TODO: Potentially deactivate a click handler component */ }
 
         private void UpdateCountUI()
         {
@@ -431,82 +544,208 @@ namespace Systems.CraftingMinigames
             {
                 Debug.Log("PillCraftingMinigame: Count is correct. Transitioning to Packaging.", this);
 
-                countedPills = instantiatedPills.Where(pill => !discardedPills.Contains(pill)).ToList();
+                // Collect only the pills NOT in the discarded pile
+                countedPills.Clear();
+                foreach(GameObject pillGO in instantiatedPills)
+                {
+                    if (pillGO != null && !discardedPills.Contains(pillGO))
+                    {
+                         countedPills.Add(pillGO);
+                    }
+                }
 
                 if (countedPills.Count != targetPillCount)
                 {
-                    Debug.LogError($"PillCraftingMinigame: Mismatch! Collected {countedPills.Count} pills but target was {targetPillCount}. Signalling internal failure.", this);
-                     minigameSuccessStatus = false; // Inherited from base
+                    Debug.LogError($"PillCraftingMinigame: Mismatch! Collected {countedPills.Count} pills but target was {targetPillCount}. This should not happen if logic is correct. Signalling internal failure.", this);
+                    // Set success status based on the final check before packaging
+                     minigameSuccessStatus = false;
                 }
                 else
                 {
-                     minigameSuccessStatus = true; // Inherited from base
+                     minigameSuccessStatus = true;
                 }
 
-                SetMinigameState(MinigameState.End); // Transition to End state
+                SetMinigameState(MinigameState.End);
             }
             else
             {
-                Debug.LogWarning("PillCraftingMinigame: Finish Counting button clicked, but count is incorrect or not in Counting state. Aborting transition.", this);
+                Debug.LogWarning("PillCraftingMinigame: Finish Counting button clicked, but count is incorrect or not in Counting state. Count: " + currentPillCountOnTable + ", Target: " + targetPillCount, this);
+                // If count is incorrect when button clicked, the minigame fails.
+                minigameSuccessStatus = false; // Explicitly set failure
+                // Optionally transition to End state anyway to show failure packaging or just EndMinigame(false) directly?
+                // The current flow transitions to End state, then EndMinigame is called after the sequence (which might still run visually)
+                // Let's stick to the flow: go to End, packaging happens (maybe differently for failure?), then EndMinigame(false) is called.
+                 SetMinigameState(MinigameState.End); // Still transition to End state
             }
         }
 
         private IEnumerator PackagingSequence()
         {
-            Debug.Log("PackagingSequence: Starting.", this);
-            if (prescriptionContainerPrefab == null || pillRepackagePoint == null || PoolingManager.Instance == null)
+            if (prescriptionContainerPrefab == null || prescriptionContainerSpawnPoint == null || prescriptionContainerLidPrefab == null || prescriptionContainerLidSpawnPoint == null || PoolingManager.Instance == null || pillCraftingAnimator == null)
             {
-                Debug.LogError("PillCraftingMinigame: Missing references for packaging sequence! Signalling internal failure.", this);
-                 minigameSuccessStatus = false; // Inherited from base
-                 EndMinigame(false); // Call base EndMinigame (it wasn't aborted externally)
+                Debug.LogError("PillCraftingMinigame: Missing essential references for packaging sequence or animator or spawn points!", this);
+                 minigameSuccessStatus = false; // Ensure failure if references are missing
+                 EndMinigame(false);
                 yield break;
             }
 
-            Debug.Log("PackagingSequence: Getting prescription container from pool.", this);
+            // Instantiate prescription container at the designated spawn point
             instantiatedPrescriptionContainer = PoolingManager.Instance.GetPooledObject(prescriptionContainerPrefab);
             if (instantiatedPrescriptionContainer != null)
             {
-                instantiatedPrescriptionContainer.transform.SetPositionAndRotation(pillRepackagePoint.position, Quaternion.identity);
+                instantiatedPrescriptionContainer.transform.SetPositionAndRotation(prescriptionContainerSpawnPoint.position, prescriptionContainerSpawnPoint.rotation);
                 instantiatedPrescriptionContainer.SetActive(true);
-                Debug.Log($"PackagingSequence: Prescription container active at {instantiatedPrescriptionContainer.transform.position}.", this);
-
-                Vector3 finalContainerCenter = instantiatedPrescriptionContainer.transform.position;
-                // Example: finalContainerCenter += Vector3.up * 0.05f; // Small offset up
-
-                Debug.Log($"PackagingSequence: Moving {countedPills.Count} pills directly into the prescription container.", this);
-                foreach (GameObject pillGO in countedPills)
-                {
-                     Rigidbody rb = pillGO.GetComponent<Rigidbody>();
-                     Collider pillCollider = pillGO.GetComponent<Collider>();
-
-                     if (rb != null) rb.isKinematic = true;
-                     if (pillCollider != null) pillCollider.enabled = false;
-
-                    StartCoroutine(MoveGameObjectSmoothly(pillGO, finalContainerCenter + UnityEngine.Random.insideUnitSphere * packagingScatterRadius, 1.0f, false)); // Pass false
-                }
+                 Debug.Log($"PackagingSequence: Prescription container '{instantiatedPrescriptionContainer.name}' active at {instantiatedPrescriptionContainer.transform.position}.", instantiatedPrescriptionContainer);
             }
             else
             {
-                Debug.LogError("PillCraftingMinigame: Failed to get prescription container from pool! Cannot complete packaging visually. Signalling internal failure.", this);
-                minigameSuccessStatus = false; // Inherited from base
+                Debug.LogError("PillCraftingMinigame: Failed to get prescription container from pool! Signalling internal failure.", this);
+                minigameSuccessStatus = false;
+                EndMinigame(false);
+                yield break;
             }
 
-            Debug.Log("PackagingSequence: Waiting for packaging animation duration...", this);
-            yield return new WaitForSeconds(1.0f); // Wait for packaging animation duration
+            // --- ADDED: Instantiate the Lid Prefab ---
+            instantiatedPrescriptionContainerLid = PoolingManager.Instance.GetPooledObject(prescriptionContainerLidPrefab);
+            if (instantiatedPrescriptionContainerLid != null)
+            {
+                instantiatedPrescriptionContainerLid.transform.SetPositionAndRotation(prescriptionContainerLidSpawnPoint.position, prescriptionContainerLidSpawnPoint.rotation);
+                instantiatedPrescriptionContainerLid.transform.localScale = prescriptionContainerLidScale;
+                instantiatedPrescriptionContainerLid.SetActive(true);
+                 Debug.Log($"PackagingSequence: Prescription container Lid '{instantiatedPrescriptionContainerLid.name}' active at {instantiatedPrescriptionContainerLid.transform.position}.", instantiatedPrescriptionContainerLid);
+            }
+            else
+            {
+                 Debug.LogError("PillCraftingMinigame: Failed to get prescription container LID from pool! Cannot animate packaging visually. Signalling internal failure.", this);
+                 // Clean up the main container if we failed to get the lid
+                 if(instantiatedPrescriptionContainer != null) PoolingManager.Instance.ReturnPooledObject(instantiatedPrescriptionContainer);
+                 instantiatedPrescriptionContainer = null;
 
-            // --- MODIFIED: Call base class's EndMinigame to signal completion ---
-            // Minigame is considered naturally ended (not aborted) when this sequence finishes.
-            // The minigameSuccessStatus was set in OnFinishCountingClicked or at the start of this sequence.
-            EndMinigame(false); // Call base EndMinigame (it wasn't aborted externally)
-            // --------------------------------------------------------------------
+                 minigameSuccessStatus = false;
+                 EndMinigame(false);
+                 yield break;
+            }
+            // ----------------------------------------
 
-            Debug.Log("PackagingSequence: Coroutine finished.", this);
+            // --- MODIFIED: Pass the instantiated lid transform to the animator ---
+            pillCraftingAnimator.SetRuntimeReferences(null, instantiatedPrescriptionContainer.transform, instantiatedPrescriptionContainerLid.transform);
+            // -------------------------------------------------------------------
+
+            // Also tell the animator how many pills are being packaged to help sync animation intervals
+             pillCraftingAnimator.SetCountedPillsCount(countedPills.Count);
+
+            // Calculate scatter positions for pills BEFORE starting animations
+             List<Vector3> scatteredPositions = new List<Vector3>();
+             // Use the Animator's pill drop point if available, otherwise fall back to the container transform (with offset)
+             Transform pillDropPointSource = pillCraftingAnimator?.prescriptionPillDropPoint != null ? pillCraftingAnimator.prescriptionPillDropPoint : instantiatedPrescriptionContainer.transform;
+             Vector3 containerCenter = pillDropPointSource.position; // Use the actual drop point position
+
+             foreach (var pillGO in countedPills)
+             {
+                 if (pillGO != null)
+                 {
+                      scatteredPositions.Add(containerCenter + UnityEngine.Random.insideUnitSphere * packagingScatterRadius);
+                 }
+                 else
+                 {
+                      // This shouldn't happen if countedPills is populated correctly
+                      Debug.LogWarning("PillCraftingMinigame: Null pill found in countedPills list during packaging setup.", this);
+                 }
+             }
+
+
+            // Start the packaging animation sequence on the animator
+            // This sequence includes opening/closing the lid and has an interval for pills
+            Sequence packagingAnimSequence = pillCraftingAnimator.AnimatePackaging();
+
+             if (packagingAnimSequence != null)
+             {
+                 // Start the coroutine to animate pills into the container in parallel
+                 // This happens when the packaging sequence begins (specifically, the interval part).
+                 // We need to yield until the lid is open or the sequence reaches the interval.
+                 // Let's wait for the lid open duration before starting pill animations.
+                 yield return new WaitForSeconds(pillCraftingAnimator.lidAnimateDuration * 0.3f); // Adjust delay if needed
+
+                 // Only animate pills if the minigame hasn't been aborted
+                 if (currentMinigameState != MinigameState.None)
+                 {
+                     StartCoroutine(AnimatePillsIntoContainerCoroutine(countedPills, scatteredPositions, pillCraftingAnimator.pillPackageAnimateDuration));
+                 }
+
+
+                 yield return packagingAnimSequence.WaitForCompletion(); // Wait for the whole packaging sequence to finish
+                 Debug.Log("PillCraftingMinigame: Packaging animation sequence finished.");
+             }
+             else
+             {
+                  Debug.LogWarning("PillCraftingMinigame: Packaging animation sequence failed to start. Proceeding without animation sync.");
+                   // If animation fails, maybe just instantly move pills?
+                  // For now, just wait a bit
+                  yield return new WaitForSeconds(1.0f);
+             }
+            // -----------------------------------------------------
+            yield return new WaitForSeconds(0.2f);
+            // The success status was set in OnFinishCountingClicked().
+            // Now call EndMinigame to finalize and trigger the completion event.
+            EndMinigame(false); // false because it reached its natural end state
+
+            Debug.Log("PackagingSequence: Coroutine finished.");
         }
+
+         /// <summary>
+         /// Coroutine to animate multiple pills into the packaging container using the Animator.
+         /// This replaces the physics-based movement for packaging.
+         /// </summary>
+         private IEnumerator AnimatePillsIntoContainerCoroutine(List<GameObject> pills, List<Vector3> targetPositions, float durationPerPill)
+         {
+              if (pills == null || targetPositions == null || pills.Count != targetPositions.Count || pillCraftingAnimator == null)
+              {
+                   Debug.LogError("PillCraftingMinigame: Invalid data for AnimatePillsIntoContainerCoroutine!", this);
+                   yield break;
+              }
+
+              // Animate pills with a slight stagger
+              float stagger = 0.05f; // Small delay between starting each pill animation
+
+              for (int i = 0; i < pills.Count; i++)
+              {
+                   // Check if the minigame has ended externally during the animation loop
+                   if (currentMinigameState == MinigameState.None || currentMinigameState == MinigameState.Middle)
+                   {
+                        Debug.Log("PillCraftingMinigame: Aborting pill packaging animation coroutine due to minigame ending.");
+                        yield break; // Exit coroutine if state changes
+                   }
+
+                   GameObject pillGO = pills[i];
+                   if (pillGO == null)
+                   {
+                        Debug.LogWarning($"PillCraftingMinigame: Null pill found in list at index {i} during packaging animation.", this);
+                        continue; // Skip null entries
+                   }
+                   Vector3 targetPos = targetPositions[i]; // Should match index
+
+                   if (pillCraftingAnimator != null)
+                   {
+                        // Call the animator method for a single pill's movement using DOTween
+                        // AnimatePillIntoContainer handles setting kinematic/collider etc.
+                        pillCraftingAnimator.AnimatePillIntoContainer(pillGO, targetPos); // Start the tween
+                   }
+                   else Debug.LogWarning($"PillCraftingMinigame: Animator is null during packaging animation for pill {pillGO.name}.", this);
+
+                   yield return new WaitForSeconds(stagger); // Stagger the start of each pill's animation
+              }
+              Debug.Log("PillCraftingMinigame: Finished starting pill packaging animations.");
+
+               // This coroutine finishes once all animations are started.
+               // The main PackagingSequence coroutine is yielding on the animator's *Sequence* completion.
+         }
+
 
         /// <summary>
         /// Coroutine to smoothly move a GameObject using Rigidbody.MovePosition.
         /// Makes object kinematic and disables collider during the move.
         /// Re-enables physics and collider after move if requested.
+        /// Note: This is used for Discard/Reclaim, NOT for packaging into the container now.
         /// </summary>
         private IEnumerator MoveGameObjectSmoothly(GameObject go, Vector3 targetPos, float duration, bool reEnablePhysicsAfter = false)
         {
@@ -528,29 +767,33 @@ namespace Systems.CraftingMinigames
             Vector3 startPos = rb.position;
             float timer = 0f;
 
-            rb.isKinematic = true; // Ensure kinematic during the move
-            if (col != null) col.enabled = false; // Disable collider during the move
+            rb.isKinematic = true;
+            if (col != null) col.enabled = false;
             rb.linearVelocity = Vector3.zero;
             rb.angularVelocity = Vector3.zero;
+
+            Transform originalParent = go.transform.parent;
+            go.transform.SetParent(null); // Unparent during physics move
 
 
             while (timer < duration)
             {
-                // Check if the game object has been destroyed or pooled during the move
                 if (go == null) { yield break; }
 
-                timer += Time.deltaTime;
+                timer += Time.unscaledDeltaTime;
                 float t = Mathf.Clamp01(timer / duration);
                 rb.MovePosition(Vector3.Lerp(startPos, targetPos, t));
                 yield return null;
             }
 
-            // Ensure it reaches the exact target position after the loop
-             if (go != null) rb.MovePosition(targetPos);
-             else yield break; // Check again if destroyed
+            if (go != null)
+            {
+                 rb.MovePosition(targetPos);
+                 go.transform.SetParent(originalParent); // Restore original parent
+            }
+             else yield break;
 
 
-            // Re-enable physics/collider if requested
             if (reEnablePhysicsAfter)
             {
                  if (rb != null) rb.isKinematic = false;
@@ -558,48 +801,73 @@ namespace Systems.CraftingMinigames
             }
              else
              {
-                 // If not re-enabling physics, ensure they stay kinematic/collider off
                  if (rb != null) rb.isKinematic = true;
                  if (col != null) col.enabled = false;
              }
         }
 
-         // The cleanup logic has been moved into this method, which is called by base.EndMinigame(bool).
-        /* // REMOVED: CleanupMinigameAssets method
+         /// <summary>
+         /// This contains the logic that cleans up the specific assets for THIS minigame.
+         /// It is called by the base class's EndMinigame(bool) method via PerformCleanup().
+         /// Contains pooling logic and list clearing.
+         /// </summary>
         private void CleanupMinigameAssets()
         {
             Debug.Log("PillCraftingMinigame: Cleaning up instantiated (pooled) assets.", this);
 
+            // --- Pool the main container and the separate lid ---
             if (instantiatedContainer != null)
             {
                 PoolingManager.Instance.ReturnPooledObject(instantiatedContainer);
                 instantiatedContainer = null;
             }
+             if (instantiatedPrescriptionContainer != null)
+             {
+                 PoolingManager.Instance.ReturnPooledObject(instantiatedPrescriptionContainer);
+                 instantiatedPrescriptionContainer = null;
+             }
+             if (instantiatedPrescriptionContainerLid != null)
+             {
+                 PoolingManager.Instance.ReturnPooledObject(instantiatedPrescriptionContainerLid);
+                 instantiatedPrescriptionContainerLid = null;
+             }
+            // --------------------------------------------------
 
-            if (instantiatedPrescriptionContainer != null)
-            {
-                PoolingManager.Instance.ReturnPooledObject(instantiatedPrescriptionContainer);
-                instantiatedPrescriptionContainer = null;
-            }
 
-            foreach (GameObject pillGO in instantiatedPills.ToList())
+            // Pool all pills that were instantiated
+            foreach (GameObject pillGO in instantiatedPills.ToList()) // Use ToList() to avoid modifying collection while iterating
             {
-                if (pillGO != null)
+                if (pillGO != null && pillGO.activeInHierarchy) // Check if not null and still active
                 {
+                     // Ensure kinematic/collider off before returning to pool
                      Rigidbody rb = pillGO.GetComponent<Rigidbody>();
-                     if (rb != null) rb.isKinematic = true;
+                     if (rb != null)
+                     {
+                          rb.isKinematic = true;
+                          rb.useGravity = true; // Restore default gravity state
+                     }
                      Collider col = pillGO.GetComponent<Collider>();
                      if (col != null) col.enabled = false;
 
                     PoolingManager.Instance.ReturnPooledObject(pillGO);
                 }
+                 else if (pillGO == null)
+                 {
+                     // Should not happen if list is managed correctly, but defensive check
+                     Debug.LogWarning("PillCraftingMinigame: Null GameObject found in instantiatedPills during cleanup.", this);
+                 }
+                 // If not activeInHierarchy, it might have already been returned by something else (less likely with pooling)
             }
             instantiatedPills.Clear();
             discardedPills.Clear();
             countedPills.Clear();
+            currentPillCountOnTable = 0; // Reset count
 
             if (countingUIRoot != null) countingUIRoot.SetActive(false);
+            if (finishCountingButton != null) finishCountingButton.onClick.RemoveListener(OnFinishCountingClicked);
+             // Ensure no ongoing coroutines like MoveGameObjectSmoothly are left dangling
+             // This might require tracking coroutines or having a mechanism in MoveGameObjectSmoothly
+             // to check if the target GO is still valid. (Added checks in MoveGameObjectSmoothly).
         }
-        */
     }
 }

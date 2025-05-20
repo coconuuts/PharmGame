@@ -25,7 +25,7 @@ MonoBehaviour:
     initialSize: 10
     maxSize: 30
     canGrow: 1
-  - prefab: {fileID: 8676497277231579038, guid: dce01983a9912634da084658c164e8b5, type: 3}
+  - prefab: {fileID: 7931329014851535385, guid: 5aa6f53b2e285e848aec22cb6351813a, type: 3}
     initialSize: 1
     maxSize: 3
     canGrow: 1
@@ -41,3 +41,7 @@ MonoBehaviour:
     initialSize: 1
     maxSize: 1
     canGrow: 0
+  - prefab: {fileID: 1423909791935238396, guid: 4591431d19feab54facf96040385447a, type: 3}
+    initialSize: 1
+    maxSize: 3
+    canGrow: 1

@@ -94,18 +94,12 @@ namespace Systems.UI
             switch (oldState)
             {
                 case MenuManager.GameState.InInventory:
-                case MenuManager.GameState.InComputer:
-                    // Deactivate the specific UI root associated with the OLD state (Inventory or Computer)
-                     if (MenuManager.Instance != null && MenuManager.Instance.CurrentActiveUIRoot != null)
-                     {
-                         MenuManager.Instance.CurrentActiveUIRoot.SetActive(false);
-                         Debug.Log($"UIManager: Deactivated UI Root associated with {oldState}.");
-                     }
-                    // Specific cleanup (like inventory hover) still needed.
-                    if (oldState == MenuManager.GameState.InInventory && MenuManager.Instance?.CurrentOpenInventoryComponent != null)
+                    if (MenuManager.Instance != null && MenuManager.Instance?.CurrentOpenInventoryComponent != null)
                     {
-                         MenuManager.Instance.ClearHoverHighlights(MenuManager.Instance.CurrentOpenInventoryComponent);
+                        MenuManager.Instance.ClearHoverHighlights(MenuManager.Instance.CurrentOpenInventoryComponent);
                     }
+                    break;
+                case MenuManager.GameState.InComputer:
                     break;
 
                 case MenuManager.GameState.InCrafting:
