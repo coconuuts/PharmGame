@@ -94,9 +94,9 @@ namespace Systems.UI
             switch (oldState)
             {
                 case MenuManager.GameState.InInventory:
-                    if (MenuManager.Instance != null && MenuManager.Instance?.CurrentOpenInventoryComponent != null)
+                    if (MenuManager.Instance != null && MenuManager.Instance.CurrentActiveUIRoot != null)
                     {
-                        MenuManager.Instance.ClearHoverHighlights(MenuManager.Instance.CurrentOpenInventoryComponent);
+                        MenuManager.Instance.CurrentActiveUIRoot.SetActive(false);
                     }
                     break;
                 case MenuManager.GameState.InComputer:
