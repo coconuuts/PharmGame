@@ -1,0 +1,39 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e295592545216fa429107fb5b6402be1, type: 3}
+  m_Name: PillMinigameConfig
+  m_EditorClassIdentifier: 
+  cameraMoveDuration: 0.3
+  containerPrefab: {fileID: 7931329014851535385, guid: 5aa6f53b2e285e848aec22cb6351813a, type: 3}
+  pillPrefab: {fileID: 5754999614856399764, guid: d4692a07e12764a40b96a50db5228f39, type: 3}
+  prescriptionContainerPrefab: {fileID: 5584495827091083872, guid: c933442d2698a034c8ed4ed6be9e0c07, type: 3}
+  prescriptionContainerLidPrefab: {fileID: 1423909791935238396, guid: 4591431d19feab54facf96040385447a, type: 3}
+  pouringDuration: 0.25
+  minTargetPills: 10
+  maxTargetPills: 20
+  minExcessPills: 5
+  maxExcessPills: 10
+  packagingScatterRadius: 0.05
+  pillLayer:
+    serializedVersion: 2
+    m_Bits: 64
+  minPhysicsEnableDelay: 0.02
+  maxPhysicsEnableDelay: 0.05
+  prescriptionContainerLidScale: {x: 1.35, y: 1.35, z: 1.35}
+  pourTiltAngle: 133
+  pourTiltDuration: 0.45
+  pourReturnDuration: 0.25
+  lidAnimateDuration: 0.75
+  lidOpenLocalEuler: {x: -45, y: -30, z: 0}
+  lidClosedLocalEuler: {x: -90, y: -30, z: 0}
+  pillPackageAnimateDuration: 0.75
+  pillsDropIntervalDuration: 0.6

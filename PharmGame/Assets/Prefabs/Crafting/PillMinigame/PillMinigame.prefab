@@ -18,7 +18,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &7425371153858153642
 RectTransform:
   m_ObjectHideFlags: 0
@@ -176,6 +176,7 @@ GameObject:
   - component: {fileID: 3222029443490049973}
   - component: {fileID: 6178134506760372332}
   - component: {fileID: 5108949264093737488}
+  - component: {fileID: 6305434378941358213}
   m_Layer: 0
   m_Name: PillMinigame
   m_TagString: Untagged
@@ -196,9 +197,9 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
+  - {fileID: 7425371153858153642}
   - {fileID: 2659492888225055372}
   - {fileID: 6786785885185017374}
-  - {fileID: 7425371153858153642}
   - {fileID: 8596638159461347045}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -216,11 +217,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   currentMinigameState: 0
   minigameSuccessStatus: 0
-  containerPrefab: {fileID: 7931329014851535385, guid: 5aa6f53b2e285e848aec22cb6351813a, type: 3}
-  pillPrefab: {fileID: 5754999614856399764, guid: d4692a07e12764a40b96a50db5228f39, type: 3}
-  prescriptionContainerPrefab: {fileID: 5584495827091083872, guid: c933442d2698a034c8ed4ed6be9e0c07, type: 3}
-  prescriptionContainerLidPrefab: {fileID: 1423909791935238396, guid: 4591431d19feab54facf96040385447a, type: 3}
-  prescriptionContainerLidScale: {x: 1.35, y: 1.35, z: 1.35}
+  pillConfig: {fileID: 11400000, guid: 37561f708a070bc41b620003dbbea0e6, type: 2}
   pouringCameraTarget: {fileID: 5286990515845679867}
   countingCameraTarget: {fileID: 492669359004013208}
   packagingCameraTarget: {fileID: 618289815781817175}
@@ -231,21 +228,8 @@ MonoBehaviour:
   pillSpawnPoint: {fileID: 3718220301897162893}
   pillDiscardPoint: {fileID: 652256661814961118}
   pillReclaimPoint: {fileID: 8474592919875316568}
-  countingUIRoot: {fileID: 664641041993686582}
-  countText: {fileID: 2675939998936368011}
-  finishCountingButton: {fileID: 2540492462057327824}
-  pouringDuration: 0.25
-  minTargetPills: 10
-  maxTargetPills: 20
-  cameraMoveDuration: 0.3
-  minExcessPills: 5
-  maxExcessPills: 10
-  packagingScatterRadius: 0.05
-  pillLayer:
-    serializedVersion: 2
-    m_Bits: 64
-  minPhysicsEnableDelay: 0.02
-  maxPhysicsEnableDelay: 0.05
+  uiHandler: {fileID: 0}
+  clickInteractor: {fileID: 6305434378941358213}
 --- !u!114 &5108949264093737488
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -258,19 +242,24 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c594c2a4e1944f14087f3852540b7bf3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  pillConfig: {fileID: 11400000, guid: 37561f708a070bc41b620003dbbea0e6, type: 2}
   pillStockContainerTransform: {fileID: 5834862900856911783}
   prescriptionContainerTransform: {fileID: 6602271550247732343}
   pillStockPourPoint: {fileID: 3718220301897162893}
   pillPackageMidpoint: {fileID: 6372604492038283951}
   prescriptionPillDropPoint: {fileID: 4767006663442372292}
-  pourTiltAngle: 133
-  pourTiltDuration: 0.45
-  pourReturnDuration: 0.25
-  lidAnimateDuration: 0.75
-  lidOpenLocalEuler: {x: -45, y: -30, z: 0}
-  lidClosedLocalEuler: {x: -90, y: -30, z: 0}
-  pillPackageAnimateDuration: 0.75
-  pillsDropIntervalDuration: 0.6
+--- !u!114 &6305434378941358213
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1796888741311491543}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 40ceaa817606a2a44aa0db356ea341d0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &1948865637470461540
 GameObject:
   m_ObjectHideFlags: 0
