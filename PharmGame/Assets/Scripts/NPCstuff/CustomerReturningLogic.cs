@@ -1,6 +1,7 @@
 using UnityEngine;
 using Game.NPC;
 using System.Collections;
+using Game.Events;
 
 public class CustomerReturningLogic : BaseCustomerStateLogic
 {
@@ -19,17 +20,7 @@ public class CustomerReturningLogic : BaseCustomerStateLogic
             customerAI.NavMeshAgent.enabled = false; // Disable the agent
         }
 
-        // Signal the CustomerManager to return this GameObject to the pool
-        if (customerAI.Manager != null) // Use the public property
-        {
-            customerAI.Manager.ReturnCustomerToPool(customerAI.gameObject); // Pass the AI's GameObject
-        }
-        else
-        {
-            Debug.LogError($"CustomerAI ({customerAI.gameObject.name}): CustomerManager reference is null! Cannot return to pool. Destroying instead.", this);
-            // Fallback: Destroy the GameObject if manager is missing
-            Destroy(customerAI.gameObject);
-        }
+        EventManager.Publish(new NpcReturningToPoolEvent(customerAI.gameObject));
 
         // Note: The ReturnCustomerToPool method likely deactivates the GameObject,
         // so OnExit and subsequent Update/Coroutines won't typically run.

@@ -2,6 +2,7 @@ using UnityEngine;
 using Game.NPC;
 using System.Collections; // Needed for IEnumerator
 using CustomerManagement;
+using Game.Events;
 
 public class CustomerExitingLogic : BaseCustomerStateLogic
 {
@@ -24,17 +25,6 @@ public class CustomerExitingLogic : BaseCustomerStateLogic
             else
             {
                 Debug.LogWarning($"CustomerAI ({customerAI.gameObject.name}): CachedCashRegister is null when entering Exiting state!", this);
-            }
-            
-            
-            // --- Signal CustomerManager that the register is now free ---
-            if (customerAI.Manager != null)
-            {
-                customerAI.Manager.SignalRegisterFree(); // <-- ADD THIS LINE
-            }
-            else
-            {
-                Debug.LogError($"CustomerAI ({customerAI.gameObject.name}): CustomerManager reference is null when signaling register free!", this);
             }
         }
         else
@@ -61,13 +51,13 @@ public class CustomerExitingLogic : BaseCustomerStateLogic
             else
             {
                 Debug.LogWarning($"CustomerAI ({customerAI.gameObject.name}): No exit points available for Exiting state! Returning to pool.", this);
-                customerAI.SetState(CustomerState.ReturningToPool); // Cannot exit, return directly
+                EventManager.Publish(new NpcReturningToPoolEvent(customerAI.gameObject));
             }
         }
         else
         {
             Debug.LogError($"CustomerAI ({customerAI.gameObject.name}): NavMeshAgent not ready for Exiting state entry!", this);
-            customerAI.SetState(CustomerState.ReturningToPool);
+            EventManager.Publish(new NpcReturningToPoolEvent(customerAI.gameObject));
         }
     }
 

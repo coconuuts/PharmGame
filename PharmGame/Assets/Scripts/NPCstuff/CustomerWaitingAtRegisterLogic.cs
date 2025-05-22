@@ -1,6 +1,7 @@
 using UnityEngine;
 using Game.NPC;
 using System.Collections;
+using Game.Events;
 
 public class CustomerWaitingAtRegisterLogic : BaseCustomerStateLogic
 {
@@ -60,16 +61,17 @@ public class CustomerWaitingAtRegisterLogic : BaseCustomerStateLogic
     // In CustomerWaitingAtRegisterLogic.cs, inside OnUpdate()
     public override void OnUpdate()
     {
-        base.OnUpdate(); // Call the base OnUpdate (currently empty)
+        base.OnUpdate();
 
         // --- Impatience Timer Update and Check ---
         impatientTimer += Time.deltaTime; // Increment the timer
 
         if (impatientTimer >= impatientDuration) // Check if timer has reached the duration
         {
-            Debug.Log($"{customerAI.gameObject.name}: IMPATIENT in WaitingAtRegister state after {impatientTimer:F2} seconds. Exiting.", this); // Log timeout
-            customerAI.SetState(CustomerState.Exiting); // Transition to the Exiting state
-            // No need for further logic in this Update cycle after setting state
+            Debug.Log($"{customerAI.gameObject.name}: IMPATIENT in WaitingAtRegister state after {impatientTimer:F2} seconds. Publishing NpcImpatientEvent.", this); // Log timeout
+            // --- Publish NpcImpatientEvent instead of setting state directly ---
+            EventManager.Publish(new NpcImpatientEvent(customerAI.gameObject, CustomerState.WaitingAtRegister)); // Use the event struct
+            // -------------------------------------------------------------------
             return; // Exit the OnUpdate method early
         }
         // -------------------------------------------

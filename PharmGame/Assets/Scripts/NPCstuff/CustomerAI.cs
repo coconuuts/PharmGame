@@ -7,6 +7,7 @@ using System.Collections; // Required for Coroutines
 using Systems.Inventory; // Required for Inventory and ItemDetails
 using Random = UnityEngine.Random; // Specify UnityEngine.Random
 using System.Linq; // Required for LINQ methods like Where, ToList, Sum
+using Game.Events;
 
 namespace Game.NPC // Your NPC namespace
 {
@@ -115,6 +116,78 @@ namespace Game.NPC // Your NPC namespace
 
             Debug.Log($"CustomerAI ({gameObject.name}): Awake completed.");
         }
+
+        private void OnEnable() // Subscribe to events when the GameObject is enabled
+        {
+            // Subscribe to events that can trigger state changes for *this specific NPC*
+            // Use a lambda with a check for the specific NPC object
+            EventManager.Subscribe<NpcImpatientEvent>(HandleNpcImpatient);
+            EventManager.Subscribe<ReleaseNpcFromSecondaryQueueEvent>(HandleReleaseFromSecondaryQueue);
+            // Subscribe to future interruption events
+            // EventManager.Subscribe<NpcAttackedEvent>(HandleNpcAttacked);
+            // EventManager.Subscribe<NpcInteractedEvent>(HandleNpcInteracted);
+
+            Debug.Log($"{gameObject.name}: Subscribed to events in OnEnable.");
+        }
+
+        private void OnDisable() // Unsubscribe from events when the GameObject is disabled
+        {
+             // Unsubscribe from events
+            EventManager.Unsubscribe<NpcImpatientEvent>(HandleNpcImpatient);
+            EventManager.Unsubscribe<ReleaseNpcFromSecondaryQueueEvent>(HandleReleaseFromSecondaryQueue);
+             // Unsubscribe from future interruption events
+            // EventManager.Unsubscribe<NpcAttackedEvent>(HandleNpcAttacked);
+            // EventManager.Unsubscribe<NpcInteractedEvent>(HandleNpcInteracted);
+
+            Debug.Log($"{gameObject.name}: Unsubscribed from events in OnDisable.");
+        }
+
+        // --- Event Handlers ---
+
+        private void HandleNpcImpatient(NpcImpatientEvent eventArgs)
+        {
+             // Check if this event is for THIS NPC
+             if (eventArgs.NpcObject == this.gameObject)
+             {
+                  Debug.Log($"{gameObject.name}: Handling NpcImpatientEvent. Setting state to Exiting.");
+                  SetState(CustomerState.Exiting); // Transition to the Exiting state
+             }
+        }
+
+        private void HandleReleaseFromSecondaryQueue(ReleaseNpcFromSecondaryQueueEvent eventArgs)
+        {
+             // Check if this event is for THIS NPC
+             if (eventArgs.NpcObject == this.gameObject)
+             {
+                  Debug.Log($"{gameObject.name}: Handling ReleaseNpcFromSecondaryQueueEvent. Setting state to Entering.");
+                  // Transition to the Entering state to enter the store
+                  SetState(CustomerState.Entering);
+             }
+        }
+
+        // --- Future Interruption Handlers (Placeholder) ---
+        /*
+        private void HandleNpcAttacked(NpcAttackedEvent eventArgs)
+        {
+            if (eventArgs.NpcObject == this.gameObject)
+            {
+                 Debug.Log($"{gameObject.name}: Handling NpcAttackedEvent. Setting state to Combat.");
+                 // Need a Combat state logic and SO later
+                 // SetState(CustomerState.Combat); // Example
+            }
+        }
+
+        private void HandleNpcInteracted(NpcInteractedEvent eventArgs)
+        {
+             if (eventArgs.NpcObject == this.gameObject)
+             {
+                 Debug.Log($"{gameObject.name}: Handling NpcInteractedEvent. Setting state to Social.");
+                 // Need a Social state logic and SO later
+                 // SetState(CustomerState.Social); // Example
+             }
+        }
+        */
+        // --------------------------------------------------
 
         /// <summary>
         /// Initializes the NPC when it's retrieved from the pool.
@@ -244,16 +317,8 @@ namespace Game.NPC // Your NPC namespace
                 }
                 else
                 {
-                     Debug.LogError($"CustomerAI ({gameObject.name}): Cannot transition to ReturningToPool as its logic is missing! Attempting direct return.", this);
-                     // Fallback: Directly signal the manager if possible, or self-destruct
-                     if (Manager != null)
-                     {
-                          Manager.ReturnCustomerToPool(this.gameObject);
-                     }
-                     else
-                     {
-                          Destroy(this.gameObject);
-                     }
+                    Debug.LogError($"CustomerAI ({gameObject.name}): Cannot transition to ReturningToPool as its logic is missing! Publishing NpcReturningToPoolEvent directly.", this);
+                    EventManager.Publish(new NpcReturningToPoolEvent(this.gameObject));
                 }
             }
 

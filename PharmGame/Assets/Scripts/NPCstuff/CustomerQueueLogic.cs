@@ -2,6 +2,7 @@ using UnityEngine;
 using Game.NPC;
 using System.Collections;
 using CustomerManagement; // Needed for interactions with CustomerManager or BrowseLocation
+using Game.Events;
 
 // Inherit from BaseQueueLogic
 public class CustomerQueueLogic : BaseQueueLogic
@@ -68,7 +69,7 @@ public class CustomerQueueLogic : BaseQueueLogic
         if (impatientTimer >= impatientDuration) // Check if timer has reached the duration
         {
             Debug.Log($"{customerAI.gameObject.name}: IMPATIENT in Main Queue state after {impatientTimer:F2} seconds. Exiting.", this); // Log timeout
-            customerAI.SetState(CustomerState.Exiting); // Transition to the Exiting state
+            EventManager.Publish(new NpcImpatientEvent(customerAI.gameObject, CustomerState.Queue)); // Transition to the Exiting state
             return; // Exit the OnUpdate method early
         }
         // -------------------------------------------
@@ -103,19 +104,18 @@ public class CustomerQueueLogic : BaseQueueLogic
     public override void OnExit()
     {
         base.OnExit(); // Call the base BaseQueueLogic OnExit
-        Debug.Log($"{customerAI.gameObject.name}: Exiting Main Queue state from spot {myQueueSpotIndex}."); // myQueueSpotIndex is in BaseQueueLogic
+        Debug.Log($"{customerAI.gameObject.name}: Exiting Main Queue state from spot {myQueueSpotIndex}. Publishing QueueSpotFreedEvent.");
         impatientTimer = 0f; // <-- RESET TIMER ON EXIT
 
-        // Signal CustomerManager that this spot is now free using the correct QueueType
-        // myQueueSpotIndex is the *last* spot this customer was assigned.
-        if (customerAI.Manager != null && myQueueSpotIndex != -1)
+        // --- Signal CustomerManager that this spot is now free using an Event ---
+        if (myQueueSpotIndex != -1) // No need to check customerAI.Manager here, EventManager is static
         {
-             customerAI.Manager.SignalQueueSpotFree(QueueType.Main, myQueueSpotIndex); // <-- Use QueueType.Main
-             // myQueueSpotIndex is typically reset to -1 by the base OnExit or reset logic.
+             // Publish the event instead of calling the Manager directly
+             EventManager.Publish(new QueueSpotFreedEvent(QueueType.Main, myQueueSpotIndex)); // Use the event struct
          }
          else
          {
-              Debug.LogWarning($"CustomerAI ({customerAI.gameObject.name}): Manager or queue spot index not set when exiting Main Queue state!", this);
+              Debug.LogWarning($"CustomerAI ({customerAI.gameObject.name}): Queue spot index not set when exiting Main Queue state!", this);
          }
          // Ensure myQueueSpotIndex is reset on exit. BaseQueueLogic.OnExit might handle this.
          // If not, add: myQueueSpotIndex = -1;

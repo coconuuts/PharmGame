@@ -5,6 +5,7 @@ using System.Collections.Generic; // Needed for List
 using Systems.Inventory; // Needed for ItemDetails (for item list)
 using System.Linq; // Needed for Sum
 using Systems.Economy;
+using Game.Events;
 
 public class CashRegisterInteractable : MonoBehaviour, IInteractable
 {
@@ -168,12 +169,13 @@ public InteractionResponse Interact()
 
     // --- Inform the customer that the transaction is starting ---
     currentWaitingCustomer.StartTransaction(/* itemsToScan */); // Pass the list if needed by CustomerAI
-    // ---------------------------------------------------------
 
-    // --- Create and return the response ---
-    // Pass the actual list of items to the response, not just the count.
-    // MODIFIED: Include the MinigameType and remove the minigameUIRoot parameter.
-    StartMinigameResponse response = new StartMinigameResponse(
+    EventManager.Publish(new NpcStartedTransactionEvent(currentWaitingCustomer.gameObject));
+
+        // --- Create and return the response ---
+        // Pass the actual list of items to the response, not just the count.
+        // MODIFIED: Include the MinigameType and remove the minigameUIRoot parameter.
+        StartMinigameResponse response = new StartMinigameResponse(
         Systems.Minigame.MinigameType.BarcodeScanning, // Specify the type of minigame
         minigameCameraViewPoint,
         cameraMoveDuration,
@@ -241,17 +243,17 @@ public InteractionResponse Interact()
         Debug.Log($"CashRegisterInteractable ({gameObject.name}): Customer departed from the register.");
 
         // --- Deactivate the interaction trigger collider ---
-         if (interactionTriggerCollider != null)
-         {
-             interactionTriggerCollider.enabled = false;
-              Debug.Log($"CashRegisterInteractable ({gameObject.name}): Interaction trigger disabled.", this);
-         }
+        if (interactionTriggerCollider != null)
+        {
+            interactionTriggerCollider.enabled = false;
+            Debug.Log($"CashRegisterInteractable ({gameObject.name}): Interaction trigger disabled.", this);
+        }
         // -------------------------------------------------
 
         currentWaitingCustomer = null; // Clear the reference
         isInteracting = false; // Ensure interaction state is reset
 
-        // TODO: Handle next customer in queue if queueing is implemented
+        EventManager.Publish(new CashRegisterFreeEvent());
     }
 
     /// <summary>
@@ -284,15 +286,19 @@ public InteractionResponse Interact()
         {
             Debug.LogWarning($"CashRegisterInteractable ({gameObject.name}): Minigame completed, but no currentWaitingCustomer reference!", this);
         }
-        // -----------------------------------------------------------------
+        
+        if (currentWaitingCustomer != null) // Only publish if we had a valid customer reference
+        {
+             EventManager.Publish(new NpcTransactionCompletedEvent(currentWaitingCustomer.gameObject, totalPaymentAmount)); // Use the event struct
+        }
 
         // --- Customer Departure is handled now that transaction is complete ---
         // The customer will call CustomerDeparted() when they reach their exit point
         // or potentially when they transition out of WaitingAtRegister/TransactionActive if desired.
         // For now, CustomerAI calls CustomerDeparted() implicitly via its state flow after OnTransactionCompleted.
 
-         // Ensure the interaction state is reset
-         isInteracting = false; // Already set in ResetInteraction, but defensive
+        // Ensure the interaction state is reset
+        isInteracting = false; // Already set in ResetInteraction, but defensive
     }
 
     // TODO: Implement failure conditions if the minigame is lost
