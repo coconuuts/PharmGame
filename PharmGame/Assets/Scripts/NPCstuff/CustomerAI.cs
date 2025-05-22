@@ -8,6 +8,7 @@ using Systems.Inventory; // Required for Inventory and ItemDetails
 using Random = UnityEngine.Random; // Specify UnityEngine.Random
 using System.Linq; // Required for LINQ methods like Where, ToList, Sum
 using Game.Events;
+using Game.NPC.Handlers;
 
 namespace Game.NPC // Your NPC namespace
 {
@@ -35,10 +36,13 @@ namespace Game.NPC // Your NPC namespace
     /// </summary>
     [RequireComponent(typeof(NavMeshAgent))] // Ensure the GameObject has a NavMeshAgent
     [RequireComponent(typeof(CustomerShopper))] // Ensure the GameObject has a CustomerShopper
+    [RequireComponent(typeof(NpcMovementHandler))] // Require the new handlers
+    [RequireComponent(typeof(NpcAnimationHandler))]
     public class CustomerAI : MonoBehaviour
     {
         // --- Components ---
-        public NavMeshAgent NavMeshAgent { get; private set; }
+        public NpcMovementHandler MovementHandler { get; private set; } // New handler reference
+        public NpcAnimationHandler AnimationHandler { get; private set; } // New handler referenc
         public CustomerShopper Shopper { get; private set; }
 
 
@@ -66,22 +70,17 @@ namespace Game.NPC // Your NPC namespace
         // currentTargetLocation is still needed by CustomerAI to provide context to state logics
         // Allow state logics to set this internally
         public BrowseLocation? CurrentTargetLocation { get; internal set; } = null; // <-- Changed private set to internal set
-
-        private const float DestinationReachedThreshold = 0.5f;
-        [SerializeField] public float rotationSpeed = 5f; // <-- Ensure this is public or internal if used in base class
-
         public int AssignedQueueSpotIndex { get; internal set; } = -1;
-        
-
-        // --- Shopping Data (MOVED to CustomerShopper, CustomerAI accesses via Shopper) ---
-        // Removed itemsToBuy list and min/max item/quantity settings from here.
-        // ---------------------------------------------------------------------------------
-
 
         private void Awake()
         {
-            NavMeshAgent = GetComponent<NavMeshAgent>();
-            if (NavMeshAgent == null) { Debug.LogError($"CustomerAI ({gameObject.name}): NavMeshAgent component not found!", this); enabled = false; return; }
+            // --- Get Handler Components ---
+            MovementHandler = GetComponent<NpcMovementHandler>();
+            if (MovementHandler == null) { Debug.LogError($"CustomerAI ({gameObject.name}): NpcMovementHandler component not found!", this); enabled = false; return; }
+
+            AnimationHandler = GetComponent<NpcAnimationHandler>();
+            if (AnimationHandler == null) { Debug.LogError($"CustomerAI ({gameObject.name}): NpcAnimationHandler component not found!", this); enabled = false; return; }
+            // ------------------------------
 
             Shopper = GetComponent<CustomerShopper>();
             if (Shopper == null) { Debug.LogError($"CustomerAI ({gameObject.name}): CustomerShopper component not found!", this); enabled = false; return; }
@@ -112,7 +111,7 @@ namespace Game.NPC // Your NPC namespace
             // ---------------------------------------------------
 
             // Ensure agent is disabled initially, will be enabled by Initialize/SetState
-            if (NavMeshAgent != null) NavMeshAgent.enabled = false;
+            if (MovementHandler != null && MovementHandler.Agent != null) MovementHandler.Agent.enabled = false;
 
             Debug.Log($"CustomerAI ({gameObject.name}): Awake completed.");
         }
@@ -132,10 +131,10 @@ namespace Game.NPC // Your NPC namespace
 
         private void OnDisable() // Unsubscribe from events when the GameObject is disabled
         {
-             // Unsubscribe from events
+            // Unsubscribe from events
             EventManager.Unsubscribe<NpcImpatientEvent>(HandleNpcImpatient);
             EventManager.Unsubscribe<ReleaseNpcFromSecondaryQueueEvent>(HandleReleaseFromSecondaryQueue);
-             // Unsubscribe from future interruption events
+            // Unsubscribe from future interruption events
             // EventManager.Unsubscribe<NpcAttackedEvent>(HandleNpcAttacked);
             // EventManager.Unsubscribe<NpcInteractedEvent>(HandleNpcInteracted);
 
@@ -146,23 +145,23 @@ namespace Game.NPC // Your NPC namespace
 
         private void HandleNpcImpatient(NpcImpatientEvent eventArgs)
         {
-             // Check if this event is for THIS NPC
-             if (eventArgs.NpcObject == this.gameObject)
-             {
-                  Debug.Log($"{gameObject.name}: Handling NpcImpatientEvent. Setting state to Exiting.");
-                  SetState(CustomerState.Exiting); // Transition to the Exiting state
-             }
+            // Check if this event is for THIS NPC
+            if (eventArgs.NpcObject == this.gameObject)
+            {
+                Debug.Log($"{gameObject.name}: Handling NpcImpatientEvent. Setting state to Exiting.");
+                SetState(CustomerState.Exiting); // Transition to the Exiting state
+            }
         }
 
         private void HandleReleaseFromSecondaryQueue(ReleaseNpcFromSecondaryQueueEvent eventArgs)
         {
-             // Check if this event is for THIS NPC
-             if (eventArgs.NpcObject == this.gameObject)
-             {
-                  Debug.Log($"{gameObject.name}: Handling ReleaseNpcFromSecondaryQueueEvent. Setting state to Entering.");
-                  // Transition to the Entering state to enter the store
-                  SetState(CustomerState.Entering);
-             }
+            // Check if this event is for THIS NPC
+            if (eventArgs.NpcObject == this.gameObject)
+            {
+                Debug.Log($"{gameObject.name}: Handling ReleaseNpcFromSecondaryQueueEvent. Setting state to Entering.");
+                // Transition to the Entering state to enter the store
+                SetState(CustomerState.Entering);
+            }
         }
 
         // --- Future Interruption Handlers (Placeholder) ---
@@ -200,28 +199,28 @@ namespace Game.NPC // Your NPC namespace
             this.Manager = manager;
             ResetNPC(); // Clean up previous state (NavMeshAgent is disabled here)
 
-            if (NavMeshAgent != null)
+            // Access MovementHandler for Warp/movement setup
+            if (MovementHandler != null && MovementHandler.Agent != null)
             {
-                NavMeshAgent.enabled = true; // Enable agent for warping/movement
+                // MovementHandler.Agent.enabled = true; // Enable agent for warping/movement - Handled by Warp now
 
-                if (NavMeshAgent.Warp(startPosition)) // Warp places the agent on the NavMesh
+                if (MovementHandler.Warp(startPosition)) // Use handler's Warp method
                 {
-                    Debug.Log($"CustomerAI ({gameObject.name}): Warped to {startPosition}.");
-                    NavMeshAgent.ResetPath(); // <-- MOVED HERE
-                    NavMeshAgent.isStopped = true; // <-- MOVED HERE
+                    Debug.Log($"CustomerAI ({gameObject.name}): Warped to {startPosition} using MovementHandler.");
+                    // NavMeshAgent ResetPath and isStopped are handled by Warp now
                 }
                 else
                 {
-                    Debug.LogWarning($"CustomerAI ({gameObject.name}): Failed to Warp to {startPosition}. Is the position on the NavMesh?", this);
+                    Debug.LogWarning($"CustomerAI ({gameObject.name}): Failed to Warp to {startPosition} using MovementHandler. Is the position on the NavMesh?", this);
                     // If Warp fails, the agent is likely not on the NavMesh, disable it again
-                    NavMeshAgent.enabled = false; // Added defensive disable
+                    // MovementHandler.Agent.enabled = false; // Added defensive disable - Handled by Warp now if success is false
                     SetState(CustomerState.ReturningToPool); // Cannot initialize properly, return
                     return;
                 }
             }
             else
             {
-                Debug.LogError($"CustomerAI ({gameObject.name}): NavMeshAgent is null during Initialize!", this);
+                Debug.LogError($"CustomerAI ({gameObject.name}): MovementHandler or Agent is null during Initialize!", this);
                 SetState(CustomerState.ReturningToPool);
                 return;
             }
@@ -237,20 +236,15 @@ namespace Game.NPC // Your NPC namespace
         /// </summary>
         private void ResetNPC()
         {
-            // Clean up other AI specific references/data not managed by state logic
+            // Clean up AI specific references/data not managed by state logic
             CurrentTargetLocation = null;
             CachedCashRegister = null;
+            AssignedQueueSpotIndex = -1; // Reset queue spot index
 
             // Reset the shopper component
             Shopper?.Reset();
 
-            // Ensure NavMeshAgent is reset and disabled (SetState(Inactive) handles disabling)
-            if (NavMeshAgent != null)
-            {
-                NavMeshAgent.enabled = false;
-            }
-
-             Debug.Log($"CustomerAI ({gameObject.name}): NPC state reset.");
+             Debug.Log($"CustomerAI ({gameObject.name}): NPC state reset (AI data and Shopper). NavMeshAgent cleanup is handled by MovementHandler.");
         }
 
         /// <summary>
@@ -263,9 +257,9 @@ namespace Game.NPC // Your NPC namespace
             // Prevent transitioning to the same state unnecessarily
             if (currentState == newState && currentStateLogic != null)
             {
-                 // Optional: Log if trying to re-enter same state
-                 // Debug.Log($"CustomerAI ({gameObject.name}): Already in state {newState}. Ignoring SetState call.");
-                 return;
+                // Optional: Log if trying to re-enter same state
+                // Debug.Log($"CustomerAI ({gameObject.name}): Already in state {newState}. Ignoring SetState call.");
+                return;
             }
 
             Debug.Log($"CustomerAI ({gameObject.name}): <color=yellow>Transitioning from {currentState} to {newState}</color>", this); // Highlight state changes
@@ -352,8 +346,12 @@ namespace Game.NPC // Your NPC namespace
             // Delegate the update logic to the currently active state logic component
             currentStateLogic?.OnUpdate();
 
-            // Keep the HasReachedDestination() method in CustomerAI for now,
-            // as state logic components will call it via the customerAI reference.
+            if (MovementHandler != null && MovementHandler.Agent != null && AnimationHandler != null)
+            {
+                 // Use world speed for animation blending
+                 float speed = MovementHandler.Agent.velocity.magnitude;
+                 AnimationHandler.SetSpeed(speed); // Call handler's method
+            }
         }
 
         /// <summary>
@@ -363,30 +361,12 @@ namespace Game.NPC // Your NPC namespace
         /// </summary>
         public bool HasReachedDestination() // Made public for state logic to access
         {
-            if (NavMeshAgent == null || !NavMeshAgent.enabled || NavMeshAgent.pathPending) // Use public property NavMeshAgent
+            // Delegate to the MovementHandler
+            if (MovementHandler != null)
             {
-                return false;
+                 return MovementHandler.IsAtDestination();
             }
-
-            bool isCloseEnough = NavMeshAgent.remainingDistance <= NavMeshAgent.stoppingDistance + DestinationReachedThreshold; // Use public property NavMeshAgent
-
-            // Check if the agent has a path and is close enough
-            if (NavMeshAgent.hasPath && isCloseEnough) // Use public property NavMeshAgent
-            {
-                 // Add velocity check to ensure it's stopped or almost stopped
-                 if (NavMeshAgent.velocity.sqrMagnitude < 0.1f * 0.1f) // Use public property NavMeshAgent
-                 {
-                      return true;
-                 }
-            }
-            // Handle cases where the destination is effectively the current position (e.g., Warp target)
-            else if (!NavMeshAgent.hasPath && NavMeshAgent.velocity.sqrMagnitude == 0f) // Use public property NavMeshAgent
-            {
-                 return true;
-            }
-
-
-            return false;
+            return false; // Cannot check if handler is null
         }
 
         /// <summary>
@@ -435,16 +415,16 @@ namespace Game.NPC // Your NPC namespace
         /// <returns>A list of (ItemDetails, quantity) pairs.</returns>
         public List<(ItemDetails details, int quantity)> GetItemsToBuy()
         {
-             // Delegate the call to the Shopper component
-             if (Shopper != null)
-             {
-                  return Shopper.GetItemsToBuy();
-             }
-             else
-             {
-                  Debug.LogError($"CustomerAI ({gameObject.name}): GetItemsToBuy called but Shopper component is null!", this);
-                  return new List<(ItemDetails details, int quantity)>(); // Return empty list to avoid null reference
-             }
+            // Delegate the call to the Shopper component
+            if (Shopper != null)
+            {
+                return Shopper.GetItemsToBuy();
+            }
+            else
+            {
+                Debug.LogError($"CustomerAI ({gameObject.name}): GetItemsToBuy called but Shopper component is null!", this);
+                return new List<(ItemDetails details, int quantity)>(); // Return empty list to avoid null reference
+            }
         }
     }
 }

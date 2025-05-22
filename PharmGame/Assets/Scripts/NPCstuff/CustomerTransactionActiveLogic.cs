@@ -8,14 +8,18 @@ public class CustomerTransactionActiveLogic : BaseCustomerStateLogic
 
     public override void OnEnter()
     {
-        base.OnEnter();
+        base.OnEnter(); // Call base OnEnter (enables Agent)
         Debug.Log($"{customerAI.gameObject.name}: Entering TransactionActive state. Waiting for player to finish transaction.");
-         // Optional: Ensure agent is stopped
-         if (customerAI.NavMeshAgent != null)
+
+         // --- Use MovementHandler to stop movement ---
+         // Check for the handler instead of the NavMeshAgent directly
+         if (customerAI.MovementHandler != null)
          {
-              customerAI.NavMeshAgent.isStopped = true;
-              customerAI.NavMeshAgent.ResetPath(); // Clear path if any
+              customerAI.MovementHandler.StopMoving(); // StopMoving handles isStopped and ResetPath
+              // REMOVED: customerAI.NavMeshAgent.isStopped = true;
+              // REMOVED: customerAI.NavMeshAgent.ResetPath();
          }
+         // -------------------------------------------
     }
 
     // OnUpdate can be empty

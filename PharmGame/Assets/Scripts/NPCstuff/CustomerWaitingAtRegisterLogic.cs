@@ -1,6 +1,7 @@
 using UnityEngine;
 using Game.NPC;
 using System.Collections;
+using CustomerManagement;
 using Game.Events;
 
 public class CustomerWaitingAtRegisterLogic : BaseCustomerStateLogic
@@ -20,13 +21,9 @@ public class CustomerWaitingAtRegisterLogic : BaseCustomerStateLogic
         Debug.Log($"{customerAI.gameObject.name}: Starting impatience timer for {impatientDuration:F2} seconds.", this); // Log timer start
         // ------------------------------
 
-
-        // Ensure NavMeshAgent is stopped upon reaching the register
-        if (customerAI.NavMeshAgent != null && customerAI.NavMeshAgent.enabled)
-        {
-            customerAI.NavMeshAgent.isStopped = true;
-            customerAI.NavMeshAgent.ResetPath();
-        }
+        // --- Use MovementHandler to stop movement ---
+        customerAI.MovementHandler?.StopMoving(); // Use null conditional for safety
+        // --------------------------------------------
 
         // --- Find and cache the CashRegisterInteractable (if not already) and signal arrival ---
         // This logic was previously in CustomerAI.SetState(CustomerState.WaitingAtRegister)
@@ -82,27 +79,27 @@ public class CustomerWaitingAtRegisterLogic : BaseCustomerStateLogic
     {
         Debug.Log($"{customerAI.gameObject.name}: WaitingAtRegisterRoutine started in CustomerWaitingAtRegisterLogic.");
 
-        // --- Rotate towards the target point's (register point) facing direction ---
-        // Access the target rotation via customerAI.CurrentTargetLocation
-        if (customerAI.CurrentTargetLocation.HasValue && customerAI.CurrentTargetLocation.Value.browsePoint != null)
+        // --- Use MovementHandler to Rotate towards the target point's facing direction ---
+        if (customerAI.MovementHandler != null && customerAI.CurrentTargetLocation.HasValue && customerAI.CurrentTargetLocation.Value.browsePoint != null)
         {
-             // Start the rotation coroutine managed by CustomerAI
-             yield return customerAI.StartManagedCoroutine(RotateTowardsTargetRoutine(customerAI.CurrentTargetLocation.Value.browsePoint.rotation));
+             // Start the rotation coroutine managed by the MovementHandler
+             customerAI.MovementHandler.StartRotatingTowards(customerAI.CurrentTargetLocation.Value.browsePoint.rotation);
+             // Wait for the rotation coroutine to complete (as noted before, a better way needed for SO)
+             yield return new WaitForSeconds(0.5f); // Small wait to allow rotation to begin
+             // In a real scenario, wait until rotation is *finished*.
         }
-        else // Fallback if target is somehow null
+        else
         {
-             Debug.LogWarning($"CustomerAI ({customerAI.gameObject.name}): No valid target location stored for WaitingAtRegister rotation!", this);
-             // What should happen if rotation target is missing? Maybe just continue waiting.
+             Debug.LogWarning($"CustomerAI ({customerAI.gameObject.name}): No valid target location stored for WaitingAtRegister rotation or MovementHandler missing!", this);
         }
         // ---------------------------------------------------------
 
         Debug.Log($"{customerAI.gameObject.name}: Waiting at register for player interaction.");
 
         // Stay in this state until the state changes externally
-        // The state transition is handled by external calls like StartTransaction() or OnTransactionCompleted()
-        while (customerAI.CurrentState == CustomerState.WaitingAtRegister) // Check the state on the main AI script
+        while (customerAI.CurrentState == CustomerState.WaitingAtRegister)
         {
-            yield return null; // Wait for the next frame
+            yield return null;
         }
 
         Debug.Log($"{customerAI.gameObject.name}: WaitingAtRegisterRoutine finished.");

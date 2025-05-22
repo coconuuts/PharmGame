@@ -9,17 +9,24 @@ public class CustomerReturningLogic : BaseCustomerStateLogic
 
     public override void OnEnter()
     {
-        base.OnEnter();
+        base.OnEnter(); // Call base OnEnter (enables Agent initially, but we immediately disable it here)
         Debug.Log($"{customerAI.gameObject.name}: Entering ReturningToPool state. Signaling manager.");
 
-        // Disable NavMeshAgent
-        if (customerAI.NavMeshAgent != null && customerAI.NavMeshAgent.enabled)
+        // --- Use MovementHandler.Agent to disable NavMeshAgent ---
+        // Check for the handler and agent instead of the NavMeshAgent property directly
+        if (customerAI.MovementHandler?.Agent != null && customerAI.MovementHandler.Agent.enabled)
         {
-            customerAI.NavMeshAgent.ResetPath(); // Clear any current path
-            customerAI.NavMeshAgent.isStopped = true; // Stop movement
-            customerAI.NavMeshAgent.enabled = false; // Disable the agent
+             // Agent should be stopped and path cleared by BaseCustomerStateLogic.OnExit *before* this state's OnEnter
+             // However, as this state's OnEnter happens *instead* of BaseCustomerStateLogic.OnExit
+             // when SetState(ReturningToPool) is called directly from, e.g., Initialization failure,
+             // it's safer to explicitly stop and reset here before disabling.
+             customerAI.MovementHandler.Agent.ResetPath(); // Clear any current path
+             customerAI.MovementHandler.Agent.isStopped = true; // Stop movement
+             customerAI.MovementHandler.Agent.enabled = false; // Disable the agent
         }
+        // ---------------------------------------------------------
 
+        // This event publishing remains correct from Substep 3
         EventManager.Publish(new NpcReturningToPoolEvent(customerAI.gameObject));
 
         // Note: The ReturnCustomerToPool method likely deactivates the GameObject,

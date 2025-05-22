@@ -4,7 +4,8 @@ using UnityEngine;
 using Game.NPC; // Needed for CustomerState and QueueType enum
 using CustomerManagement; // Needed for CustomerManager and BrowseLocation
 using UnityEngine.AI; // Needed for NavMeshAgent
-// Make sure QueueType.cs is in the Game.NPC namespace or adjust the using directive
+using Game.NPC.Handlers;
+using Game.Events;
 
 namespace Game.NPC // Your NPC namespace
 {
@@ -28,13 +29,6 @@ namespace Game.NPC // Your NPC namespace
         public override void OnEnter()
         {
             base.OnEnter(); // Call BaseCustomerStateLogic OnEnter
-            // Derived classes might add specific logging here.
-            // The destination is set by AssignQueueSpot BEFORE entering the state.
-            // Just ensure the agent is enabled/moving if needed.
-             if (customerAI.NavMeshAgent != null && customerAI.NavMeshAgent.enabled && customerAI.NavMeshAgent.isStopped)
-             {
-                  customerAI.NavMeshAgent.isStopped = false; // Ensure agent moves if not already
-             }
         }
 
         /// <summary>
@@ -57,10 +51,10 @@ namespace Game.NPC // Your NPC namespace
              Debug.Log($"{customerAI.gameObject.name}: Assigned to {QueueType} queue spot {myQueueSpotIndex}. Setting destination to {assignedSpotTransform.position}.");
 
              // Set the destination on the AI's NavMeshAgent
-             if (customerAI.NavMeshAgent != null && customerAI.NavMeshAgent.enabled)
+             if (customerAI.MovementHandler != null)
              {
-                  customerAI.NavMeshAgent.SetDestination(assignedSpotTransform.position);
-                  // NavMeshAgent.isStopped = false; // Ensured in OnEnter
+                  customerAI.MovementHandler.SetDestination(assignedSpotTransform.position);
+                  // SetDestination ensures agent is not stopped
              }
              else
              {
@@ -90,85 +84,68 @@ namespace Game.NPC // Your NPC namespace
             customerAI.AssignedQueueSpotIndex = newSpotIndex; // Also update on main AI
 
             // Set the destination to the new spot
-            if (customerAI.NavMeshAgent != null && customerAI.NavMeshAgent.enabled)
+            if (customerAI.MovementHandler != null)
             {
-                customerAI.NavMeshAgent.SetDestination(nextSpotTransform.position);
-                customerAI.NavMeshAgent.isStopped = false; // Ensure agent starts moving
-                 Debug.Log($"{customerAI.gameObject.name}: Set new {QueueType} queue destination to {nextSpotTransform.position}.");
+                customerAI.MovementHandler.SetDestination(nextSpotTransform.position);
+                 Debug.Log($"{customerAI.gameObject.name}: Set new {QueueType} queue destination to {nextSpotTransform.position} via MovementHandler.");
             }
             else
             {
                  Debug.LogError($"CustomerAI ({customerAI.gameObject.name}): NavMeshAgent not ready to move to next {QueueType} queue spot!", this);
                  customerAI.SetState(CustomerState.Exiting); // Example fallback
             }
-            // Note: The state should remain CustomerState.Queue/SecondaryQueue during this movement.
-            // OnUpdate will handle stopping once the new spot is reached.
         }
 
 
         public override void OnUpdate()
         {
-            base.OnUpdate(); // Call BaseCustomerStateLogic OnUpdate (currently empty)
+            base.OnUpdate(); // Call BaseCustomerStateLogic OnUpdate (empty)
 
-            // Check if the NavMeshAgent has reached the current assigned queue spot
-            if (customerAI.NavMeshAgent != null && customerAI.NavMeshAgent.enabled && !customerAI.NavMeshAgent.pathPending && customerAI.HasReachedDestination())
+            // --- Use MovementHandler to check if destination is reached ---
+            if (customerAI.MovementHandler != null && customerAI.MovementHandler.Agent != null && customerAI.MovementHandler.IsAtDestination())
             {
                  // Reached the current assigned spot. Stop and wait.
-                 if (!customerAI.NavMeshAgent.isStopped) // Only run this logic once upon arrival
+                 // Check if the agent is currently moving (based on velocity) before stopping/rotating
+                 // to avoid re-running the arrival logic every frame while stopped.
+                 if (customerAI.MovementHandler.Agent.velocity.sqrMagnitude > 0.01f) // Simple velocity check
                  {
-                    Debug.Log($"{customerAI.gameObject.name}: Reached {QueueType} queue spot {myQueueSpotIndex}. Stopping.");
-                    customerAI.NavMeshAgent.isStopped = true; // Stop movement
+                    Debug.Log($"{customerAI.gameObject.name}: Reached {QueueType} queue spot {myQueueSpotIndex}. Stopping movement and starting rotation.");
+                    // --- Use MovementHandler to stop movement ---
+                    customerAI.MovementHandler.StopMoving();
+                    // --------------------------------------------
 
-                    // --- Start Rotation Logic ---
-                    Quaternion targetRotation = customerAI.transform.rotation; // Default
-
+                    // --- Use MovementHandler to Start Rotation Logic ---
                     // Get the Transform of the currently assigned queue spot
                     Transform currentQueueSpotTransform = null;
                     if (QueueType == QueueType.Main)
                     {
                         currentQueueSpotTransform = customerAI.Manager?.GetQueuePoint(myQueueSpotIndex);
-                        Debug.Log($"CustomerAI ({customerAI.gameObject.name}): Trying to get Main Queue Point at index {myQueueSpotIndex}. Retrieved Transform: {currentQueueSpotTransform?.gameObject.name ?? "NULL"}", this); // Add log
                     }
                     else if (QueueType == QueueType.Secondary)
                     {
-                        currentQueueSpotTransform = customerAI.Manager?.GetSecondaryQueuePoint(myQueueSpotIndex); // Use the getter for secondary queue points
-                        Debug.Log($"CustomerAI ({customerAI.gameObject.name}): Trying to get Secondary Queue Point at index {myQueueSpotIndex}. Retrieved Transform: {currentQueueSpotTransform?.gameObject.name ?? "NULL"}", this); // Add log
-                    }
-                    else
-                    {
-                        Debug.LogError($"CustomerAI ({customerAI.gameObject.name}): Unknown QueueType {QueueType} for simple rotation logic!", this);
+                        currentQueueSpotTransform = customerAI.Manager?.GetSecondaryQueuePoint(myQueueSpotIndex);
                     }
 
                     if (currentQueueSpotTransform != null)
                     {
-                        // Log the actual rotation of the retrieved Transform
-                        Debug.Log($"CustomerAI ({customerAI.gameObject.name}): Retrieved Queue Point Transform '{currentQueueSpotTransform.gameObject.name}' (Index {myQueueSpotIndex} in {QueueType} queue) has CURRENT Rotation: {currentQueueSpotTransform.rotation.eulerAngles}", this); // Add log
-
                         // Set the target rotation directly to the rotation of the queue point Transform
-                        targetRotation = currentQueueSpotTransform.rotation; // <-- This should copy the rotation
-
-                        Debug.Log($"CustomerAI ({customerAI.gameObject.name}): Setting Target Rotation to: {targetRotation.eulerAngles}", this); // Add log
+                        Quaternion targetRotation = currentQueueSpotTransform.rotation;
+                        Debug.Log($"CustomerAI ({customerAI.gameObject.name}): Starting rotation towards queue spot rotation {targetRotation.eulerAngles} via MovementHandler.");
+                       // Start the rotation coroutine managed by the MovementHandler
+                       customerAI.MovementHandler.StartRotatingTowards(targetRotation);
                     }
                     else
                     {
-                        Debug.LogWarning($"CustomerAI ({customerAI.gameObject.name}): Could not get {QueueType} queue spot Transform {myQueueSpotIndex} for simple rotation!", this);
+                        Debug.LogWarning($"CustomerAI ({customerAI.gameObject.name}): Could not get {QueueType} queue spot Transform {myQueueSpotIndex} for rotation!", this);
                     }
-
-                       // Start the rotation coroutine managed by CustomerAI (RotateTowardsTargetRoutine is in BaseCustomerStateLogic)
-                       customerAI.StartManagedCoroutine(RotateTowardsTargetRoutine(targetRotation));
                        // --- End Rotation Logic ---
-
 
                        // --- Signal Reached End of *This* Queue Spot ---
                        OnReachedEndOfQueue(); // <-- Call abstract method for derived logic
                        // ----------------------------------------------
                  }
-
-                 // Logic to check if the spot ahead is free or if signalled to go to register/enter store
-                 // This logic is triggered by CustomerManager calling MoveToNextQueueSpot or GoToRegisterFromQueue / ReleaseFromSecondaryQueue
-                 // So no need to constantly check here.
+                 // Else: Agent is already stopped at the destination, do nothing in Update.
             }
-             // Consider adding else logic if not at destination (e.g. if agent gets stuck?)
         }
 
 

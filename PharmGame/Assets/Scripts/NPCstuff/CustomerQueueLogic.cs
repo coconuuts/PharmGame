@@ -22,41 +22,38 @@ public class CustomerQueueLogic : BaseQueueLogic
 
     public override void OnEnter()
     {
-        base.OnEnter(); // Call the base BaseQueueLogic OnEnter
+        base.OnEnter(); // Call the base BaseQueueLogic OnEnter (enables Agent via MovementHandler)
         // --- Impatience Timer Start ---
-        impatientDuration = Random.Range(10f, 15f); // Set a random duration
-        impatientTimer = 0f; // Reset the timer
-        Debug.Log($"{customerAI.gameObject.name}: Starting impatience timer for {impatientDuration:F2} seconds.", this); // Log timer start
+        impatientDuration = Random.Range(10f, 15f);
+        impatientTimer = 0f;
+        Debug.Log($"{customerAI.gameObject.name}: Starting impatience timer for {impatientDuration:F2} seconds.", this);
         // ------------------------------
 
-
         // --- Call the AssignQueueSpot logic to set destination ---
-        // The assigned spot and index were stored on the AI just before the state transition.
-        // Call the method from BaseQueueLogic to set the destination and internal index.
         if (customerAI.CurrentTargetLocation.HasValue && customerAI.CurrentTargetLocation.Value.browsePoint != null && customerAI.AssignedQueueSpotIndex != -1)
         {
             Transform assignedSpotTransform = customerAI.CurrentTargetLocation.Value.browsePoint;
             int assignedSpotIndex = customerAI.AssignedQueueSpotIndex;
 
-            // Call the AssignQueueSpot logic inherited from BaseQueueLogic
-            // This method handles setting myQueueSpotIndex and NavMeshAgent destination
-            AssignQueueSpot(assignedSpotTransform, assignedSpotIndex); // <-- ENSURE THIS CALL IS PRESENT AND UNCOMMENTED
+            AssignQueueSpot(assignedSpotTransform, assignedSpotIndex); // This method uses customerAI.MovementHandler internally
         }
         else
         {
             Debug.LogError($"CustomerAI ({customerAI.gameObject.name}): Entering Main Queue state without a valid assigned queue spot! Exiting.", this);
-            customerAI.SetState(CustomerState.Exiting); // Cannot queue without a spot
+            customerAI.SetState(CustomerState.Exiting);
         }
         // ----------------------------------------------------------
 
-        // Ensure agent is enabled (AssignQueueSpot also handles isStopped=false)
-        if (customerAI.NavMeshAgent != null && !customerAI.NavMeshAgent.enabled)
-        {
-            customerAI.NavMeshAgent.enabled = true;
-        }
+        // --- REMOVED: Direct NavMeshAgent check/enable logic ---
+        // BaseCustomerStateLogic.OnEnter now ensures the Agent is enabled via the MovementHandler
+        // if (customerAI.NavMeshAgent != null && !customerAI.NavMeshAgent.enabled)
+        // {
+        //     customerAI.NavMeshAgent.enabled = true;
+        // }
+        // -------------------------------------------------------
 
         // TODO: Consider starting a coroutine here for initial rotation towards the next spot or register (Optional)
-        // The rotation logic on arrival is already in BaseQueueLogic.OnUpdate triggered by HasReachedDestination.
+        // The rotation logic on arrival is already in BaseQueueLogic.OnUpdate triggered by IsAtDestination.
     }
     // OnUpdate logic is now handled by BaseQueueLogic.OnUpdate
     // BaseQueueLogic.OnUpdate checks HasReachedDestination, stops, rotates, and calls OnReachedEndOfQueue

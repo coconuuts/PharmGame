@@ -3,6 +3,7 @@ using System.Collections; // For IEnumerator
 using UnityEngine;
 using Game.NPC;
 using UnityEngine.AI;
+using Game.NPC.Handlers;
 
 /// <summary>
 /// Base class for specific Customer AI state logic components.
@@ -30,6 +31,20 @@ public abstract class BaseCustomerStateLogic : MonoBehaviour // Inherit from Mon
     public virtual void OnEnter()
     {
         // Debug.Log($"State Logic: {GetType().Name} OnEnter.", this); // Optional logging
+        // Ensure the NavMeshAgent is enabled when entering any state that might move or stand on NavMesh
+        if (customerAI?.MovementHandler?.Agent != null)
+        {
+             customerAI.MovementHandler.Agent.enabled = true;
+        }
+        else if (customerAI != null)
+        {
+             Debug.LogError($"CustomerAI ({customerAI.gameObject.name}): MovementHandler or Agent is null during OnEnter for state {HandledState}!", this);
+             // Consider forcing a transition to Exiting/ReturningToPool if movement is essential
+             if (HandledState != CustomerState.Exiting && HandledState != CustomerState.ReturningToPool)
+             {
+                  customerAI.SetState(CustomerState.Exiting);
+             }
+        }
     }
 
     /// <summary>
@@ -55,6 +70,9 @@ public abstract class BaseCustomerStateLogic : MonoBehaviour // Inherit from Mon
     public virtual void OnExit()
     {
         // Debug.Log($"State Logic: {GetType().Name} OnExit.", this); // Optional logging
+        // Stop any movement or rotation when exiting a state
+        customerAI?.MovementHandler?.StopMoving();
+        customerAI?.MovementHandler?.StopRotation();
     }
 
     /// <summary>
@@ -62,47 +80,4 @@ public abstract class BaseCustomerStateLogic : MonoBehaviour // Inherit from Mon
     /// Must be implemented by derived classes.
     /// </summary>
     public abstract CustomerState HandledState { get; } // Abstract property
-
-        /// <summary>
-    /// Helper coroutine for derived state logics to smoothly rotate the customer.
-    /// Should be started using customerAI.StartManagedCoroutine().
-    /// </summary>
-    protected IEnumerator RotateTowardsTargetRoutine(Quaternion targetRotation)
-    {
-         Debug.Log($"{customerAI.gameObject.name}: Starting rotation towards {targetRotation.eulerAngles}.");
-         // Access NavMeshAgent via the customerAI reference
-         if (customerAI.NavMeshAgent != null && customerAI.NavMeshAgent.isActiveAndEnabled)
-         {
-              customerAI.NavMeshAgent.isStopped = true; // Stop movement while rotating
-              customerAI.NavMeshAgent.ResetPath(); // Clear path
-         }
-
-         Quaternion startRotation = customerAI.transform.rotation; // Access transform via customerAI
-         float angleDifference = Quaternion.Angle(startRotation, targetRotation);
-         if (angleDifference < 0.1f)
-         {
-              Debug.Log($"{customerAI.gameObject.name}: Already facing target direction.");
-              yield break; // Already rotated, exit immediately
-         }
-
-         // Using rotationSpeed from CustomerAI (you might move this config value later)
-         // Assume rotationSpeed is accessible via customerAI or a common config
-         float rotationSpeed = customerAI.rotationSpeed; // Access the speed from AI
-
-         float duration = angleDifference / (rotationSpeed * 100f); // Calculate duration based on speed
-         if (duration < 0.2f) duration = 0.2f; // Minimum duration
-
-         float timeElapsed = 0f;
-
-         while (timeElapsed < duration)
-         {
-              // Access transform via the customerAI reference
-              customerAI.transform.rotation = Quaternion.Slerp(startRotation, targetRotation, timeElapsed / duration);
-              timeElapsed += Time.deltaTime;
-              yield return null; // Wait for the next frame
-         }
-
-         customerAI.transform.rotation = targetRotation; // Ensure final rotation is exact
-         Debug.Log($"{customerAI.gameObject.name}: Rotation complete.");
-    }
 }

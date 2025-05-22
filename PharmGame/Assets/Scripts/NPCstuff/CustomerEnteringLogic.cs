@@ -9,10 +9,11 @@ public class CustomerEnteringLogic : BaseCustomerStateLogic
     
     public override void OnEnter()
     {
-        base.OnEnter();
+        base.OnEnter(); // Call base OnEnter (enables Agent)
         Debug.Log($"{customerAI.gameObject.name}: Entering Entering state. Finding first browse location.");
 
-        if (customerAI.NavMeshAgent != null && customerAI.NavMeshAgent.enabled)
+        // Use MovementHandler via customerAI
+        if (customerAI.MovementHandler != null)
         {
             // Get a random browse location from the CustomerManager (accessed via customerAI.Manager)
             BrowseLocation? firstBrowseLocation = customerAI.Manager?.GetRandomBrowseLocation();
@@ -20,8 +21,12 @@ public class CustomerEnteringLogic : BaseCustomerStateLogic
             if (firstBrowseLocation.HasValue && firstBrowseLocation.Value.browsePoint != null)
             {
                 customerAI.CurrentTargetLocation = firstBrowseLocation; // Store target location on AI
-                customerAI.NavMeshAgent.SetDestination(firstBrowseLocation.Value.browsePoint.position);
-                customerAI.NavMeshAgent.isStopped = false; // Start moving
+
+                // --- Use MovementHandler to set destination and start moving ---
+                customerAI.MovementHandler.SetDestination(firstBrowseLocation.Value.browsePoint.position);
+                // MovementHandler.SetDestination also ensures agent is not stopped
+                // ----------------------------------------------------------------
+
                 Debug.Log($"{customerAI.gameObject.name}: Set destination to first browse point: {firstBrowseLocation.Value.browsePoint.position}.");
             }
             else
@@ -30,19 +35,19 @@ public class CustomerEnteringLogic : BaseCustomerStateLogic
                 customerAI.SetState(CustomerState.Exiting); // Exit if no destination
             }
         }
-        else
+        else // Fallback if movement handler is missing (shouldn't happen with RequireComponent)
         {
-             Debug.LogError($"CustomerAI ({customerAI.gameObject.name}): NavMeshAgent not ready for Entering state entry!", this);
+             Debug.LogError($"CustomerAI ({customerAI.gameObject.name}): MovementHandler is null for Entering state entry!", this);
              customerAI.SetState(CustomerState.ReturningToPool);
         }
     }
 
     public override void OnUpdate()
     {
-        base.OnUpdate();
+        base.OnUpdate(); // Calls Base OnUpdate (empty)
 
-        // Check if the NavMeshAgent has reached the destination
-        if (customerAI.NavMeshAgent != null && customerAI.NavMeshAgent.enabled && customerAI.HasReachedDestination()) // Use public property and helper
+        // --- Use MovementHandler to check if destination is reached ---
+        if (customerAI.MovementHandler != null && customerAI.MovementHandler.IsAtDestination())
         {
             Debug.Log($"{customerAI.gameObject.name}: Reached initial browse destination. Transitioning to Browse.");
             customerAI.SetState(CustomerState.Browse); // Transition to the Browse state

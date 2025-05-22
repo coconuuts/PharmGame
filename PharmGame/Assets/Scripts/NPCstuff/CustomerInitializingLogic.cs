@@ -10,15 +10,16 @@ public class CustomerInitializingLogic : BaseCustomerStateLogic
     public override IEnumerator StateCoroutine()
     {
         Debug.Log($"{customerAI.gameObject.name}: InitializeRoutine started in CustomerInitializingLogic.");
-        if (customerAI.NavMeshAgent != null && customerAI.NavMeshAgent.isActiveAndEnabled)
-        {
-            customerAI.NavMeshAgent.isStopped = true; // Ensure agent is stopped
-            customerAI.NavMeshAgent.ResetPath();
-        }
+        // MovementHandler.Agent is enabled in BaseCustomerStateLogic.OnEnter now.
+        // Agent was warped and stopped in CustomerAI.Initialize.
+        // No specific agent calls needed here.
+
         yield return null; // Wait one frame
-        Debug.Log($"{customerAI.gameObject.name}: InitializeRoutine finished.");
+        Debug.Log($"{customerAI.gameObject.name}: InitializeRoutine finished processing wait.");
+
 
         // --- Check if the main queue is full and decide next state ---
+        // This logic remains as it determines the *next* state transition based on Manager state.
         if (customerAI.Manager != null && customerAI.Manager.IsMainQueueFull())
         {
             Debug.Log($"{customerAI.gameObject.name}: Main queue is full. Attempting to join secondary queue.");
@@ -30,15 +31,14 @@ public class CustomerInitializingLogic : BaseCustomerStateLogic
                 customerAI.CurrentTargetLocation = new BrowseLocation { browsePoint = assignedSpot, inventory = null }; // Store the assigned secondary queue spot as target
                 customerAI.AssignedQueueSpotIndex = spotIndex; // Store the assigned spot index
 
-                // --- REMOVED THE CALL TO AssignQueueSpot HERE ---
-                // The OnEnter method of CustomerSecondaryQueueLogic will now call AssignQueueSpot.
-
                 customerAI.SetState(CustomerState.SecondaryQueue); // Transition to the Secondary Queue state
             }
             else
             {
                 Debug.LogWarning($"CustomerAI ({customerAI.gameObject.name}): Main queue and secondary queue are full! Exiting to pool (fallback).");
-                customerAI.SetState(CustomerState.ReturningToPool);
+                 // Publish event instead of direct SetState for this fallback
+                 // EventManager.Publish(new NpcReturningToPoolEvent(customerAI.gameObject)); // Or SetState(ReturningToPool) if that's the event publisher
+                 customerAI.SetState(CustomerState.ReturningToPool); // SetState(ReturningToPool) publishes the event now
             }
         }
         else
@@ -47,9 +47,6 @@ public class CustomerInitializingLogic : BaseCustomerStateLogic
             Debug.Log($"{customerAI.gameObject.name}: Main queue is not full. Transitioning to Entering.");
             customerAI.SetState(CustomerState.Entering); // Transition to the Entering state
         }
-        // ---------------------------------------------------------------
-
-        // Removed: The original SetState(CustomerState.Entering) line
 
         Debug.Log($"{customerAI.gameObject.name}: InitializeRoutine finished.");
     }

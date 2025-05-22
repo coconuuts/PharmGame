@@ -9,10 +9,11 @@ public class CustomerMovingToRegisterLogic : BaseCustomerStateLogic
 
     public override void OnEnter()
     {
-        base.OnEnter();
+        base.OnEnter(); // Call base OnEnter (enables Agent)
         Debug.Log($"{customerAI.gameObject.name}: Entering MovingToRegister state. Finding register point.");
 
-        if (customerAI.NavMeshAgent != null && customerAI.NavMeshAgent.enabled)
+        // Use MovementHandler via customerAI
+        if (customerAI.MovementHandler != null)
         {
             // Get the register point from the CustomerManager (accessed via customerAI.Manager)
             Transform registerTarget = customerAI.Manager?.GetRegisterPoint();
@@ -21,18 +22,24 @@ public class CustomerMovingToRegisterLogic : BaseCustomerStateLogic
             {
                 // Store the register Transform point
                 customerAI.CurrentTargetLocation = new BrowseLocation { browsePoint = registerTarget, inventory = null }; // Store target location on AI
-                customerAI.NavMeshAgent.SetDestination(registerTarget.position);
-                customerAI.NavMeshAgent.isStopped = false; // Start moving
+
+                // --- Use MovementHandler to set destination and start moving ---
+                customerAI.MovementHandler.SetDestination(registerTarget.position);
+                 // -------------------------------------------------------------
+
                 Debug.Log($"CustomerAI ({customerAI.gameObject.name}): Set destination to register point: {registerTarget.position}.");
 
+                // --- Signal CustomerManager that this customer is occupying the register spot ---
+                // This direct call remains for now as it updates manager's internal state about register occupancy
                 if (customerAI.Manager != null)
                 {
-                    customerAI.Manager.SignalCustomerAtRegister(customerAI); // <-- ADD THIS LINE
+                    customerAI.Manager.SignalCustomerAtRegister(customerAI);
                 }
                 else
                 {
                     Debug.LogError($"CustomerAI ({customerAI.gameObject.name}): CustomerManager reference is null when signalling customer at register!", this);
                 }
+                // --------------------------------------------------------------------------------
             }
             else
             {
@@ -40,19 +47,19 @@ public class CustomerMovingToRegisterLogic : BaseCustomerStateLogic
                 customerAI.SetState(CustomerState.Exiting); // Exit if no register
             }
         }
-        else
-        {
-            Debug.LogError($"CustomerAI ({customerAI.gameObject.name}): NavMeshAgent not ready for MovingToRegister state entry!", this);
-            customerAI.SetState(CustomerState.ReturningToPool);
-        }
+         else // Fallback if movement handler is missing
+         {
+              Debug.LogError($"CustomerAI ({customerAI.gameObject.name}): MovementHandler is null for MovingToRegister state entry!", this);
+              customerAI.SetState(CustomerState.ReturningToPool);
+         }
     }
 
     public override void OnUpdate()
     {
-        base.OnUpdate();
+        base.OnUpdate(); // Calls Base OnUpdate (empty)
 
-        // Check if the NavMeshAgent has reached the destination
-        if (customerAI.NavMeshAgent != null && customerAI.NavMeshAgent.enabled && customerAI.HasReachedDestination()) // Use public property and helper
+        // --- Use MovementHandler to check if destination is reached ---
+        if (customerAI.MovementHandler != null && customerAI.MovementHandler.IsAtDestination())
         {
             Debug.Log($"{customerAI.gameObject.name}: Reached register destination. Transitioning to WaitingAtRegister.");
             customerAI.SetState(CustomerState.WaitingAtRegister); // Transition to waiting state
