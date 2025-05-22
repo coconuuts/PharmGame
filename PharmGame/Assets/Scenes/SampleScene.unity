@@ -7241,8 +7241,8 @@ MonoBehaviour:
   npcPrefabs:
   - {fileID: 4394407753789290286, guid: 488534cc76898354d8320c55d1770728, type: 3}
   maxCustomersInStore: 7
-  minSpawnInterval: 16
-  maxSpawnInterval: 20
+  minSpawnInterval: 6
+  maxSpawnInterval: 10
   spawnPoints:
   - {fileID: 600981058}
   BrowseLocations:

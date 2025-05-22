@@ -1,6 +1,7 @@
 using UnityEngine;
 using Systems.Interaction; // Needed for IInteractable and InteractionResponse
-using Game.NPC; // Needed for CustomerAI
+using Game.NPC;     
+using Game.NPC.States;
 using System.Collections.Generic; // Needed for List
 using Systems.Inventory; // Needed for ItemDetails (for item list)
 using System.Linq; // Needed for Sum
@@ -31,7 +32,7 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
 
 
     // --- Customer Management ---
-    private Game.NPC.CustomerAI currentWaitingCustomer = null; // Reference to the NPC currently waiting at the register
+    private Game.NPC.NpcStateMachineRunner currentWaitingCustomerRunner = null; // Reference to the NPC currently waiting at the register
     // ---------------------------
 
     public EconomyManager economyManager;
@@ -115,79 +116,74 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
          }
     }
 
-/// <summary>
-/// Runs the object's specific interaction logic and returns a response describing the outcome.
-/// Called by the Player Interaction system when the player interacts.
-/// MODIFIED: Creates a StartMinigameResponse including the MinigameType.
-/// </summary>
-public InteractionResponse Interact()
-{
-    // Prevent interaction if already interacting with this cash register
-    if (isInteracting)
+    /// <summary>
+    /// Runs the object's specific interaction logic and returns a response describing the outcome.
+    /// Called by the Player Interaction system when the player interacts.
+    /// MODIFIED: Creates a StartMinigameResponse including the MinigameType.
+    /// </summary>
+    public InteractionResponse Interact()
     {
-        Debug.Log($"CashRegisterInteractable ({gameObject.name}): Already interacting with this cash register.");
-        return null;
-    }
+        if (isInteracting)
+        {
+            Debug.Log($"CashRegisterInteractable ({gameObject.name}): Already interacting with this cash register.");
+            return null;
+        }
 
-    // --- Check if there is a customer waiting ---
-    if (currentWaitingCustomer == null)
-    {
-         Debug.Log($"CashRegisterInteractable ({gameObject.name}): No customer waiting at the register. Interaction not starting minigame.");
-         // Optionally return a different response here (e.g., a message like "The register is empty")
-         // For now, just return null.
-         return null;
-    }
-    // -----------------------------------------
+        // --- Check if there is a customer RUNNER waiting ---
+        if (currentWaitingCustomerRunner == null) // Use the Runner reference
+        {
+             Debug.Log($"CashRegisterInteractable ({gameObject.name}): No customer waiting at the register. Interaction not starting minigame.");
+             return null;
+        }
+        // -------------------------------------------------
 
-    // --- Get the customer's purchase list and validate ---
-    List<(ItemDetails details, int quantity)> itemsToScan = currentWaitingCustomer.Shopper.GetItemsToBuy();
+        // --- Get the customer's purchase list and validate ---
+        // Call GetItemsToBuy on the Runner
+        List<(ItemDetails details, int quantity)> itemsToScan = currentWaitingCustomerRunner.GetItemsToBuy(); // Call on the Runner
 
-    if (itemsToScan == null || itemsToScan.Sum(item => item.quantity) <= 0)
-    {
-         Debug.LogWarning($"CashRegisterInteractable ({gameObject.name}): Customer '{currentWaitingCustomer.gameObject.name}' has no items or zero total quantity to buy. Cancelling minigame.", currentWaitingCustomer.gameObject);
-         // Customer leaves empty-handed? Tell the customer to exit.
-         currentWaitingCustomer.OnTransactionCompleted(0); // Signal transaction complete with 0 payment
-         currentWaitingCustomer = null; // Clear waiting customer reference
-         CustomerDeparted(); // Deactivate trigger etc.
-         return null;
-    }
+        if (itemsToScan == null || itemsToScan.Sum(item => item.quantity) <= 0)
+        {
+             Debug.LogWarning($"CashRegisterInteractable ({gameObject.name}): Customer '{currentWaitingCustomerRunner.gameObject.name}' (Runner) has no items or zero total quantity to buy. Cancelling minigame.", currentWaitingCustomerRunner.gameObject);
+             // Customer leaves empty-handed? Tell the customer RUNNER to exit.
+             // Call OnTransactionCompleted on the Runner
+             currentWaitingCustomerRunner.OnTransactionCompleted(0); // Call on the Runner (Fix 1)
+             currentWaitingCustomerRunner = null; // Clear waiting customer Runner reference
+             CustomerDeparted(); // This method is on CashRegisterInteractable, call itself
+             return null;
+        }
 
-    // The total clicks needed for the minigame is the total quantity of items the customer is buying
-    int actualTargetClickCount = itemsToScan.Sum(item => item.quantity);
-     Debug.Log($"CashRegisterInteractable ({gameObject.name}): Customer '{currentWaitingCustomer.gameObject.name}' wants to buy {actualTargetClickCount} items.", currentWaitingCustomer.gameObject);
+        int actualTargetClickCount = itemsToScan.Sum(item => item.quantity);
+         Debug.Log($"CashRegisterInteractable ({gameObject.name}): Customer '{currentWaitingCustomerRunner.gameObject.name}' (Runner) wants to buy {actualTargetClickCount} items.", currentWaitingCustomerRunner.gameObject);
 
+        if (minigameCameraViewPoint == null)
+        {
+             Debug.LogError($"CashRegisterInteractable ({gameObject.name}): Cannot create StartMinigameResponse - Minigame Camera View Point not assigned.", this);
+             return null;
+        }
 
-    // --- Removed Minigame UI Root check here, UIManager handles UI activation based on state ---
-    if (minigameCameraViewPoint == null /* || minigameUIRoot == null */) // minigameUIRoot check is no longer strictly needed for response creation
-    {
-         // Added null check for camera view point as it's still in the response
-         Debug.LogError($"CashRegisterInteractable ({gameObject.name}): Cannot create StartMinigameResponse - Minigame Camera View Point not assigned.", this);
-         return null;
-    }
+        Debug.Log($"CashRegisterInteractable ({gameObject.name}): Interact called. Preparing to start minigame with {actualTargetClickCount} items.", this);
 
-    Debug.Log($"CashRegisterInteractable ({gameObject.name}): Interact called. Preparing to start minigame with {actualTargetClickCount} items.", this);
+        // --- Inform the customer RUNNER that the transaction is starting ---
+        // Call StartTransaction on the Runner
+        currentWaitingCustomerRunner.StartTransaction(/* itemsToScan */); // Call on the Runner (Fix 2)
+        // -----------------------------------------------------------------
 
-    // --- Inform the customer that the transaction is starting ---
-    currentWaitingCustomer.StartTransaction(/* itemsToScan */); // Pass the list if needed by CustomerAI
-
-    EventManager.Publish(new NpcStartedTransactionEvent(currentWaitingCustomer.gameObject));
+        // Publish event - the Runner is subscribed to this
+        EventManager.Publish(new NpcStartedTransactionEvent(currentWaitingCustomerRunner.gameObject));
 
         // --- Create and return the response ---
-        // Pass the actual list of items to the response, not just the count.
-        // MODIFIED: Include the MinigameType and remove the minigameUIRoot parameter.
         StartMinigameResponse response = new StartMinigameResponse(
-        Systems.Minigame.MinigameType.BarcodeScanning, // Specify the type of minigame
-        minigameCameraViewPoint,
-        cameraMoveDuration,
-        // Removed minigameUIRoot parameter
-        itemsToScan, // Pass the list of items here
-        this // PASS THIS INSTANCE
-    );
+            Systems.Minigame.MinigameType.BarcodeScanning,
+            minigameCameraViewPoint,
+            cameraMoveDuration,
+            itemsToScan,
+            this
+        );
 
-    isInteracting = true; // Mark as interacting
+        isInteracting = true;
 
-    return response; // Returns StartMinigameResponse to the system
-}
+        return response;
+    }
 
     /// <summary>
     /// Public method to reset the interacting state (Called by MenuManager state exit action).
@@ -201,104 +197,100 @@ public InteractionResponse Interact()
     }
 
     /// <summary>
-    /// Called by a CustomerAI script when it reaches the register point.
+    /// Called by a state SO (e.g., WaitingAtRegisterStateSO) when a customer reaches the register point.
     /// Signals that a customer is ready to interact.
     /// </summary>
-    /// <param name="customer">The CustomerAI component of the arriving customer.</param>
-    public void CustomerArrived(Game.NPC.CustomerAI customer)
+    /// <param name="customerRunner">The NpcStateMachineRunner component of the arriving customer.</param> // <-- CHANGE PARAMETER TYPE
+    public void CustomerArrived(Game.NPC.NpcStateMachineRunner customerRunner) // <-- CHANGE PARAMETER TYPE
     {
-        if (customer == null)
+        if (customerRunner == null)
         {
-            Debug.LogWarning($"CashRegisterInteractable ({gameObject.name}): CustomerArrived called with null customer.", this);
-            return;
-        }
-        if (currentWaitingCustomer != null && currentWaitingCustomer != customer)
-        {
-            Debug.LogWarning($"CashRegisterInteractable ({gameObject.name}): Customer '{customer.gameObject.name}' arrived, but customer '{currentWaitingCustomer.gameObject.name}' is already waiting! Ignoring arrival or handling queue (not implemented).", this);
-            // TODO: Implement queueing or handle multiple arrivals if needed
+            Debug.LogWarning($"CashRegisterInteractable ({gameObject.name}): CustomerArrived called with null customerRunner.", this);
             return;
         }
 
-        currentWaitingCustomer = customer;
-        Debug.Log($"CashRegisterInteractable ({gameObject.name}): Customer '{customer.gameObject.name}' arrived at the register.", this);
+        // Check if there is a customer RUNNER already waiting
+        if (currentWaitingCustomerRunner != null && currentWaitingCustomerRunner != customerRunner) // Use the Runner reference
+        {
+            Debug.LogWarning($"CashRegisterInteractable ({gameObject.name}): Customer '{customerRunner.gameObject.name}' (Runner) arrived, but customer '{currentWaitingCustomerRunner.gameObject.name}' (Runner) is already waiting! Ignoring arrival.", this);
+            // This scenario should be handled by the CustomerManager/Queue system.
+            // The Register should only receive CustomerArrived calls when it's free.
+            return;
+        }
 
-        // --- Activate the interaction trigger collider ---
+        // Assign the arriving Runner as the current waiting customer Runner
+        currentWaitingCustomerRunner = customerRunner; // Assign the Runner reference
+        Debug.Log($"CashRegisterInteractable ({gameObject.name}): Customer '{currentWaitingCustomerRunner.gameObject.name}' (Runner) arrived at the register.", this);
+
+        // Activate the interaction trigger collider
         if (interactionTriggerCollider != null)
         {
             interactionTriggerCollider.enabled = true;
             Debug.Log($"CashRegisterInteractable ({gameObject.name}): Interaction trigger enabled.", this);
         }
-        // -------------------------------------------------
-
-        // The customer's state is already WaitingAtRegister when this is called.
-        // They will wait for the player to Interact().
     }
 
     /// <summary>
-    /// Called by a CustomerAI script when it is leaving the register area.
+    /// Called by a state SO (ExitingStateSO) when it is leaving the register area.
     /// Cleans up the waiting state.
     /// </summary>
-    public void CustomerDeparted()
+    public void CustomerDeparted() // This method is called by the ExitingStateSO OnEnter
     {
-        Debug.Log($"CashRegisterInteractable ({gameObject.name}): Customer departed from the register.");
+        Debug.Log($"CashRegisterInteractable ({gameObject.name}): Customer departed from the register. Publishing CashRegisterFreeEvent.");
 
-        // --- Deactivate the interaction trigger collider ---
+        // Deactivate the interaction trigger collider
         if (interactionTriggerCollider != null)
         {
             interactionTriggerCollider.enabled = false;
             Debug.Log($"CashRegisterInteractable ({gameObject.name}): Interaction trigger disabled.", this);
         }
-        // -------------------------------------------------
 
-        currentWaitingCustomer = null; // Clear the reference
-        isInteracting = false; // Ensure interaction state is reset
+        currentWaitingCustomerRunner = null; // Clear the Runner reference
+        isInteracting = false;
 
+        // Publish CashRegisterFreeEvent (as done in Substep 3)
         EventManager.Publish(new CashRegisterFreeEvent());
     }
 
     /// <summary>
-    /// Called by the MinigameManager when the minigame associated with this register interaction is completed (e.g., won).
-    /// Handles payment and signals the customer.
+    /// Called by the MinigameManager when the minigame is completed.
+    /// Handles payment and signals the customer RUNNER.
     /// </summary>
-    /// <param name="totalPaymentAmount">The total currency value of the scanned items.</param>
     public void OnMinigameCompleted(float totalPaymentAmount)
     {
         Debug.Log($"CashRegisterInteractable ({gameObject.name}): Minigame completed. Total payment calculated: {totalPaymentAmount}.");
 
-        // --- Process Payment ---
+        // Process Payment
         if (EconomyManager.Instance != null)
         {
-            EconomyManager.Instance.AddCurrency(totalPaymentAmount); // Add money to player
+            EconomyManager.Instance.AddCurrency(totalPaymentAmount);
         }
         else
         {
             Debug.LogError($"CashRegisterInteractable ({gameObject.name}): EconomyManager instance not found! Cannot process payment.", this);
         }
-        // ---------------------
 
-        // --- Signal the waiting customer that transaction is completed ---
-        if (currentWaitingCustomer != null)
+        // --- Signal the waiting customer RUNNER that transaction is completed ---
+        if (currentWaitingCustomerRunner != null) // Check the Runner reference
         {
-            currentWaitingCustomer.OnTransactionCompleted(totalPaymentAmount); // Tell NPC transaction is done
-            // The NPC will transition to Exiting state via OnTransactionCompleted.
+            // Call OnTransactionCompleted on the Runner
+            currentWaitingCustomerRunner.OnTransactionCompleted(totalPaymentAmount); // Call on the Runner (Fix 4)
+            // The NPC (Runner) will transition to Exiting state via OnTransactionCompleted.
+            // The ExitingStateSO OnEnter calls CustomerDeparted() on *this* Register instance.
         }
         else
         {
-            Debug.LogWarning($"CashRegisterInteractable ({gameObject.name}): Minigame completed, but no currentWaitingCustomer reference!", this);
+            Debug.LogWarning($"CashRegisterInteractable ({gameObject.name}): Minigame completed, but no currentWaitingCustomerRunner reference!", this);
         }
-        
-        if (currentWaitingCustomer != null) // Only publish if we had a valid customer reference
+        // -----------------------------------------------------------------
+
+        // Publish NpcTransactionCompletedEvent (as done in Substep 3)
+        if (currentWaitingCustomerRunner != null) // Publish if we had a valid Runner reference
         {
-             EventManager.Publish(new NpcTransactionCompletedEvent(currentWaitingCustomer.gameObject, totalPaymentAmount)); // Use the event struct
+             EventManager.Publish(new NpcTransactionCompletedEvent(currentWaitingCustomerRunner.gameObject, totalPaymentAmount));
         }
 
-        // --- Customer Departure is handled now that transaction is complete ---
-        // The customer will call CustomerDeparted() when they reach their exit point
-        // or potentially when they transition out of WaitingAtRegister/TransactionActive if desired.
-        // For now, CustomerAI calls CustomerDeparted() implicitly via its state flow after OnTransactionCompleted.
-
-        // Ensure the interaction state is reset
-        isInteracting = false; // Already set in ResetInteraction, but defensive
+        isInteracting = false;
     }
 
     // TODO: Implement failure conditions if the minigame is lost

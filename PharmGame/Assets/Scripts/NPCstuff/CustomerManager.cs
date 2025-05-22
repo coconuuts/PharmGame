@@ -1,11 +1,12 @@
 using UnityEngine;
 using System.Collections.Generic;
 using Utils.Pooling; // Required for PoolingManager
-using Game.NPC; // Required for CustomerAI component
+using Game.NPC; 
 using System.Collections; // Required for Coroutines
 using Systems.Inventory; // Required for Inventory reference
 using Random = UnityEngine.Random; // Specify UnityEngine.Random
 using Game.Events;
+using Game.NPC.States;
 
 namespace CustomerManagement
 {
@@ -68,11 +69,11 @@ namespace CustomerManagement
 
         // --- Internal State ---
         private PoolingManager poolingManager;
-        private List<Game.NPC.CustomerAI> activeCustomers = new List<Game.NPC.CustomerAI>(); // Track active customers (explicit namespace use here)
-        private Queue<Game.NPC.CustomerAI> customerQueue = new Queue<Game.NPC.CustomerAI>(); // FIFO queue of customers waiting
-        private Game.NPC.CustomerAI customerAtRegister = null; // Reference to the customer currently being served or moving to register
+        private List<Game.NPC.NpcStateMachineRunner> activeCustomers = new List<Game.NPC.NpcStateMachineRunner>(); // Track active customers (explicit namespace use here)
+        private Queue<Game.NPC.NpcStateMachineRunner> customerQueue = new Queue<Game.NPC.NpcStateMachineRunner>(); // FIFO queue of customers waiting
+        private Game.NPC.NpcStateMachineRunner customerAtRegister = null; // Reference to the customer currently being served or moving to register
         private bool[] queueSpotOccupied; // Tracks if a specific queuePoint index is occupied
-        private Queue<Game.NPC.CustomerAI> secondaryCustomerQueue = new Queue<Game.NPC.CustomerAI>(); // FIFO queue of customers waiting in the secondary queue
+        private Queue<Game.NPC.NpcStateMachineRunner> secondaryCustomerQueue = new Queue<Game.NPC.NpcStateMachineRunner>(); // FIFO queue of customers waiting in the secondary queue
         private bool[] secondaryQueueSpotOccupied; // Tracks if a specific secondary queuePoint index is occupied
         [Tooltip("If the main register queue has this many customers or fewer, release the next secondary queue customer.")]
         [SerializeField] private int mainQueueReleaseThreshold = 2; // <-- ADD THIS VARIABLE
@@ -168,15 +169,16 @@ namespace CustomerManagement
 
         private void OnDisable() // Unsubscribe from events when the GameObject is disabled
         {
-             // Unsubscribe from events to prevent memory leaks and calls on null objects
-             EventManager.Unsubscribe<NpcReturningToPoolEvent>(HandleNpcReturningToPool);
-             EventManager.Unsubscribe<QueueSpotFreedEvent>(HandleQueueSpotFreed);
-             EventManager.Unsubscribe<CashRegisterFreeEvent>(HandleCashRegisterFree);
-             // Unsubscribe from future interruption events
-             // EventManager.Unsubscribe<NpcAttackedEvent>(HandleNpcAttacked);
-             // EventManager.Unsubscribe<NpcInteractedEvent>(HandleNpcInteracted);
+            // Unsubscribe from events to prevent memory leaks and calls on null objects
+            EventManager.Unsubscribe<NpcReturningToPoolEvent>(HandleNpcReturningToPool);
+            EventManager.Unsubscribe<QueueSpotFreedEvent>(HandleQueueSpotFreed);
+            EventManager.Unsubscribe<CashRegisterFreeEvent>(HandleCashRegisterFree);
+            // Unsubscribe from future interruption events
+            // EventManager.Unsubscribe<NpcAttackedEvent>(HandleNpcAttacked);
+            // EventManager.Unsubscribe<NpcInteractedEvent>(HandleNpcInteracted);
 
             Debug.Log("CustomerManager: Unsubscribed from events.");
+            StopAllCoroutines(); 
         }
 
         private void OnDestroy()
@@ -196,45 +198,35 @@ namespace CustomerManagement
         /// </summary>
         public void SpawnCustomer()
         {
-            // --- Corrected field name: BrowseLocations ---
             if (poolingManager == null || npcPrefabs == null || npcPrefabs.Count == 0 || spawnPoints == null || spawnPoints.Count == 0 || activeCustomers.Count >= maxCustomersInStore || BrowseLocations == null || BrowseLocations.Count == 0)
             {
-                // Conditions not met for spawning
-                // Debug.Log("CustomerManager: Cannot spawn customer (conditions not met).");
                 return;
             }
 
-            // Select a random NPC prefab
             GameObject npcPrefabToSpawn = npcPrefabs[Random.Range(0, npcPrefabs.Count)];
-
-            // Get a customer instance from the pool
             GameObject customerObject = poolingManager.GetPooledObject(npcPrefabToSpawn);
 
             if (customerObject != null)
             {
-                // Using fully qualified name Game.NPC.CustomerAI just to be extra clear
-                Game.NPC.CustomerAI customerAI = customerObject.GetComponent<Game.NPC.CustomerAI>();
-                if (customerAI != null)
+                // Get the new NpcStateMachineRunner component
+                Game.NPC.NpcStateMachineRunner customerRunner = customerObject.GetComponent<Game.NPC.NpcStateMachineRunner>();
+                if (customerRunner != null)
                 {
-                    // Select a random spawn point
                     Transform chosenSpawnPoint = spawnPoints[Random.Range(0, spawnPoints.Count)];
-
-                    // Set initial position and rotation at the spawn point
                     customerObject.transform.position = chosenSpawnPoint.position;
                     customerObject.transform.rotation = chosenSpawnPoint.rotation;
 
+                    // --- Initialize the NpcStateMachineRunner instead of CustomerAI ---
+                    customerRunner.Initialize(this, chosenSpawnPoint.position); // Initialize the Runner
 
-                    // --- Initialize the CustomerAI ---
-                    customerAI.Initialize(this, chosenSpawnPoint.position); // Initialize with manager and start pos
+                    // Add the Runner to our list of active customers
+                    activeCustomers.Add(customerRunner);
 
-                    // Add to our list of active customers
-                    activeCustomers.Add(customerAI);
-
-                    Debug.Log($"CustomerManager: Spawned customer '{customerObject.name}' from pool at {chosenSpawnPoint.position}. Total active: {activeCustomers.Count}");
+                    Debug.Log($"CustomerManager: Spawned customer '{customerObject.name}' (Runner) from pool at {chosenSpawnPoint.position}. Total active: {activeCustomers.Count}");
                 }
                 else
                 {
-                    Debug.LogError($"CustomerManager: Pooled object '{customerObject.name}' does not have a CustomerAI component!", customerObject);
+                    Debug.LogError($"CustomerManager: Pooled object '{customerObject.name}' does not have an NpcStateMachineRunner component!", customerObject);
                      poolingManager.ReturnPooledObject(customerObject);
                 }
             }
@@ -250,34 +242,23 @@ namespace CustomerManagement
         /// Handles the NpcReturningToPoolEvent. Returns a customer GameObject back to the object pool.
         /// </summary>
         /// <param name="eventArgs">The event arguments containing the NPC GameObject.</param>
-        private void HandleNpcReturningToPool(NpcReturningToPoolEvent eventArgs) // Renamed and changed signature
+        private void HandleNpcReturningToPool(NpcReturningToPoolEvent eventArgs)
         {
-            GameObject customerObject = eventArgs.NpcObject; // Get the GameObject from event args
+            GameObject customerObject = eventArgs.NpcObject;
             if (customerObject == null || poolingManager == null) return;
 
-            Game.NPC.CustomerAI customerAI = customerObject.GetComponent<Game.NPC.CustomerAI>();
-            if (customerAI != null)
+            Game.NPC.NpcStateMachineRunner customerRunner = customerObject.GetComponent<Game.NPC.NpcStateMachineRunner>();
+            if (customerRunner != null)
             {
-                 // Remove from our list of active customers
-                 // Note: This might be called *after* the AI is disabled, handle potential nullrefs if needed
-                 // It's safer to remove *before* disabling in the NpcReturningLogic, or rely on AI itself being valid here.
-                 // Let's assume the AI component is still valid when this event is processed.
-                 activeCustomers.Remove(customerAI);
-                 Debug.Log($"CustomerManager: Handling NpcReturningToPoolEvent for '{customerObject.name}'. Total active: {activeCustomers.Count}");
-
+                 activeCustomers.Remove(customerRunner); // Remove the Runner from our list
+                 Debug.Log($"CustomerManager: Handling NpcReturningToPoolEvent for '{customerObject.name}' (Runner). Total active: {activeCustomers.Count}");
                  poolingManager.ReturnPooledObject(customerObject);
             }
              else
              {
-                  Debug.LogWarning($"CustomerManager: Received NpcReturningToPoolEvent for GameObject '{customerObject.name}' without CustomerAI component. Attempting direct return.", customerObject);
-                  if(customerObject.GetComponent<PooledObjectInfo>() != null)
-                  {
-                       poolingManager.ReturnPooledObject(customerObject);
-                  }
-                  else
-                  {
-                       Destroy(customerObject);
-                  }
+                  Debug.LogWarning($"CustomerManager: Received NpcReturningToPoolEvent for GameObject '{customerObject.name}' without NpcStateMachineRunner component. Attempting direct return.", customerObject);
+                  if(customerObject.GetComponent<PooledObjectInfo>() != null) poolingManager.ReturnPooledObject(customerObject);
+                  else Destroy(customerObject);
              }
         }
 
@@ -285,7 +266,7 @@ namespace CustomerManagement
         /// Handles the QueueSpotFreedEvent. Signals that a customer is leaving a specific queue spot.
         /// </summary>
         /// <param name="eventArgs">The event arguments containing the queue type and spot index.</param>
-        private void HandleQueueSpotFreed(QueueSpotFreedEvent eventArgs) // Renamed and changed signature
+        private void HandleQueueSpotFreed(QueueSpotFreedEvent eventArgs)
         {
             QueueType type = eventArgs.Type;
             int spotIndex = eventArgs.SpotIndex;
@@ -293,19 +274,19 @@ namespace CustomerManagement
             Debug.Log($"CustomerManager: Handling QueueSpotFreedEvent for spot {spotIndex} in {type} queue.");
             bool[] occupiedArray = null;
             List<Transform> pointsList = null;
-            Queue<Game.NPC.CustomerAI> targetQueue = null;
+            Queue<Game.NPC.NpcStateMachineRunner> targetQueue = null; // Queue of Runners
 
             if (type == QueueType.Main)
             {
                 occupiedArray = queueSpotOccupied;
                 pointsList = queuePoints;
-                targetQueue = customerQueue; // Check the main queue
+                targetQueue = customerQueue;
             }
             else if (type == QueueType.Secondary)
             {
                 occupiedArray = secondaryQueueSpotOccupied;
                 pointsList = secondaryQueuePoints;
-                targetQueue = secondaryCustomerQueue; // Check the secondary queue
+                targetQueue = secondaryCustomerQueue;
             }
             else
             {
@@ -318,52 +299,38 @@ namespace CustomerManagement
                 occupiedArray[spotIndex] = false;
                 Debug.Log($"CustomerManager: Spot {spotIndex} in {type} queue is now free.");
 
-                // --- Logic to potentially move the next customer up ---
+                // --- Logic to potentially move the next customer (Runner) up ---
                 int nextCustomerSpotIndex = spotIndex + 1;
 
                 if (nextCustomerSpotIndex < pointsList.Count)
                 {
-                    Game.NPC.CustomerAI customerToMove = null;
-                    foreach (var customer in targetQueue)
+                    Game.NPC.NpcStateMachineRunner runnerToMove = null; // Look for Runner
+                    foreach (var runner in targetQueue) // Iterate Runners in queue
                     {
-                        // Accessing AssignedQueueSpotIndex from the AI's CustomerAI script
-                        if (customer != null && customer.AssignedQueueSpotIndex == nextCustomerSpotIndex) // Added null check for safety
+                        // Access AssignedQueueSpotIndex from the Runner
+                        if (runner != null && runner.AssignedQueueSpotIndex == nextCustomerSpotIndex)
                         {
-                            customerToMove = customer; // Found the customer who should move up
+                            runnerToMove = runner; // Found the Runner who should move up
                             break;
                         }
                     }
 
-                    if (customerToMove != null)
+                    if (runnerToMove != null)
                     {
-                        Debug.Log($"CustomerManager: Signalling {customerToMove.gameObject.name} at spot {nextCustomerSpotIndex} to move up to spot {spotIndex} in {type} queue.");
+                        Debug.Log($"CustomerManager: Signalling {runnerToMove.gameObject.name} (Runner) at spot {nextCustomerSpotIndex} to move up to spot {spotIndex} in {type} queue.");
 
-                        // Tell the customer's BaseQueueLogic component to move to the new spot
-                        BaseQueueLogic customerQueueLogic = customerToMove.GetComponent<BaseQueueLogic>();
-                        if (customerQueueLogic != null)
-                        {
-                            // Call the MoveToNextQueueSpot method defined in BaseQueueLogic
-                            // This method is still called directly *within* the CustomerAI/QueueLogic component
-                            // as it's a direct command to that specific NPC instance.
-                            customerQueueLogic.MoveToNextQueueSpot(pointsList[spotIndex], spotIndex);
-                        }
-                        else
-                        {
-                            Debug.LogError($"CustomerManager: Could not find BaseQueueLogic component on customer {customerToMove.gameObject.name} to signal move up!", customerToMove.gameObject);
-                            // Fallback: If logic is missing, maybe just have them exit?
-                            customerToMove.SetState(CustomerState.ReturningToPool);
-                        }
+                        // Call the new MoveToQueueSpot method on the Runner
+                        runnerToMove.MoveToQueueSpot(pointsList[spotIndex], spotIndex);
                     }
                     else
                     {
-                        Debug.Log($"CustomerManager: No customer found waiting for spot {nextCustomerSpotIndex} or beyond in {type} queue.");
+                        Debug.Log($"CustomerManager: No customer (Runner) found waiting for spot {nextCustomerSpotIndex} or beyond in {type} queue.");
                     }
                 }
                 else
                 {
-                    Debug.Log($"CustomerManager: Freed spot {spotIndex} is the last in the {type} queue. No customer behind needs to move up this specific spot.");
+                    Debug.Log($"CustomerManager: Freed spot {spotIndex} is the last in the {type} queue. No customer (Runner) behind needs to move up this specific spot.");
                 }
-                // ----------------------------------------------------
             }
             else
             {
@@ -376,34 +343,33 @@ namespace CustomerManagement
         /// Handles the CashRegisterFreeEvent. Signals that the register is available.
         /// </summary>
         /// <param name="eventArgs">The event arguments (currently empty).</param>
-        private void HandleCashRegisterFree(CashRegisterFreeEvent eventArgs) // Renamed and changed signature
+        private void HandleCashRegisterFree(CashRegisterFreeEvent eventArgs)
         {
             Debug.Log("CustomerManager: Handling CashRegisterFreeEvent.");
             customerAtRegister = null; // The register is now free
 
-            // If there are customers in the main queue
+            // If there are customers (Runners) in the main queue
             if (customerQueue.Count > 0)
             {
-                Game.NPC.CustomerAI nextCustomer = customerQueue.Dequeue();
-                Debug.Log($"CustomerManager: Dequeued {nextCustomer.gameObject.name} from main queue. Signalling them to move to register.");
+                Game.NPC.NpcStateMachineRunner nextRunner = customerQueue.Dequeue(); // Dequeue Runner
+                Debug.Log($"CustomerManager: Dequeued {nextRunner.gameObject.name} (Runner) from main queue. Signalling them to move to register.");
 
-                // Tell them to go to register - this is still a direct call *to the specific NPC*
-                // as it's a command targeted at that instance.
-                nextCustomer.GoToRegisterFromQueue(); // This method should remain on CustomerAI for now.
+                // Tell them to go to register - Call public method on the Runner
+                nextRunner.GoToRegisterFromQueue();
 
-                // The first main queue spot (index 0) is now free because the person who was at the front is going to the register
-                // No need to publish an event here, SignalQueueSpotFree logic is handled by the event handler now.
-                HandleQueueSpotFreed(new QueueSpotFreedEvent(QueueType.Main, 0)); // Manually call the handler for spot 0
+                // The first main queue spot (index 0) is now free because the person going to the register left it.
+                // Call the handler manually for spot 0.
+                HandleQueueSpotFreed(new QueueSpotFreedEvent(QueueType.Main, 0));
             }
             else
             {
                 Debug.Log("CustomerManager: Main queue is empty.");
             }
 
-            // Check and trigger Secondary Queue release AFTER a customer leaves the front of the main queue
+            // Check and trigger Secondary Queue release
             if (customerQueue.Count < mainQueueReleaseThreshold)
             {
-                ReleaseNextSecondaryCustomer(); // Call the method that now *publishes* the event
+                ReleaseNextSecondaryCustomer(); // Call the method that publishes the event
             }
         }
 
@@ -480,79 +446,60 @@ namespace CustomerManagement
         /// <param name="assignedSpot">Output: The Transform of the assigned queue spot, or null.</param>
         /// <param name="spotIndex">Output: The index of the assigned queue spot, or -1.</param>
         /// <returns>True if successfully joined the queue, false otherwise (e.g., queue is full).</returns>
-        public bool TryJoinQueue(Game.NPC.CustomerAI customer, out Transform assignedSpot, out int spotIndex)
+        public bool TryJoinQueue(Game.NPC.NpcStateMachineRunner customerRunner, out Transform assignedSpot, out int spotIndex)
         {
             assignedSpot = null;
             spotIndex = -1;
 
-            if (queuePoints == null || queuePoints.Count == 0)
-            {
-                Debug.LogWarning("CustomerManager: Cannot join queue - no queue points defined!");
-                return false;
-            }
-            if (queueSpotOccupied == null || queueSpotOccupied.Length != queuePoints.Count)
-            {
-                Debug.LogError("CustomerManager: queueSpotOccupied array is not initialized correctly!");
-                // Attempt to re-initialize, but indicate failure for this attempt
-                if(queuePoints != null) queueSpotOccupied = new bool[queuePoints.Count];
-                return false;
-            }
+            if (queuePoints == null || queuePoints.Count == 0) { Debug.LogWarning("CustomerManager: Cannot join queue - no queue points defined!"); return false; }
+            if (queueSpotOccupied == null || queueSpotOccupied.Length != queuePoints.Count) { Debug.LogError("CustomerManager: queueSpotOccupied array is not initialized correctly!"); if(queuePoints != null) queueSpotOccupied = new bool[queuePoints.Count]; return false; }
 
-            // Find the first available spot
             for (int i = 0; i < queueSpotOccupied.Length; i++)
             {
-                if (!queueSpotOccupied[i]) // If this spot is NOT occupied
+                if (!queueSpotOccupied[i])
                 {
-                    // Assign this spot
                     queueSpotOccupied[i] = true;
-                    customerQueue.Enqueue(customer); // Add the customer to the queue
+                    customerQueue.Enqueue(customerRunner); // Enqueue the Runner
                     assignedSpot = queuePoints[i];
                     spotIndex = i;
-                    Debug.Log($"CustomerManager: {customer.gameObject.name} successfully joined queue at spot {i}. Queue size: {customerQueue.Count}");
-                    return true; // Successfully joined
+                    Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) successfully joined queue at spot {i}. Queue size: {customerQueue.Count}");
+                     // Store the assigned index on the Runner itself
+                    customerRunner.AssignedQueueSpotIndex = spotIndex;
+                    return true;
                 }
             }
 
-            // If loop finishes, no available spots were found
-            Debug.Log($"CustomerManager: {customer.gameObject.name} could not join queue - queue is full.");
-            return false; // Queue is full
+            Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) could not join queue - queue is full.");
+            return false;
         }
         
         /// <summary>
         /// Releases the next customer from the secondary queue to enter the store
         /// by publishing an event that the customer's AI subscribes to.
         /// </summary>
-        public void ReleaseNextSecondaryCustomer() // This method now *publishes* an event
+        public void ReleaseNextSecondaryCustomer()
         {
-            Debug.Log("CustomerManager: Attempting to release next secondary customer.");
+            Debug.Log("CustomerManager: Attempting to release next secondary customer (Runner).");
             if (secondaryCustomerQueue.Count > 0)
             {
-                Game.NPC.CustomerAI nextCustomer = secondaryCustomerQueue.Peek(); // Peek, don't Dequeue yet
+                Game.NPC.NpcStateMachineRunner nextRunner = secondaryCustomerQueue.Peek();
 
-                 if (nextCustomer != null) // Safety check
+                 if (nextRunner != null)
                  {
-                      Debug.Log($"CustomerManager: Peeking {nextCustomer.gameObject.name} from secondary queue. Publishing ReleaseNpcFromSecondaryQueueEvent.");
-                      // --- Publish the event for the specific NPC ---
-                      EventManager.Publish(new ReleaseNpcFromSecondaryQueueEvent(nextCustomer.gameObject));
-                      // --------------------------------------------
+                      Debug.Log($"CustomerManager: Peeking {nextRunner.gameObject.name} (Runner) from secondary queue. Publishing ReleaseNpcFromSecondaryQueueEvent.");
+                      // Publish the event for the specific NPC GameObject that the Runner is on
+                      EventManager.Publish(new ReleaseNpcFromSecondaryQueueEvent(nextRunner.gameObject));
 
-                      // The SecondaryQueueLogic will handle the state transition upon receiving the event.
-                      // The SecondaryQueueLogic OnExit will handle signalling its spot free via QueueSpotFreedEvent.
-                      // The Dequeue from the secondary queue happens *after* the customer successfully transitions state.
-                      // Or, perhaps dequeue here is fine, as the customer is considered "released" from the queue logic's perspective.
-                      // Let's keep the Dequeue here for now to remove them from the queue collection immediately.
+                      // Dequeue the Runner from the queue collection
                       secondaryCustomerQueue.Dequeue();
-                      Debug.Log($"CustomerManager: Dequeued {nextCustomer.gameObject.name} from secondary queue collection.");
+                      Debug.Log($"CustomerManager: Dequeued {nextRunner.gameObject.name} (Runner) from secondary queue collection.");
 
-                      // No need to signal spot 0 free here. The customer leaving SecondaryQueue state
-                      // upon receiving the event will trigger the QueueSpotFreedEvent from their OnExit.
+                      // The SecondaryQueueStateSO OnExit will publish QueueSpotFreedEvent upon state transition.
                  }
                  else
                  {
-                      // Handle null customer in queue - should not happen with robust Add/Remove, but defensive
-                      Debug.LogError("CustomerManager: Null customer found at the front of the secondary queue! Dequeuing to clear.");
-                      secondaryCustomerQueue.Dequeue(); // Remove the null entry
-                      // Recursively try again if there are more customers
+                      Debug.LogError("CustomerManager: Null customer (Runner) found at the front of the secondary queue! Dequeuing to clear.");
+                      secondaryCustomerQueue.Dequeue();
                       if(secondaryCustomerQueue.Count > 0) ReleaseNextSecondaryCustomer();
                  }
 
@@ -567,22 +514,16 @@ namespace CustomerManagement
         /// Signals that a customer is currently moving towards or is at the register.
         /// </summary>
         /// <param name="customer">The customer AI that is now occupying the register spot.</param>
-        public void SignalCustomerAtRegister(Game.NPC.CustomerAI customer)
+        public void SignalCustomerAtRegister(Game.NPC.NpcStateMachineRunner customerRunner)
         {
-            if (customer == null)
+            if (customerRunner == null) { Debug.LogWarning("CustomerManager: SignalCustomerAtRegister called with null customerRunner."); return; }
+            if (customerAtRegister != null && customerAtRegister != customerRunner)
             {
-                Debug.LogWarning("CustomerManager: SignalCustomerAtRegister called with null customer.");
-                return;
+                Debug.LogWarning($"CustomerManager: {customerRunner.gameObject.name} (Runner) is signalling at register, but {customerAtRegister.gameObject.name} (Runner) was already there!");
             }
-            if (customerAtRegister != null && customerAtRegister != customer)
-            {
-                Debug.LogWarning($"CustomerManager: {customer.gameObject.name} is signalling at register, but {customerAtRegister.gameObject.name} was already there!");
-                // This might indicate an issue with state transitions or multiple customers trying to claim the register.
-                // For now, we'll just overwrite, but in a real game, you might handle this differently.
-            }
-            customerAtRegister = customer;
-            Debug.Log($"CustomerManager: {customer.gameObject.name} is now registered as being at the register.");
-        }
+            customerAtRegister = customerRunner;
+            Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) is now registered as being at the register.");
+        }   
 
         /// <summary>
         /// Gets the Transform for a specific queue point.
@@ -597,15 +538,6 @@ namespace CustomerManagement
             }
             Debug.LogWarning($"CustomerManager: Requested queue point index {index} is out of bounds or queuePoints list is null!");
             return null;
-        }
-
-
-        /// <summary>
-        /// Gets the CustomerAI currently at the register point (either moving, waiting, or in transaction).
-        /// </summary>
-        public Game.NPC.CustomerAI GetCustomerAtRegister()
-        {
-            return customerAtRegister;
         }
 
         /// <summary>
@@ -623,41 +555,31 @@ namespace CustomerManagement
         /// <param name="assignedSpot">Output: The Transform of the assigned secondary queue spot, or null.</param>
         /// <param name="spotIndex">Output: The index of the assigned secondary queue spot, or -1.</param>
         /// <returns>True if successfully joined the secondary queue, false otherwise (e.g., queue is full).</returns>
-        public bool TryJoinSecondaryQueue(Game.NPC.CustomerAI customer, out Transform assignedSpot, out int spotIndex)
+        public bool TryJoinSecondaryQueue(Game.NPC.NpcStateMachineRunner customerRunner, out Transform assignedSpot, out int spotIndex)
         {
             assignedSpot = null;
             spotIndex = -1;
 
-            if (secondaryQueuePoints == null || secondaryQueuePoints.Count == 0)
-            {
-                Debug.LogWarning("CustomerManager: Cannot join secondary queue - no points defined!");
-                return false;
-            }
-            if (secondaryQueueSpotOccupied == null || secondaryQueueSpotOccupied.Length != secondaryQueuePoints.Count)
-            {
-                Debug.LogError("CustomerManager: secondaryQueueSpotOccupied array is not initialized correctly!");
-                if(secondaryQueuePoints != null) secondaryQueueSpotOccupied = new bool[secondaryQueuePoints.Count];
-                return false;
-            }
+            if (secondaryQueuePoints == null || secondaryQueuePoints.Count == 0) { Debug.LogWarning("CustomerManager: Cannot join secondary queue - no points defined!"); return false; }
+            if (secondaryQueueSpotOccupied == null || secondaryQueueSpotOccupied.Length != secondaryQueuePoints.Count) { Debug.LogError("CustomerManager: secondaryQueueSpotOccupied array is not initialized correctly!"); if(secondaryQueuePoints != null) secondaryQueueSpotOccupied = new bool[secondaryQueuePoints.Count]; return false; }
 
-            // Find the first available spot in the secondary queue
             for (int i = 0; i < secondaryQueueSpotOccupied.Length; i++)
             {
-                if (!secondaryQueueSpotOccupied[i]) // If this spot is NOT occupied
+                if (!secondaryQueueSpotOccupied[i])
                 {
-                    // Assign this spot
                     secondaryQueueSpotOccupied[i] = true;
-                    secondaryCustomerQueue.Enqueue(customer); // Add the customer to the secondary queue
+                    secondaryCustomerQueue.Enqueue(customerRunner); // Enqueue the Runner
                     assignedSpot = secondaryQueuePoints[i];
                     spotIndex = i;
-                    Debug.Log($"CustomerManager: {customer.gameObject.name} successfully joined secondary queue at spot {i}. Secondary queue size: {secondaryCustomerQueue.Count}");
-                    return true; // Successfully joined
+                    Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) successfully joined secondary queue at spot {i}. Secondary queue size: {secondaryCustomerQueue.Count}");
+                     // Store the assigned index on the Runner itself
+                    customerRunner.AssignedQueueSpotIndex = spotIndex;
+                    return true;
                 }
             }
 
-            // If loop finishes, no available spots were found
-            Debug.Log($"CustomerManager: {customer.gameObject.name} could not join secondary queue - secondary queue is full.");
-            return false; // Secondary queue is full
+            Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) could not join secondary queue - secondary queue is full.");
+            return false;
         }
 
         // Add getter for main queue count

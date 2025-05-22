@@ -150,4 +150,18 @@ namespace Game.Events // Keep events in their dedicated namespace
             InteractorObject = interactorObject;
         }
     }
+    /// <summary>
+    /// Published to trigger an NPC to enter the Emoting state.
+    /// Temporary event for Phase 3 testing.
+    /// </summary>
+    public struct TriggerNpcEmoteEvent
+    {
+        public GameObject NpcObject; // The GameObject of the NPC to emote.
+        // Optional: Could add emote ID, duration, etc.
+
+        public TriggerNpcEmoteEvent(GameObject npcObject)
+        {
+            NpcObject = npcObject;
+        }
+    }
 }
