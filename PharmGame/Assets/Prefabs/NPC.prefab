@@ -631,9 +631,9 @@ GameObject:
   - component: {fileID: 5199676118107109080}
   - component: {fileID: 2413568037832294926}
   - component: {fileID: -5987178433650477}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: NPC
-  m_TagString: Untagged
+  m_TagString: NPC
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -929,16 +929,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ca838a5568193a248bd7414fb62518c5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  initializingState: {fileID: 0}
-  enteringState: {fileID: 0}
-  browseState: {fileID: 0}
-  movingToRegisterState: {fileID: 0}
-  waitingAtRegisterState: {fileID: 0}
-  transactionActiveState: {fileID: 0}
-  queueState: {fileID: 0}
-  secondaryQueueState: {fileID: 0}
-  exitingState: {fileID: 0}
-  returningToPoolState: {fileID: 0}
+  npcTypes:
+  - {fileID: 11400000, guid: 7c4f6c2437e7fbe4ba387874f4e23c2b, type: 2}
+  - {fileID: 11400000, guid: 3885ff761950e2549a71fc3b0109781b, type: 2}
+  fallbackReturningStateEnumKey: ReturningToPool
+  fallbackReturningStateEnumType: Game.NPC.GeneralState
+  fallbackIdleStateEnumKey: Idle
+  fallbackIdleStateEnumType: Game.NPC.GeneralState
 --- !u!1 &4855562079567102611
 GameObject:
   m_ObjectHideFlags: 0

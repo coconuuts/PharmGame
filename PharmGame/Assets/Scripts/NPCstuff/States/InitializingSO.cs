@@ -1,5 +1,6 @@
 // --- InitializingSO.cs ---
 using UnityEngine;
+using System;
 using System.Collections;
 using Game.NPC; // Needed for CustomerState enum (used by base class HandledState)
 using Game.NPC.States; // Needed for NpcStateSO and NpcStateContext
@@ -16,12 +17,11 @@ namespace Game.NPC.States
     public class InitializingSO : NpcStateSO
     {
         // Maps to the generic Initializing enum value
-        public override CustomerState HandledState => CustomerState.Initializing;
+        public override System.Enum HandledState => GeneralState.Initializing;
 
         public override void OnEnter(NpcStateContext context)
         {
             base.OnEnter(context); // Call base OnEnter (logs entry, enables Agent)
-            Debug.Log($"{context.NpcObject.name}: Entering generic Initializing state.", context.NpcObject);
 
             // Logic: Immediately decide the *real* starting state based on NPC type
             // This requires the Runner to know the NPC's configured types and their starting states.
@@ -38,7 +38,7 @@ namespace Game.NPC.States
             else
             {
                  Debug.LogError($"{context.NpcObject.name}: Initializing state cannot find a primary starting state for NPC type! Transitioning to ReturningToPool.", context.NpcObject);
-                 context.TransitionToState(CustomerState.ReturningToPool); // Fallback
+                 context.TransitionToState(GeneralState.ReturningToPool); // Fallback
             }
 
             // This state is designed to transition immediately, so no significant OnUpdate/Coroutine needed.
@@ -51,7 +51,6 @@ namespace Game.NPC.States
         public override void OnExit(NpcStateContext context)
         {
             base.OnExit(context); // Call base OnExit (logs exit, stops movement/rotation - though should already be stopped)
-             Debug.Log($"{context.NpcObject.name}: Exiting generic Initializing state.", context.NpcObject);
         }
     }
 }

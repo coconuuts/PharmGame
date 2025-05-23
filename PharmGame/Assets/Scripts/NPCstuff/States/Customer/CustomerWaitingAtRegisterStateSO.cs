@@ -1,16 +1,18 @@
 using UnityEngine;
 using System.Collections;
+using System;
 using CustomerManagement; // Ensure this is present
 using Game.NPC;
 using Game.Events;
 using Game.NPC.States; // Ensure this is present
+using Random = UnityEngine.Random;
 
 namespace Game.NPC.States
 {
     [CreateAssetMenu(fileName = "CustomerWaitingAtRegisterState", menuName = "NPC/Customer States/Waiting At Register", order = 5)]
     public class CustomerWaitingAtRegisterStateSO : NpcStateSO
     {
-        public override CustomerState HandledState => CustomerState.WaitingAtRegister;
+        public override System.Enum HandledState => CustomerState.WaitingAtRegister;
 
         [Header("Waiting Settings")]
         [SerializeField] private Vector2 impatientTimeRange = new Vector2(10f, 15f);
@@ -23,7 +25,6 @@ namespace Game.NPC.States
         public override void OnEnter(NpcStateContext context)
         {
             base.OnEnter(context);
-            Debug.Log($"{context.NpcObject.name}: Entering WaitingAtRegister state.", context.NpcObject);
 
             context.MovementHandler?.StopMoving();
 
@@ -73,7 +74,6 @@ namespace Game.NPC.States
         public override void OnExit(NpcStateContext context)
         {
             base.OnExit(context);
-            Debug.Log($"{context.NpcObject.name}: Exiting WaitingAtRegister state.", context.NpcObject);
             impatientTimer = 0f;
         }
 

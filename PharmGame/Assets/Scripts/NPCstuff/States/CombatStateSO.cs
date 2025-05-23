@@ -1,83 +1,104 @@
-// --- CombatStateSO.cs ---
+// --- Updated CombatStateSO.cs (Full Placeholder Logic) ---
 using UnityEngine;
-using System.Collections; // Needed for IEnumerator
-using Game.NPC; // Needed for CustomerState enum
-using Game.NPC.States; // Needed for NpcStateSO and NpcStateContext
+using System.Collections;
+using System;
+using Game.NPC;
+using Game.NPC.States;
+using Game.Events;
+using Random = UnityEngine.Random;
 
 namespace Game.NPC.States
 {
-    /// <summary>
-    /// A generic state for an NPC engaged in combat.
-    /// Its specific logic will depend on the combat system.
-    /// Corresponds to CustomerState.Combat.
-    /// </summary>
-    [CreateAssetMenu(fileName = "CombatState", menuName = "NPC/General States/Combat", order = 5)] // Placed under General States
+    [CreateAssetMenu(fileName = "CombatState", menuName = "NPC/General States/Combat", order = 5)]
     public class CombatStateSO : NpcStateSO
     {
-        public override CustomerState HandledState => CustomerState.Combat; // <-- Use Combat enum
+        public override System.Enum HandledState => GeneralState.Combat;
 
-        // Combat state is typically NOT interruptible by other events like interaction or emoting
-        // You might want to override the IsInterruptible property:
-        // public override bool IsInterruptible => false; // Example override
+        public override bool IsInterruptible => false; // Combat state is typically NOT interruptible
 
+        [Header("Combat Simulation Settings")]
+        [Tooltip("Minimum duration for the simulated combat state.")]
+        [SerializeField] private float minCombatDuration = 3.0f;
+        [Tooltip("Maximum duration for the simulated combat state.")]
+        [SerializeField] private float maxCombatDuration = 8.0f;
+
+        // Could add animation names, attack logic references, etc. here
+
+        private Coroutine combatRoutine;
 
         public override void OnEnter(NpcStateContext context)
         {
-            base.OnEnter(context); // Call base OnEnter (logs entry, enables Agent)
-            Debug.Log($"{context.NpcObject.name}: Entering generic Combat state.", context.NpcObject);
+            string enumTypeName = HandledState?.GetType().Name ?? "NULL_TYPE";
+            string enumValueName = HandledState?.ToString() ?? "NULL_VALUE";
+            Debug.Log($"{context.NpcObject.name}: Entering State: {name} ({GetType().Name}) (Enum: {enumTypeName}.{enumValueName})", context.NpcObject);
 
-            // Stop movement immediately upon entering combat
+
+            // Stop movement and rotation
             context.MovementHandler?.StopMoving();
+            context.MovementHandler?.StopRotation();
+             // Agent enabling might be needed by a combat system, or disabled for root motion.
+             // Let's re-enable it here if needed for movement within combat.
+             // Base OnEnter enables, but if we skipped it, ensure it's on.
+             if (context.MovementHandler?.Agent != null && !context.MovementHandler.Agent.enabled)
+             {
+                 context.MovementHandler.Agent.enabled = true;
+             }
 
-            // TODO: Placeholder logic for starting combat behavior
-            // - Find/Engage target (likely based on the event that triggered combat)
-            // - Play combat stance/idle animation
-            // - Start combat routine (attacking, moving, etc.)
 
-            // Example: Play a combat idle animation (assuming it exists)
-            // context.PlayAnimation("CombatIdle");
+            // Play combat stance/idle animation
+            // context.PlayAnimation("CombatIdle"); // Example
 
-             // Example: Start a coroutine for combat logic (will be implemented in Phase 5/Combat system)
-             // context.StartCoroutine(CombatRoutine(context));
+            // Start a coroutine for combat simulation logic and completion
+            combatRoutine = context.StartCoroutine(CombatRoutine(context));
         }
 
         public override void OnUpdate(NpcStateContext context)
         {
-            base.OnUpdate(context); // Call base OnUpdate (empty)
-
-            // TODO: Placeholder logic for continuous combat behavior
-            // - Check target status
-            // - Update attack cooldowns
-            // - Check conditions to exit combat (e.g., target defeated, out of range, timer)
-            // - Trigger transitions out of combat state (e.g., to Death, Idle, ReturningToPool)
+            // Continuous combat logic (e.g., look at target)
+             // Example: Look at the interactor who triggered combat (if available in context)
+             // if (context.InteractorObject != null)
+             // {
+             //     Vector3 directionToTarget = (context.InteractorObject.transform.position - context.NpcObject.transform.position).normalized;
+             //      if (directionToTarget.sqrMagnitude > 0.001f)
+             //      {
+             //           Quaternion targetRotation = Quaternion.LookRotation(directionToTarget);
+             //           // Use MovementHandler's instant rotation or start new rotation coroutine if not moving
+             //            if (context.MovementHandler != null) context.MovementHandler.Agent.transform.rotation = targetRotation; // Instant rotate example
+             //      }
+             // }
         }
 
-        // OnReachedDestination is not applicable to this state unless combat involves specific movement points
+        // OnReachedDestination is not applicable
 
         public override void OnExit(NpcStateContext context)
         {
-            base.OnExit(context); // Call base OnExit (logs exit, stops movement/rotation - though combat might manage its own movement)
-             Debug.Log($"{context.NpcObject.name}: Exiting generic Combat state.", context.NpcObject);
-            // TODO: Placeholder logic for exiting combat
-            // - Stop combat routine
-            // - Transition to post-combat state (e.g., Idle, resume previous state if interrupted)
+             string enumTypeName = HandledState?.GetType().Name ?? "NULL_TYPE";
+             string enumValueName = HandledState?.ToString() ?? "NULL_VALUE";
+            Debug.Log($"{context.NpcObject.name}: Exiting State: {name} ({GetType().Name}) (Enum: {enumTypeName}.{enumValueName})", context.NpcObject);
 
-             // Example: Stop combat animation
-             // context.PlayAnimation("Idle"); // Return to idle
+
+            // Cleanup logic for exiting combat
+            // Ensure movement is stopped (Base OnExit does this, but if we don't call base...)
+             context.MovementHandler?.StopMoving();
+             context.MovementHandler?.StopRotation();
+
+             // Transition to idle animation or locomotion base state
+            // context.PlayAnimation("Idle"); // Return to idle
         }
 
-        // Optional: Coroutine for complex combat sequences
-        /*
+        // Coroutine method to simulate combat duration and signal completion
         private IEnumerator CombatRoutine(NpcStateContext context)
         {
             Debug.Log($"{context.NpcObject.name}: CombatRoutine started in {name}.", context.NpcObject);
-            // Implement combat sequence here (attacking, moving between cover, etc.)
-            while (true) // Loop while in combat
-            {
-                // Check for exit conditions and call context.TransitionToState(...)
-                yield return null;
-            }
+
+            float combatDuration = Random.Range(minCombatDuration, maxCombatDuration);
+            Debug.Log($"{context.NpcObject.name}: Simulating combat for {combatDuration:F2} seconds.", context.NpcObject);
+
+            yield return new WaitForSeconds(combatDuration);
+
+            Debug.Log($"{context.NpcObject.name}: Combat simulation finished. Publishing NpcCombatEndedEvent.", context.NpcObject);
+
+            context.PublishEvent(new NpcCombatEndedEvent(context.NpcObject));
         }
-        */
     }
 }

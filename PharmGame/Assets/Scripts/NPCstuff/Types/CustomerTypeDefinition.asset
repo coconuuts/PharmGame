@@ -12,6 +12,35 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fca6f9049d56b964aacd2da2b44efd5d, type: 3}
   m_Name: CustomerTypeDefinition
   m_EditorClassIdentifier: 
-  baseType: {fileID: 0}
+  baseType: {fileID: 11400000, guid: 7c4f6c2437e7fbe4ba387874f4e23c2b, type: 2}
   stateCollection:
-    entries: []
+    entries:
+    - stateEnumName: LookingToShop
+      stateEnumType: Game.NPC.CustomerState
+      stateSO: {fileID: 11400000, guid: 7228c1bdacb465946996e1eb50f5e527, type: 2}
+    - stateEnumName: Entering
+      stateEnumType: Game.NPC.CustomerState
+      stateSO: {fileID: 11400000, guid: 6193fb9c576844d46af2135bd55e08c7, type: 2}
+    - stateEnumName: Browse
+      stateEnumType: Game.NPC.CustomerState
+      stateSO: {fileID: 11400000, guid: 6322ce60814550240bbfa9a5f6ded7a8, type: 2}
+    - stateEnumName: MovingToRegister
+      stateEnumType: Game.NPC.CustomerState
+      stateSO: {fileID: 11400000, guid: bd9013a6912b8094499bf8bd34bd4396, type: 2}
+    - stateEnumName: WaitingAtRegister
+      stateEnumType: Game.NPC.CustomerState
+      stateSO: {fileID: 11400000, guid: e7307d840eea3f64084e16ecd3b3886b, type: 2}
+    - stateEnumName: TransactionActive
+      stateEnumType: Game.NPC.CustomerState
+      stateSO: {fileID: 11400000, guid: 2f8e6973d732d4c4a81069a2f3cd4d69, type: 2}
+    - stateEnumName: Queue
+      stateEnumType: Game.NPC.CustomerState
+      stateSO: {fileID: 11400000, guid: b56fff2fa5bf17543b7988d04e84558f, type: 2}
+    - stateEnumName: SecondaryQueue
+      stateEnumType: Game.NPC.CustomerState
+      stateSO: {fileID: 11400000, guid: f3625878607c68740827857c2dd2d5fd, type: 2}
+    - stateEnumName: Exiting
+      stateEnumType: Game.NPC.CustomerState
+      stateSO: {fileID: 11400000, guid: 34c757eb68a844a4186e858c41a0fee2, type: 2}
+  primaryStartingStateEnumKey: LookingToShop
+  primaryStartingStateEnumType: Game.NPC.CustomerState

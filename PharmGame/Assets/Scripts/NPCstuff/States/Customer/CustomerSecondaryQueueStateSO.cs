@@ -2,16 +2,18 @@
 using UnityEngine;
 using System.Collections;
 using CustomerManagement;
+using System;
 using Game.NPC;
 using Game.Events;
 using Game.NPC.States;
+using Random = UnityEngine.Random;
 
 namespace Game.NPC.States
 {
     [CreateAssetMenu(fileName = "CustomerSecondaryQueueState", menuName = "NPC/Customer States/Secondary Queue", order = 8)]
     public class CustomerSecondaryQueueStateSO : NpcStateSO
     {
-        public override CustomerState HandledState => CustomerState.SecondaryQueue;
+        public override System.Enum HandledState => CustomerState.SecondaryQueue;
 
         [Header("Queue Settings")]
         [SerializeField] private Vector2 impatientTimeRange = new Vector2(10f, 15f);
@@ -22,7 +24,6 @@ namespace Game.NPC.States
         public override void OnEnter(NpcStateContext context)
         {
             base.OnEnter(context); // Call base OnEnter (logs entry, enables Agent)
-            Debug.Log($"{context.NpcObject.name}: Entering Secondary Queue state.", context.NpcObject);
 
             // --- Logic from CustomerSecondaryQueueLogic.OnEnter (Migration) ---
             impatientDuration = Random.Range(impatientTimeRange.x, impatientTimeRange.y); // Use SO field
@@ -100,7 +101,6 @@ namespace Game.NPC.States
         public override void OnExit(NpcStateContext context)
         {
             base.OnExit(context);
-            Debug.Log($"{context.NpcObject.name}: Exiting Secondary Queue state from spot {context.AssignedQueueSpotIndex}.", context.NpcObject);
 
             impatientTimer = 0f;
 

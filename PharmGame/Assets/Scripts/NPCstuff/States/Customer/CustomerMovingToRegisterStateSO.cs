@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using System;
 using CustomerManagement;
 using Game.NPC;
 using Game.NPC.States; // Ensure this is present
@@ -9,12 +10,11 @@ namespace Game.NPC.States
     [CreateAssetMenu(fileName = "CustomerMovingToRegisterState", menuName = "NPC/Customer States/Moving To Register", order = 4)]
     public class CustomerMovingToRegisterStateSO : NpcStateSO
     {
-        public override CustomerState HandledState => CustomerState.MovingToRegister;
+        public override System.Enum HandledState => CustomerState.MovingToRegister;
 
         public override void OnEnter(NpcStateContext context)
         {
             base.OnEnter(context);
-            Debug.Log($"{context.NpcObject.name}: Entering MovingToRegister state. Finding register point.", context.NpcObject);
 
             Transform registerTarget = context.GetRegisterPoint();
 

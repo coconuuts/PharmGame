@@ -1,17 +1,19 @@
 // --- Updated CustomerQueueStateSO.cs ---
 using UnityEngine;
 using System.Collections;
+using System;
 using CustomerManagement;
 using Game.NPC;
 using Game.Events;
 using Game.NPC.States;
+using Random = UnityEngine.Random;
 
 namespace Game.NPC.States
 {
     [CreateAssetMenu(fileName = "CustomerQueueState", menuName = "NPC/Customer States/Main Queue", order = 7)]
     public class CustomerQueueStateSO : NpcStateSO
     {
-        public override CustomerState HandledState => CustomerState.Queue;
+        public override System.Enum HandledState => CustomerState.Queue;
 
         [Header("Queue Settings")]
         [SerializeField] private Vector2 impatientTimeRange = new Vector2(10f, 15f);
@@ -22,7 +24,6 @@ namespace Game.NPC.States
         public override void OnEnter(NpcStateContext context)
         {
             base.OnEnter(context);
-            Debug.Log($"{context.NpcObject.name}: Entering Main Queue state.", context.NpcObject);
 
             // --- Logic from CustomerQueueLogic.OnEnter (Migration) ---
             impatientDuration = Random.Range(impatientTimeRange.x, impatientTimeRange.y);
@@ -62,7 +63,6 @@ namespace Game.NPC.States
         public override void OnExit(NpcStateContext context)
         {
             base.OnExit(context);
-            Debug.Log($"{context.NpcObject.name}: Exiting Main Queue state from spot {context.AssignedQueueSpotIndex}.", context.NpcObject);
 
             impatientTimer = 0f;
 

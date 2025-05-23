@@ -37,9 +37,9 @@ namespace Game.Events // Keep events in their dedicated namespace
     public struct NpcImpatientEvent
     {
         public GameObject NpcObject; // The GameObject of the impatient NPC.
-        public CustomerState State; // The state the NPC was in when they became impatient.
+        public Game.NPC.CustomerState State; // The state the NPC was in when they became impatient.
 
-        public NpcImpatientEvent(GameObject npcObject, CustomerState state)
+        public NpcImpatientEvent(GameObject npcObject, Game.NPC.CustomerState state)
         {
             NpcObject = npcObject;
             State = state;
@@ -164,4 +164,38 @@ namespace Game.Events // Keep events in their dedicated namespace
             NpcObject = npcObject;
         }
     }
+
+    // --- Interruption Completion Events (NEW) ---
+    /// <summary>
+    /// Published when an NPC's Combat state has ended.
+    /// </summary>
+    public struct NpcCombatEndedEvent
+    {
+        public GameObject NpcObject; // The NPC whose combat ended.
+        // Optional: Outcome (win/loss/disengage), target, etc.
+        public NpcCombatEndedEvent(GameObject npcObject) { NpcObject = npcObject; }
+    }
+
+    /// <summary>
+    /// Published when an NPC's Social state has ended.
+    /// </summary>
+    public struct NpcInteractionEndedEvent // Name might change based on interaction system
+    {
+        public GameObject NpcObject; // The NPC whose interaction ended.
+        // Optional: Outcome (success/fail), interactor, etc.
+        public NpcInteractionEndedEvent(GameObject npcObject) { NpcObject = npcObject; }
+    }
+
+     /// <summary>
+     /// Published when an NPC's Emoting state has ended (e.g., animation complete).
+     /// Published by the EmotingStateSO's coroutine.
+     /// </summary>
+     public struct NpcEmoteEndedEvent // Name might change based on emoting system
+     {
+         public GameObject NpcObject; // The NPC whose emote ended.
+         // Optional: Emote ID, etc.
+         public NpcEmoteEndedEvent(GameObject npcObject) { NpcObject = npcObject; }
+     }
+
+     // Could add other completion events for other interrupt states if needed
 }

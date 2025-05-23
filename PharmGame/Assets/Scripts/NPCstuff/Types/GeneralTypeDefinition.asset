@@ -14,4 +14,27 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   baseType: {fileID: 0}
   stateCollection:
-    entries: []
+    entries:
+    - stateEnumName: Initializing
+      stateEnumType: Game.NPC.GeneralState
+      stateSO: {fileID: 11400000, guid: 1962da45599e358479b54fcff0900412, type: 2}
+    - stateEnumName: ReturningToPool
+      stateEnumType: Game.NPC.GeneralState
+      stateSO: {fileID: 11400000, guid: 886eca4a253c7554f901350bd4daf43d, type: 2}
+    - stateEnumName: Combat
+      stateEnumType: Game.NPC.GeneralState
+      stateSO: {fileID: 11400000, guid: 06b43883f6a19db42b7f9a36a8df4e80, type: 2}
+    - stateEnumName: Death
+      stateEnumType: Game.NPC.GeneralState
+      stateSO: {fileID: 11400000, guid: 17c60d1b5851b5546a528a80fa0d698f, type: 2}
+    - stateEnumName: Emoting
+      stateEnumType: Game.NPC.GeneralState
+      stateSO: {fileID: 11400000, guid: f1b157e23cd26794c9cb2beeefc895fc, type: 2}
+    - stateEnumName: Idle
+      stateEnumType: Game.NPC.GeneralState
+      stateSO: {fileID: 11400000, guid: ff486cc0f0e92b84ba535cf40a6b7277, type: 2}
+    - stateEnumName: Social
+      stateEnumType: Game.NPC.GeneralState
+      stateSO: {fileID: 11400000, guid: 9aeaa9f3c5e669940b067c81a87046c9, type: 2}
+  primaryStartingStateEnumKey: 
+  primaryStartingStateEnumType: Game.NPC.GeneralState

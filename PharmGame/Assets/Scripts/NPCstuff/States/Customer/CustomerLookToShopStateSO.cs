@@ -1,6 +1,7 @@
 // --- CustomerLookToShopStateSO.cs (Renamed from CustomerInitializingStateSO.cs) ---
 using UnityEngine;
 using System.Collections;
+using System;
 using CustomerManagement;
 using Game.NPC;
 using Game.Events;
@@ -18,12 +19,11 @@ namespace Game.NPC.States
     public class CustomerLookToShopStateSO : NpcStateSO // <-- Updated class name
     {
         // Will map to a new enum value
-        public override CustomerState HandledState => CustomerState.LookingToShop; // <-- Updated HandledState (requires new enum value)
+        public override System.Enum HandledState => CustomerState.LookingToShop; // <-- Updated HandledState (requires new enum value)
 
         public override void OnEnter(NpcStateContext context)
         {
             base.OnEnter(context); // Call base OnEnter (logs entry, enables Agent)
-            Debug.Log($"{context.NpcObject.name}: Entering LookToShop state. Deciding initial customer action.", context.NpcObject); // <-- Updated log
 
             // The logic is still the same, it just runs after a separate, generic initialization step.
             context.StartCoroutine(LookToShopRoutine(context)); // <-- Updated coroutine name
@@ -65,7 +65,7 @@ namespace Game.NPC.States
                 else
                 {
                     Debug.LogWarning($"{context.NpcObject.name}: Main queue and secondary queue are full! Exiting to pool (fallback).", context.NpcObject);
-                    context.TransitionToState(CustomerState.ReturningToPool); // Transition via context
+                    context.TransitionToState(GeneralState.ReturningToPool); // Transition via context
                 }
             }
             else

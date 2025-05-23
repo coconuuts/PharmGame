@@ -9,7 +9,7 @@ namespace Game.NPC.States
     [CreateAssetMenu(fileName = "DeathState", menuName = "NPC/General States/Death", order = 6)]
     public class DeathStateSO : NpcStateSO
     {
-        public override CustomerState HandledState => CustomerState.Death;
+        public override System.Enum HandledState => GeneralState.Death;
 
         public override bool IsInterruptible => false;
 
@@ -29,7 +29,6 @@ namespace Game.NPC.States
                        Debug.Log($"{context.NpcObject.name}: NavMeshAgent disabled in Death state.", context.NpcObject);
                   }
              }
-             // -------------------------------------------------
 
              // TODO: Placeholder logic for death
          }

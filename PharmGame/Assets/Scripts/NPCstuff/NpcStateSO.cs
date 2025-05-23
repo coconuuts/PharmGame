@@ -1,8 +1,8 @@
-// --- Update NpcStateSO.cs (Add HandledState and OnReachedDestination) ---
+// --- Updated NpcStateSO.cs (HandledState returns Enum) ---
 using UnityEngine;
+using System; // Needed for System.Enum
 using System.Collections;
-// Ensure you have CustomerState enum available via a using directive or qualified name
-using Game.NPC;
+// Ensure you have Game.NPC namespace accessible for CustomerState and GeneralState if needed in derived SOs
 
 namespace Game.NPC.States
 {
@@ -10,25 +10,32 @@ namespace Game.NPC.States
     /// Abstract base class for all NPC State Scriptable Objects.
     /// Defines the lifecycle methods called by the NpcStateMachineRunner.
     /// Uses NpcStateContext to provide access to handlers and data.
+    /// States are identified by a generic System.Enum key.
     /// </summary>
     public abstract class NpcStateSO : ScriptableObject
     {
         [Header("Base State Settings")]
-        [Tooltip("Optional: A unique identifier for this state.")]
-        [SerializeField] private string stateID = "";
+        [Tooltip("Optional: A unique identifier for this state (redundant if HandledState is used as ID).")]
+        [SerializeField] private string stateID = ""; // This field becomes less critical if HandledState is the primary ID
 
         [Tooltip("Indicates if this state can be interrupted (e.g., by combat or interaction).")]
         [SerializeField] private bool isInterruptible = true;
 
+        [Tooltip("Indicates if the Runner should check for movement arrival (IsAtDestination) and call OnReachedDestination while in this state.")]
+        [SerializeField] private bool checkMovementArrival = false; // <-- NEW FIELD for Runner's Update logic
+
         // Public properties for settings
         public string StateID => stateID;
         public virtual bool IsInterruptible => isInterruptible;
+        public bool CheckMovementArrival => checkMovementArrival;
+
 
         /// <summary>
-        /// Defines the CustomerState enum value this SO represents (for migration phase).
-        /// Must be implemented by derived classes.
+        /// Defines the System.Enum value that uniquely identifies this state.
+        /// Must be implemented by derived classes. The specific enum type (CustomerState, GeneralState, etc.)
+        /// determines the category, and the value is the specific state within that category.
         /// </summary>
-        public abstract CustomerState HandledState { get; } // <-- ADD THIS ABSTRACT PROPERTY
+        public abstract System.Enum HandledState { get; }
 
 
         /// <summary>
@@ -36,9 +43,13 @@ namespace Game.NPC.States
         /// </summary>
         public virtual void OnEnter(NpcStateContext context)
         {
-             Debug.Log($"{context.NpcObject.name}: Entering State: {name} ({GetType().Name}) (Enum: {HandledState})", context.NpcObject); // Add enum to log
+             // Add logging robustness using HandledState properties
+             string enumTypeName = HandledState?.GetType().Name ?? "NULL_TYPE";
+             string enumValueName = HandledState?.ToString() ?? "NULL_VALUE";
+             Debug.Log($"{context.NpcObject.name}: Entering State: {name} ({GetType().Name}) (Enum: {enumTypeName}.{enumValueName})", context.NpcObject);
 
              // Ensure NavMeshAgent is enabled via the handler when entering most states
+             // States like Death, ReturningToPool should override and disable.
              if (context.MovementHandler?.Agent != null)
              {
                   context.MovementHandler.Agent.enabled = true;
@@ -55,13 +66,16 @@ namespace Game.NPC.States
 
          /// <summary>
          /// Called by the state machine runner when the NPC reaches its current movement destination.
-         /// Implement in derived states that involve movement towards a point.
+         /// Implement in derived states that involve movement towards a point and have CheckMovementArrival set to true.
          /// </summary>
-         /// <param name="context">The context providing access to handlers and data.</param>
-         public virtual void OnReachedDestination(NpcStateContext context) // <-- ADD THIS VIRTUAL METHOD
+         public virtual void OnReachedDestination(NpcStateContext context)
          {
-              // Default implementation does nothing
-              Debug.Log($"{context.NpcObject.name}: Reached destination in state {name} ({HandledState}), but OnReachedDestination is not overridden or performs no action.", context.NpcObject);
+              // Add logging robustness using HandledState properties
+              string enumTypeName = HandledState?.GetType().Name ?? "NULL_TYPE";
+              string enumValueName = HandledState?.ToString() ?? "NULL_VALUE";
+              Debug.Log($"{context.NpcObject.name}: Reached destination in state {name} ({enumTypeName}.{enumValueName}), but OnReachedDestination is not overridden or performs no action.", context.NpcObject);
+              // Default behavior might be to transition to Idle if this isn't handled?
+              // Or simply stop movement (handled by Runner already before calling this).
          }
 
 
@@ -70,7 +84,10 @@ namespace Game.NPC.States
          /// </summary>
          public virtual void OnExit(NpcStateContext context)
         {
-            Debug.Log($"{context.NpcObject.name}: Exiting State: {name} ({GetType().Name}) (Enum: {HandledState})", context.NpcObject); // Add enum to log
+             // Add logging robustness using HandledState properties
+             string enumTypeName = HandledState?.GetType().Name ?? "NULL_TYPE";
+             string enumValueName = HandledState?.ToString() ?? "NULL_VALUE";
+            Debug.Log($"{context.NpcObject.name}: Exiting State: {name} ({GetType().Name}) (Enum: {enumTypeName}.{enumValueName})", context.NpcObject);
 
             // Stop any movement or rotation when exiting a state by default
             context.MovementHandler?.StopMoving();

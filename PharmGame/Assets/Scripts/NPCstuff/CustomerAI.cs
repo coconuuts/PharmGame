@@ -10,34 +10,6 @@ using Game.NPC.Types; // Might be needed if TypeDefinitions are exposed here
 namespace Game.NPC // Your NPC namespace
 {
     /// <summary>
-    /// Defines the possible states for a customer NPC (primarily for CustomerManager/Event compatibility during migration).
-    /// Includes placeholder states for general NPC types.
-    /// </summary>
-    // Keep CustomerState enum here for now, as CustomerManager, events, and State SOs still use it.
-    public enum CustomerState
-    {
-        Inactive,
-        Initializing,
-        LookingToShop,
-        Entering,
-        Browse,
-        MovingToRegister,
-        WaitingAtRegister,
-        Queue,
-        SecondaryQueue,
-        TransactionActive,
-        Exiting,
-        ReturningToPool,
-
-        // Placeholder states for General NPC types
-        Combat,
-        Social,
-        Emoting,
-        Idle,
-        Death
-    }
-
-    /// <summary>
     /// Represents an individual NPC GameObject in the game world.
     /// Acts as the root MonoBehaviour, holds essential handler components and the state machine runner.
     /// Serves as the primary access point on the GameObject for other systems.

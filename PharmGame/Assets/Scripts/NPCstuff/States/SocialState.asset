@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ff9a1d646b00db54cbc6a5fc1aba68b5, type: 3}
+  m_Name: SocialState
+  m_EditorClassIdentifier: 
+  stateID: 
+  isInterruptible: 1
+  checkMovementArrival: 0
+  minSocialDuration: 3
+  maxSocialDuration: 5

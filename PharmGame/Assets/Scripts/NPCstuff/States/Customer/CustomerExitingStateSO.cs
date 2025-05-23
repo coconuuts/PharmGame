@@ -1,6 +1,7 @@
 // --- Updated CustomerExitingStateSO.cs ---
 using UnityEngine;
 using System.Collections;
+using System;
 using CustomerManagement;
 using Game.NPC;
 using Game.Events;
@@ -11,19 +12,18 @@ namespace Game.NPC.States
     [CreateAssetMenu(fileName = "CustomerExitingState", menuName = "NPC/Customer States/Exiting", order = 9)]
     public class CustomerExitingStateSO : NpcStateSO
     {
-        public override CustomerState HandledState => CustomerState.Exiting;
+        public override System.Enum HandledState => CustomerState.Exiting;
         
-         // Exiting state is typically not interruptible or has different rules
+        // Exiting state is typically not interruptible or has different rules
         // public override bool IsInterruptible => false; // Example override if needed
 
         public override void OnEnter(NpcStateContext context)
         {
             base.OnEnter(context);
-            Debug.Log($"{context.NpcObject.name}: Entering Exiting state. Signaling departure and finding exit point.", context.NpcObject);
 
-             // Signal departure to the CashRegisterInteractable and signal Manager (via Register)
+            // Signal departure to the CashRegisterInteractable and signal Manager (via Register)
             if (context.GetPreviousState() != null &&
-                (context.GetPreviousState().HandledState == CustomerState.WaitingAtRegister || context.GetPreviousState().HandledState == CustomerState.TransactionActive))
+                (context.GetPreviousState().HandledState.Equals(CustomerState.WaitingAtRegister) || context.GetPreviousState().HandledState.Equals(CustomerState.TransactionActive)))
             {
                 if (context.CachedCashRegister != null)
                 {
@@ -38,7 +38,7 @@ namespace Game.NPC.States
             else
             {
                 Debug.Log($"{context.NpcObject.name}: Exiting from non-register state ({context.GetPreviousState()?.HandledState.ToString() ?? "NULL"}). No need for register cleanup.", context.NpcObject);
-                 context.Runner.CachedCashRegister = null;
+                context.Runner.CachedCashRegister = null;
             }
 
             Transform exitTarget = context.GetRandomExitPoint();
@@ -68,7 +68,7 @@ namespace Game.NPC.States
         {
             // This logic was previously in CustomerExitingLogic.OnUpdate
             Debug.Log($"{context.NpcObject.name}: Reached exit destination (detected by Runner). Transitioning to ReturningToPool.", context.NpcObject);
-            context.TransitionToState(CustomerState.ReturningToPool); // Transition via context
+            context.TransitionToState(GeneralState.ReturningToPool); // Transition via context
         }
 
         public override void OnExit(NpcStateContext context)

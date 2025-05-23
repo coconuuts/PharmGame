@@ -1,26 +1,27 @@
 using UnityEngine;
 using System.Collections;
+using System;
 using CustomerManagement;
 using Game.NPC;
 using Game.Events;
-using Game.NPC.States; // Ensure this is present
+using Game.NPC.States; 
+using Random = UnityEngine.Random;
 
 namespace Game.NPC.States
 {
     [CreateAssetMenu(fileName = "CustomerBrowseState", menuName = "NPC/Customer States/Browse", order = 3)]
     public class CustomerBrowseStateSO : NpcStateSO
     {
-        public override CustomerState HandledState => CustomerState.Browse;
+        public override System.Enum HandledState => CustomerState.Browse;
 
         [Header("Browse Settings")]
         [SerializeField] private Vector2 browseTimeRange = new Vector2(3f, 8f);
 
-        private Coroutine browseCoroutine; // <-- FIX 1: Declare the coroutine field here
+        private Coroutine browseCoroutine; 
 
         public override void OnEnter(NpcStateContext context)
         {
             base.OnEnter(context);
-            Debug.Log($"{context.NpcObject.name}: Entering Browse state. Stopping movement and starting browse routine.", context.NpcObject);
 
             context.MovementHandler?.StopMoving();
 
@@ -34,15 +35,11 @@ namespace Game.NPC.States
         public override void OnExit(NpcStateContext context)
         {
             base.OnExit(context);
-            Debug.Log($"{context.NpcObject.name}: Exiting Browse state.", context.NpcObject);
-            // Stopping coroutine is handled by the Runner's TransitionToState
         }
 
         // Coroutine method
         private IEnumerator BrowseRoutine(NpcStateContext context)
         {
-             Debug.Log($"{context.NpcObject.name}: BrowseRoutine started in {name}.", context.NpcObject);
-
              if (context.CurrentTargetLocation.HasValue && context.CurrentTargetLocation.Value.browsePoint != null)
              {
                   context.RotateTowardsTarget(context.CurrentTargetLocation.Value.browsePoint.rotation);
@@ -78,8 +75,7 @@ namespace Game.NPC.States
               bool finishedShoppingTrip = context.Shopper != null && (context.Shopper.HasItems || context.Shopper.DistinctItemCount >= Random.Range(context.Shopper.MinItemsToBuy, context.Shopper.MaxItemsToBuy + 1));
 
               if (finishedShoppingTrip)
-              {
-                   Debug.Log($"{context.NpcObject.name}: Finished shopping trip...", context.NpcObject);
+              {;
                    if (context.IsRegisterOccupied())
                    {
                         Debug.Log("Register is occupied. Attempting to join queue.", context.NpcObject);

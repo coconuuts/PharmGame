@@ -1,6 +1,7 @@
 // --- Updated CustomerEnteringStateSO.cs ---
 using UnityEngine;
 using System.Collections;
+using System;
 using CustomerManagement;
 using Game.NPC;
 using Game.NPC.States;
@@ -10,12 +11,11 @@ namespace Game.NPC.States
     [CreateAssetMenu(fileName = "CustomerEnteringState", menuName = "NPC/Customer States/Entering", order = 2)]
     public class CustomerEnteringStateSO : NpcStateSO
     {
-        public override CustomerState HandledState => CustomerState.Entering;
+        public override System.Enum HandledState => CustomerState.Entering;
 
         public override void OnEnter(NpcStateContext context)
         {
             base.OnEnter(context); // Call base OnEnter (logs entry, enables Agent)
-            Debug.Log($"{context.NpcObject.name}: Entering Entering state. Finding first browse location.", context.NpcObject);
 
             // --- Logic from CustomerEnteringLogic.OnEnter (Migration) ---
             BrowseLocation? firstBrowseLocation = context.GetRandomBrowseLocation(); // Use context helper
