@@ -26,6 +26,7 @@ namespace Game.NPC.States // Context is closely related to states
         // --- External References ---
         public CustomerManager Manager;
         public CashRegisterInteractable CachedCashRegister; // Cached by a state (e.g., Waiting)
+        public CashRegisterInteractable RegisterCached => Runner?.CachedCashRegister;
 
         // --- NPC-specific Data managed by the Runner/Context ---
         public GameObject NpcObject; // The GameObject the runner is on
@@ -43,8 +44,23 @@ namespace Game.NPC.States // Context is closely related to states
         // --- Helper Methods (Accessing Handlers or Runner functionality) ---
 
         public void RotateTowardsTarget(Quaternion targetRotation) => Runner?.MovementHandler?.StartRotatingTowards(targetRotation);
-        public bool MoveToDestination(Vector3 position) => Runner != null && Runner.MovementHandler != null && Runner.MovementHandler.SetDestination(position);
         public bool IsAtDestination() => Runner != null && Runner.MovementHandler != null && Runner.MovementHandler.IsAtDestination();
+        public bool MoveToDestination(Vector3 position)
+        {
+            if (Runner != null && Runner.MovementHandler != null)
+            {
+                bool success = Runner.MovementHandler.SetDestination(position); // Call handler method
+                if (success)
+                {
+                    Runner._hasReachedCurrentDestination = false; // <-- Reset flag here on success
+                    // Debug.Log($"Context({NpcObject.name}): SetDestination successful, _hasReachedCurrentDestination = false."); // Keep logging for debugging
+                }
+                // MovementHandler.SetDestination logs its own warnings/errors if agent is null/disabled/position invalid
+                return success;
+            }
+            Debug.LogWarning($"Context({NpcObject.name}): Cannot set destination to {position}, Runner or MovementHandler is null.", NpcObject);
+            return false;
+        }
         
         /// <summary>
         /// Helper for state SOs to trigger state transition via the Runner.
@@ -155,9 +171,15 @@ namespace Game.NPC.States // Context is closely related to states
         // Access to CashRegisterInteractable caching
         public void CacheCashRegister(CashRegisterInteractable register)
         {
-            CachedCashRegister = register;
+            if (Runner != null)
+            {
+                Runner.CachedCashRegister = register; // <-- This sets the FIELD on the NpcStateMachineRunner class instance
+            }
+            else
+            {
+                Debug.LogWarning($"NpcStateContext: Cannot cache register '{register?.name ?? "NULL"}' - Runner is null!", NpcObject);
+            }
         }
-
          // Access to publishing events via EventManager
          public void PublishEvent<T>(T eventArgs) where T : struct // Constrain to struct as per EventManager
          {

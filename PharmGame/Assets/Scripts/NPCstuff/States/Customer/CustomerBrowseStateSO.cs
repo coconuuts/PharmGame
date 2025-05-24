@@ -75,30 +75,38 @@ namespace Game.NPC.States
               bool finishedShoppingTrip = context.Shopper != null && (context.Shopper.HasItems || context.Shopper.DistinctItemCount >= Random.Range(context.Shopper.MinItemsToBuy, context.Shopper.MaxItemsToBuy + 1));
 
               if (finishedShoppingTrip)
-              {;
-                   if (context.IsRegisterOccupied())
-                   {
-                        Debug.Log("Register is occupied. Attempting to join queue.", context.NpcObject);
-                        Transform assignedSpot;
-                        int spotIndex;
-                        if (context.TryJoinQueue(context.Runner, out assignedSpot, out spotIndex))
-                        {
-                             context.Runner.CurrentTargetLocation = new BrowseLocation { browsePoint = assignedSpot, inventory = null };
-                             context.Runner.AssignedQueueSpotIndex = spotIndex;
-                             context.TransitionToState(CustomerState.Queue);
-                        }
-                        else
-                        {
-                             Debug.LogWarning("Register is occupied and queue is full! Exiting.", context.NpcObject);
-                             context.TransitionToState(CustomerState.Exiting);
-                        }
-                   }
-                   else
-                   {
-                        Debug.Log("Register is free. Moving to register.", context.NpcObject);
-                        context.TransitionToState(CustomerState.MovingToRegister);
-                   }
-              }
+{
+    if (context.IsRegisterOccupied())
+    {
+        // Register is occupied, attempt to join queue.
+        // If successful, the Manager will signal arrival *later* when this NPC reaches the front.
+        Debug.Log($"{context.NpcObject.name}: Shopping complete, Register is occupied. Attempting to join queue.", context.NpcObject);
+        Transform assignedSpot;
+        int spotIndex;
+        if (context.TryJoinQueue(context.Runner, out assignedSpot, out spotIndex))
+        {
+            Debug.Log($"{context.NpcObject.name}: TryJoinQueue succeeded! Assigned spot index {spotIndex} at position {assignedSpot.position}. Transitioning to Queue.", context.NpcObject);
+            context.Runner.CurrentTargetLocation = new BrowseLocation { browsePoint = assignedSpot, inventory = null };
+            context.Runner.AssignedQueueSpotIndex = spotIndex;
+            // Movement initiated in CustomerQueueStateSO.OnEnter now
+            context.TransitionToState(CustomerState.Queue);
+        }
+        else
+        {
+             Debug.LogWarning($"{context.NpcObject.name}: Register is occupied and queue is full! Exiting.", context.NpcObject);
+             context.TransitionToState(CustomerState.Exiting);
+        }
+    }
+    else
+    {
+        // Register is FREE, move to register directly.
+        Debug.Log($"{context.NpcObject.name}: Shopping complete, Register is free. Claiming spot and moving to register.", context.NpcObject);
+        // --- NEW: Claim the register spot immediately before moving ---
+        context.SignalCustomerAtRegister(); // <-- Call the signal here!
+        // -----------------------------------------------------------
+        context.TransitionToState(CustomerState.MovingToRegister); // Transition to move
+    }
+}
               else // Not finished shopping trip
               {
                    Debug.Log($"{context.NpcObject.name}: Shopping not complete, looking for next Browse location.", context.NpcObject);

@@ -46,10 +46,26 @@ namespace Game.NPC.Handlers
 
         private void Update()
         {
-            // Logic that might need to run every frame for movement or checking status
-            // The state logic components will typically call IsAtDestination() directly,
-            // or we could add logic here to publish NpcReachedDestinationEvent when IsAtDestination() becomes true.
-            // For now, let the state logic check.
+            // --- ADD PATH DEBUGGING ---
+    if (Agent != null && Agent.isActiveAndEnabled && Agent.hasPath)
+    {
+        Debug.DrawLine(transform.position, Agent.steeringTarget, Color.red); // Draw line to immediate steering target
+        Color pathColor = Color.cyan;
+        Vector3 lastCorner = transform.position;
+        foreach (var corner in Agent.path.corners)
+        {
+            Debug.DrawLine(lastCorner, corner, pathColor); // Draw segments of the path
+            lastCorner = corner;
+        }
+    }
+    if (Agent != null && Agent.isActiveAndEnabled && !Agent.pathPending && !Agent.hasPath && Agent.remainingDistance > Agent.stoppingDistance)
+    {
+         // Agent is active, not waiting for a path, has no path, and isn't already at the destination.
+         // This state often indicates a pathfinding failure after SetDestination was called.
+         Debug.LogWarning($"NpcMovementHandler on {gameObject.name}: Agent has no path! Path Status: {Agent.pathStatus}", this);
+    }
+    // --- END ADD ---
+
         }
 
         // Public API for Movement
@@ -61,12 +77,10 @@ namespace Game.NPC.Handlers
                 StopRotation(); // Stop any ongoing rotation before moving
                 Agent.isStopped = false;
                 Agent.destination = position; // Use .destination directly
-                // SetDestination returns bool only if the path is *valid* immediately.
-                // Setting .destination is generally safer and the pathPending/completion check happens later.
-                // Debug.Log($"NpcMovementHandler on {gameObject.name}: Set destination to {position}."); // Optional log
+                Debug.Log($"NpcMovementHandler on {gameObject.name}: Set destination to {position}. Agent enabled: {Agent.enabled}", this);
                 return true; // Assume setting destination always 'succeeds' unless agent is null/disabled
             }
-             Debug.LogWarning($"NpcMovementHandler on {gameObject.name}: Cannot set destination - NavMeshAgent is null or disabled.", this);
+             Debug.LogWarning($"NpcMovementHandler on {gameObject.name}: Cannot set destination to {position} - NavMeshAgent is null ({Agent == null}) or disabled ({Agent?.enabled == false}).", this); 
             return false;
         }
 
@@ -128,30 +142,52 @@ namespace Game.NPC.Handlers
         }
 
         public bool IsAtDestination()
-        {
-            if (Agent == null || !Agent.isActiveAndEnabled || Agent.pathPending)
-             {
-                 return false;
-             }
+          {
+          if (Agent == null || !Agent.isActiveAndEnabled)
+          {
+               return false; // Cannot be at destination if agent isn't active/enabled
+          }
 
-             // Check if remaining distance is within stopping distance plus a small threshold
-             // Need to check if a path is even active or completed before checking remainingDistance reliably
-             if (!Agent.hasPath) return Agent.velocity.sqrMagnitude == 0f; // If no path, check if already stopped (e.g. after Warp)
+          // If agent is calculating path, we haven't arrived yet
+          if (Agent.pathPending)
+          {
+               return false;
+          }
 
-             // If there is a path, check remaining distance and speed
-             bool isCloseEnough = Agent.remainingDistance <= Agent.stoppingDistance + destinationReachedThreshold;
+          // --- Primary Arrival Check ---
+          // Check if remaining distance is within stopping distance plus a small threshold
+          // This is the most reliable check after SetDestination.
+          bool isCloseEnough = Agent.remainingDistance <= Agent.stoppingDistance + destinationReachedThreshold;
 
-             if (isCloseEnough)
-             {
-                  // Check if velocity is low OR if the path is effectively finished (remainingDistance very small AND path calculation is done)
-                  if (Agent.velocity.sqrMagnitude < 0.1f * 0.1f || Agent.remainingDistance < 0.1f) // Added small remainingDistance check for edge cases
-                  {
-                       return true;
-                  }
-             }
+          if (isCloseEnough)
+          {
+               // We are close. Now, are we stopped or just arrived?
+               // Check if velocity is low OR if remaining distance is negligible (handles precision issues)
+               // A small tolerance for velocity is needed because agents rarely hit exactly 0.
+               // A very small tolerance for remainingDistance handles cases where remainingDistance might hover slightly above 0.
+               if (Agent.velocity.sqrMagnitude < 0.1f * 0.1f || Agent.remainingDistance < 0.01f)
+               {
+                    return true; // We are close AND stopped or effectively there
+               }
+               // If we are close but still moving fast, we are not yet "at" the destination point.
+          }
 
-             return false;
-        }
+          // If not close enough, we are definitely not at the destination.
+          // This also implicitly covers cases where hasPath is false and remainingDistance is large,
+          // as remainingDistance > stoppingDistance will be true.
+
+          // What about the !Agent.hasPath case?
+          // If SetDestination was called and succeeded, hasPath *should* be true until near the end.
+          // If hasPath is false *before* reaching the destination, it implies SetDestination failed
+          // or the path became invalid. In such error cases, we are NOT at the destination.
+          // The check above handles the successful path case.
+          // If pathPending is false and hasPath is false, remainingDistance might be unreliable,
+          // but the check `Agent.velocity.sqrMagnitude < 0.1f * 0.1f` when `isCloseEnough` is true
+          // should still catch the "stopped near the point" condition.
+          // Let's trust the remainingDistance check combined with velocity/negligible distance.
+
+          return false;
+          }
 
         // Public API for Rotation
         public void StartRotatingTowards(Quaternion targetRotation)

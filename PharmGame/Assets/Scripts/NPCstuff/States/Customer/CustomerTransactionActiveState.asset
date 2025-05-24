@@ -13,4 +13,5 @@ MonoBehaviour:
   m_Name: CustomerTransactionActiveState
   m_EditorClassIdentifier: 
   stateID: 
-  isInterruptible: 1
+  isInterruptible: 0
+  checkMovementArrival: 0

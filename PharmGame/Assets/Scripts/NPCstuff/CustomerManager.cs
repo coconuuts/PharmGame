@@ -350,17 +350,21 @@ namespace CustomerManagement
 
             // If there are customers (Runners) in the main queue
             if (customerQueue.Count > 0)
-            {
-                Game.NPC.NpcStateMachineRunner nextRunner = customerQueue.Dequeue(); // Dequeue Runner
-                Debug.Log($"CustomerManager: Dequeued {nextRunner.gameObject.name} (Runner) from main queue. Signalling them to move to register.");
+{
+    Game.NPC.NpcStateMachineRunner nextRunner = customerQueue.Dequeue(); // Dequeue Runner
+    Debug.Log($"CustomerManager: Dequeued {nextRunner.gameObject.name} (Runner) from main queue. Signalling them to move to register.");
 
-                // Tell them to go to register - Call public method on the Runner
-                nextRunner.GoToRegisterFromQueue();
+    // --- NEW: Signal the Manager that THIS runner is now claiming the register spot ---
+    SignalCustomerAtRegister(nextRunner); // <-- Call here!
+    // -------------------------------------------------------------------------------
 
-                // The first main queue spot (index 0) is now free because the person going to the register left it.
-                // Call the handler manually for spot 0.
-                HandleQueueSpotFreed(new QueueSpotFreedEvent(QueueType.Main, 0));
-            }
+    // Tell them to go to register - Call public method on the Runner
+    nextRunner.GoToRegisterFromQueue(); // This transitions the runner to MovingToRegister
+
+    // The first main queue spot (index 0) is now free because the person going to the register left it.
+    // Call the handler manually for spot 0.
+    HandleQueueSpotFreed(new QueueSpotFreedEvent(QueueType.Main, 0));
+}
             else
             {
                 Debug.Log("CustomerManager: Main queue is empty.");

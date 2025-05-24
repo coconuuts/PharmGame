@@ -28,26 +28,27 @@ namespace Game.NPC.States
 
             context.MovementHandler?.StopMoving();
 
-             if (context.CachedCashRegister == null)
-             {
-                  GameObject registerGO = GameObject.FindGameObjectWithTag("CashRegister");
-                  if (registerGO != null)
-                  {
-                       context.CacheCashRegister(registerGO.GetComponent<CashRegisterInteractable>());
-                  }
-             }
+             // Cache the register reference here:
+            if (context.RegisterCached == null) // <-- Use the new property
+            {
+                GameObject registerGO = GameObject.FindGameObjectWithTag("CashRegister");
+                if (registerGO != null)
+                {
+                    context.CacheCashRegister(registerGO.GetComponent<CashRegisterInteractable>()); // This calls the context method, which sets Runner.CachedCashRegister
+                }
+            }
 
-             if (context.CachedCashRegister != null)
-             {
-                  Debug.Log($"{context.NpcObject.name}: Notifying CashRegister '{context.CachedCashRegister.gameObject.name}' of arrival.", context.NpcObject);
-                  context.CachedCashRegister.CustomerArrived(context.Runner); // Call with Runner
-             }
-             else
-             {
-                  Debug.LogError($"{context.NpcObject.name}: Could not find CashRegisterInteractable by tag 'CashRegister'! Cannot complete transaction flow.", context.NpcObject);
-                  context.TransitionToState(CustomerState.Exiting);
-                  return;
-             }
+            if (context.RegisterCached != null) // <-- Use the new property
+            {
+                Debug.Log($"{context.NpcObject.name}: Notifying CashRegister '{context.RegisterCached.gameObject.name}' of arrival.", context.NpcObject); // <-- Use the new property
+                context.RegisterCached.CustomerArrived(context.Runner); // <-- Use the new property
+            }
+            else
+            {
+                Debug.LogError($"{context.NpcObject.name}: Could not find CashRegisterInteractable by tag 'CashRegister' and it wasn't cached! Cannot complete transaction flow.", context.NpcObject);
+                context.TransitionToState(CustomerState.Exiting); // Fallback if register not found
+                return;
+            }
 
             impatientDuration = Random.Range(impatientTimeRange.x, impatientTimeRange.y);
             impatientTimer = 0f;

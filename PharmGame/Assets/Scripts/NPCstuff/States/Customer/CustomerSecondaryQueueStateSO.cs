@@ -34,22 +34,19 @@ namespace Game.NPC.States
             // Note: Play waiting animation
             // context.PlayAnimation("WaitingOutside");
 
-             // *** IMPORTANT RECONCILIATION ***
-             // The logic for moving to the assigned secondary queue spot was in BaseQueueLogic component's OnEnter.
-             // That component is still on the GO for now. When it's removed in a later phase,
-             // this logic MUST be here or triggered by the Runner based on the context.AssignedQueueSpotIndex.
-             // Same as Main Queue state, for THIS step, leaving initial movement to old component's Update.
-             /*
-             if (context.CurrentTargetLocation.HasValue && context.CurrentTargetLocation.Value.browsePoint != null && context.AssignedQueueSpotIndex != -1)
-             {
-                 context.MoveToDestination(context.CurrentTargetLocation.Value.browsePoint.position);
-             }
-             else
-             {
-                 Debug.LogError($"{context.NpcObject.name}: Entering Secondary Queue state without a valid assigned queue spot in context! Exiting.", context.NpcObject);
-                 context.TransitionToState(CustomerState.ReturningToPool);
-             }
-             */
+            // --- NEW: Initiate movement to the assigned secondary queue spot ---
+            if (context.CurrentTargetLocation.HasValue && context.CurrentTargetLocation.Value.browsePoint != null && context.AssignedQueueSpotIndex != -1)
+            {
+                Debug.Log($"{context.NpcObject.name}: Entering {name}. Moving to assigned spot {context.AssignedQueueSpotIndex} at {context.CurrentTargetLocation.Value.browsePoint.position}.", context.NpcObject);
+                bool moveStarted = context.MoveToDestination(context.CurrentTargetLocation.Value.browsePoint.position);
+                Debug.Log($"{context.NpcObject.name}: Called MoveToDestination from OnEnter. Result: {moveStarted}", context.NpcObject);
+            }
+            else
+            {
+                Debug.LogError($"{context.NpcObject.name}: Entering Secondary Queue state without a valid assigned queue spot in context! Exiting.", context.NpcObject);
+                context.TransitionToState(GeneralState.ReturningToPool); // Or CustomerState.Exiting
+            }
+            // -----------------------------------------------------------------
         }
 
         public override void OnUpdate(NpcStateContext context)

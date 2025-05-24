@@ -57,9 +57,11 @@ namespace Game.NPC.States
                 CustomerAI customerAIComponent = context.NpcObject.GetComponent<CustomerAI>();
                 if (customerAIComponent != null && context.Manager.TryJoinSecondaryQueue(context.Runner, out assignedSpot, out spotIndex)) // Pass context.Runner
                 {
-                    Debug.Log($"{context.NpcObject.name}: Successfully joined secondary queue at spot {spotIndex}.", context.NpcObject);
+                    Debug.Log($"{context.NpcObject.name}: TryJoinSecondaryQueue succeeded! Assigned spot index {spotIndex} at position {assignedSpot.position}.", context.NpcObject);
                     context.Runner.CurrentTargetLocation = new BrowseLocation { browsePoint = assignedSpot, inventory = null };
                     context.Runner.AssignedQueueSpotIndex = spotIndex;
+                    Debug.Log($"{context.NpcObject.name}: Called MoveToDestination for secondary queue spot {spotIndex}.", context.NpcObject);
+
                     context.TransitionToState(CustomerState.SecondaryQueue); // Transition via context helper
                 }
                 else

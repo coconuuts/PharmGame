@@ -1,4 +1,3 @@
-// Systems/CameraControl/CameraManager.cs
 using UnityEngine;
 using System.Collections;
 using Systems.Interaction; // Needed if state actions pass response directly
@@ -38,15 +37,17 @@ namespace Systems.CameraControl
 
         private CameraMode currentMode = CameraMode.Locked; // Start in Locked mode
 
-        private float xRotation = 0f; // Current vertical rotation
+        private float xRotation = 0f; // Current vertical rotation (local X rotation)
 
         // The currently running camera movement coroutine
         private Coroutine cameraMoveCoroutine;
 
-        // Fields to store player camera's view before cinematic
-        // Stored when entering CinematicView from MouseLook
-        private Vector3 storedPlayerCamPosition;
-        private Quaternion storedPlayerCamRotation;
+        // --- MODIFIED: Fields to store player camera's view RELATIVE to the player body ---
+        private Vector3 storedPlayerCamLocalPosition; // Stored when entering CinematicView from MouseLook
+        private float storedPlayerCamXRotation;       // Stored local vertical angle (xRotation)
+        private float storedPlayerBodyYRotation;      // Stored player body Y rotation (horizontal)
+        // ---------------------------------------------------------------------------------
+
         // Flag to indicate if stored view is valid and a return journey is intended
         private bool hasStoredPlayerView = false;
         // Flag to prevent storing the view multiple times if SetCameraMode is called repeatedly
@@ -82,9 +83,17 @@ namespace Systems.CameraControl
 
             if (playerCameraTransform != null && playerBodyTransform != null)
             {
+                // Initialize xRotation from the camera's current local Euler angle X
                 Vector3 eulerRotation = playerCameraTransform.localEulerAngles;
                 xRotation = eulerRotation.x;
                 if (xRotation > 180) xRotation -= 360; // Adjust for Euler angles > 180
+                 Debug.Log($"CameraManager: Initial xRotation set to {xRotation} from localEulerAngles.x.", this);
+
+                 // Store the initial local position and rotations as the default "player view"
+                 storedPlayerCamLocalPosition = playerCameraTransform.localPosition;
+                 storedPlayerCamXRotation = xRotation;
+                 storedPlayerBodyYRotation = playerBodyTransform.rotation.eulerAngles.y;
+                 Debug.Log($"CameraManager: Stored initial player camera local position {storedPlayerCamLocalPosition}, vertical rotation {storedPlayerCamXRotation}, body Y rotation {storedPlayerBodyYRotation} as default view.", this);
             }
             else
             {
@@ -94,6 +103,7 @@ namespace Systems.CameraControl
 
             currentMode = CameraMode.Locked; // Start in Locked mode
              Cursor.lockState = CursorLockMode.None; // Ensure cursor is visible initially
+             Debug.Log("CameraManager: Initial mode set to Locked. Cursor unlocked.");
         }
 
         private void OnEnable()
@@ -115,6 +125,7 @@ namespace Systems.CameraControl
              {
                   StopCoroutine(cameraMoveCoroutine);
                   cameraMoveCoroutine = null;
+                  Debug.Log("CameraManager: Stopped ongoing coroutine in OnDestroy.");
              }
         }
 
@@ -131,22 +142,25 @@ namespace Systems.CameraControl
             // Check if the OLD state was InComputer OR InMinigame OR InCrafting
             // AND the NEW state is Playing
             // AND we have stored a player view to return to (`hasStoredPlayerView` should be true if we entered one of these states from MouseLook)
+            // ALSO check if playerBodyTransform is valid for calculating the return position
             if ((oldState == Systems.GameStates.MenuManager.GameState.InComputer ||
                  oldState == Systems.GameStates.MenuManager.GameState.InMinigame ||
                  oldState == Systems.GameStates.MenuManager.GameState.InCrafting) && // ADDED check for InCrafting
                 newState == Systems.GameStates.MenuManager.GameState.Playing &&
-                hasStoredPlayerView) // Check the flag
+                hasStoredPlayerView && // Check the flag
+                playerBodyTransform != null) // Ensure player body reference is valid for calculation
             {
                  Debug.Log($"CameraManager: >>> Initiating Automatic Return Journey <<<");
                  Debug.Log($"CameraManager: hasStoredPlayerView = {hasStoredPlayerView}");
-                 Debug.Log($"CameraManager: Stored Player Position: {storedPlayerCamPosition}, Stored Player Rotation: {storedPlayerCamRotation}");
+                 Debug.Log($"CameraManager: Stored Local Position: {storedPlayerCamLocalPosition}, Stored Vertical Rotation: {storedPlayerCamXRotation}, Stored Body Y Rotation: {storedPlayerBodyYRotation}");
 
                  // Set mode directly to MouseLook here. MouseLook input handling will resume in Update
                  // (handled by SetPlayerControl/SetMouseLook actions typically attached to Playing entry).
-                 currentMode = CameraMode.MouseLook; // Setting mode directly
+                 // Setting mode early prevents input flickering if the return is fast.
+                 currentMode = CameraMode.MouseLook;
                  Debug.Log("CameraManager: Setting mode directly to MouseLook for return transition.");
 
-                 // Stop any existing movement before starting the new one
+                 // Stop any existing movement before starting the new one (this check is also in SetCameraMode, but redundant here is fine)
                  if (cameraMoveCoroutine != null)
                  {
                      StopCoroutine(cameraMoveCoroutine);
@@ -154,28 +168,55 @@ namespace Systems.CameraControl
                      Debug.Log("CameraManager: Stopped any ongoing movement before starting return.");
                  }
 
+                 // --- MODIFIED: Calculate the target world position/rotation based on current player body ---
+                 // Apply the stored local position offset relative to the current player body rotation
+                 Vector3 returnTargetPosition = playerBodyTransform.position + playerBodyTransform.rotation * storedPlayerCamLocalPosition;
+                 // Apply the stored vertical camera rotation relative to the current player body rotation
+                 // We need to also restore the player body's Y rotation to what it was, otherwise the camera
+                 // will return facing the wrong direction horizontally if the player body was rotated
+                 // while the minigame was active.
+                 Quaternion playerBodyTargetRotation = Quaternion.Euler(0f, storedPlayerBodyYRotation, 0f);
+                 Quaternion cameraLocalTargetRotation = Quaternion.Euler(storedPlayerCamXRotation, 0f, 0f);
+                 Quaternion returnTargetRotation = playerBodyTargetRotation * cameraLocalTargetRotation; // Body rotation * Camera local rotation
+
+                 Debug.Log($"CameraManager: Calculated return target based on current player body pos/rot. Target Position: {returnTargetPosition}, Target Rotation: {returnTargetRotation}");
+
+                // --- Optional: Immediately set the player body's Y rotation back ---
+                // This snaps the body rotation instantly, which feels okay.
+                // An alternative is to animate the body rotation too, but that's more complex.
+                // Snapping the body rotation here ensures the camera's *vertical* rotation
+                // remains correct relative to the body's final orientation after the camera lerp finishes.
+                playerBodyTransform.rotation = playerBodyTargetRotation;
+                 Debug.Log($"CameraManager: Snapped player body Y rotation back to stored value: {storedPlayerBodyYRotation}");
+                // --------------------------------------------------------------
+
                  // Start the return movement coroutine
                  cameraMoveCoroutine = StartCoroutine(
                      MoveCameraCoroutine(
-                         playerCameraTransform.position,
-                         playerCameraTransform.rotation,
-                         storedPlayerCamPosition,
-                         storedPlayerCamRotation,
+                         playerCameraTransform.position, // Start from the camera's current world position (the cinematic view)
+                         playerCameraTransform.rotation, // Start from the camera's current world rotation
+                         returnTargetPosition,           // Target world position calculated relative to the current player body
+                         returnTargetRotation,           // Target world rotation calculated relative to the current player body
                          returnMoveDuration,
                          true // Indicate this is a return journey
                      )
                  );
+                // -----------------------------------------------------------------------------
 
                  // Reset the stored player view flag immediately after initiating the return
                  hasStoredPlayerView = false;
                  isStoringView = false; // Also reset the storing flag
                  Debug.Log($"CameraManager: hasStoredPlayerView set to {hasStoredPlayerView}, isStoringView set to {isStoringView} after initiating return.");
 
-                 // IMPORTANT: We are NOT calling SetCameraMode(MouseLook) here. The mode is already set.
+                 // IMPORTANT: We are NOT calling SetCameraMode(MouseLook) here. The mode is already set,
+                 // and the return movement is initiated. The SetCameraModeActionSO for Playing entry
+                 // will likely run shortly after this event handler finishes, but the logic inside
+                 // SetCameraMode will detect the active coroutine and the already-set mode and ignore the call.
             }
              else
              {
-                  Debug.Log($"CameraManager: No automatic return needed for {oldState} -> {newState} (hasStoredPlayerView: {hasStoredPlayerView}).");
+                  // Debug log updated for clarity
+                  Debug.Log($"CameraManager: No automatic return needed for {oldState} -> {newState} (hasStoredPlayerView: {hasStoredPlayerView}, playerBodyTransform valid: {playerBodyTransform != null}).");
                   // If we transition to a state that is NOT Playing, the camera might stay cinematic or locked.
                   // E.g., InMinigame -> InPauseMenu -> InMinigame. We don't want to return to player view just to go back to the cinematic view.
                   // The logic above correctly handles this by only returning when the new state is Playing.
@@ -210,11 +251,12 @@ namespace Systems.CameraControl
             float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity * Time.deltaTime;
             float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity * Time.deltaTime;
 
+            // Update the stored xRotation value as the player looks around in MouseLook
             xRotation -= mouseY;
             xRotation = Mathf.Clamp(xRotation, verticalRotationLimits.x, verticalRotationLimits.y);
-            playerCameraTransform.localRotation = Quaternion.Euler(xRotation, 0f, 0f);
+            playerCameraTransform.localRotation = Quaternion.Euler(xRotation, 0f, 0f); // Apply as local rotation to the camera
 
-            playerBodyTransform.Rotate(Vector3.up * mouseX);
+            playerBodyTransform.Rotate(Vector3.up * mouseX); // Apply horizontal rotation to the body
         }
 
 
@@ -230,27 +272,28 @@ namespace Systems.CameraControl
         {
              Debug.Log($"CameraManager.SetCameraMode called: currentMode = {currentMode}, requested mode = {mode}. Target view: {targetView?.name ?? "none"}, Duration: {duration}.");
 
-             // --- FIX: Capture oldMode before changing currentMode ---
+             // --- Capture oldMode before changing currentMode ---
              CameraMode oldMode = currentMode;
              // -------------------------------------------------------
 
              // Ignore calls to MouseLook if a return coroutine is currently active
              // This prevents the PlayingConfig entry action from interrupting the return.
              // HandleGameStateChanged already sets the mode to MouseLook when starting a return.
-             if (mode == CameraMode.MouseLook && cameraMoveCoroutine != null)
+             // This check also prevents redundant logging from SetCameraModeActionSO if it's configured to run
+             // when a return is already in progress.
+             if (mode == CameraMode.MouseLook && cameraMoveCoroutine != null && currentMode == CameraMode.MouseLook)
              {
-                 // If the current mode is already MouseLook and a coroutine is active, it MUST be a return journey.
-                 // Just log and return, don't interrupt.
-                 if (currentMode == CameraMode.MouseLook)
-                 {
-                      Debug.LogWarning("CameraManager: Ignoring SetCameraMode(MouseLook) call because a camera movement coroutine is active (likely a return journey).", this);
-                      return;
-                 }
-                 // If mode is DIFFERENT from MouseLook but a coroutine is active, it's a new cinematic overriding an old one or a return.
-                 // Let the standard logic below handle stopping the old coroutine.
+                 // If the current mode is already MouseLook and a coroutine is active, it MUST be a return journey initiated by HandleGameStateChanged.
+                 // Just log and return, don't interrupt or change anything.
+                 Debug.LogWarning("CameraManager: Ignoring SetCameraMode(MouseLook) call because camera is already in MouseLook and a return coroutine is active.", this);
+                 return;
              }
+             // If mode is DIFFERENT from MouseLook but a coroutine is active, it's a new cinematic overriding an old one or a return.
+             // Let the standard logic below handle stopping the old coroutine.
 
 
+             // Allow setting to the same mode if it's CinematicView, as target/duration might change.
+             // Otherwise, ignore same mode calls.
              if (currentMode == mode && mode != CameraMode.CinematicView)
              {
                   Debug.Log($"CameraManager: Already in mode {mode} and not requesting CinematicView. Ignoring SetCameraMode call.");
@@ -261,7 +304,7 @@ namespace Systems.CameraControl
             // Stop the coroutine ONLY if transitioning FROM CinematicView
             // or if transitioning TO CinematicView (overwriting a previous move).
             // Do NOT stop it if transitioning from MouseLook/Locked to MouseLook/Locked,
-            // as the active coroutine might be a paused return that we want to resume.
+            // as the active coroutine might be a paused return that we want to resume if going back to MouseLook.
              if (currentMode == CameraMode.CinematicView && cameraMoveCoroutine != null)
              {
                  StopCoroutine(cameraMoveCoroutine);
@@ -270,23 +313,27 @@ namespace Systems.CameraControl
              }
              else if (mode == CameraMode.CinematicView && cameraMoveCoroutine != null) // Transitioning TO CinematicView while a move is active (overwriting)
              {
+                  // This stops a *return* journey coroutine if a new cinematic is initiated while returning.
+                  // Example: Player hits Escape from minigame, return starts. Before return finishes,
+                  // player interacts with something else that starts a *different* cinematic.
                   StopCoroutine(cameraMoveCoroutine);
                   cameraMoveCoroutine = null;
-                  Debug.Log("CameraManager: Stopped ongoing movement (transitioning to new CinematicView).");
+                  Debug.Log("CameraManager: Stopped ongoing movement (including potential return) transitioning to new CinematicView.");
              }
 
 
-            // --- Store player view when transitioning from MouseLook to any other mode ---
-            // Only store if currentMode IS MouseLook AND requested mode IS NOT MouseLook
+            // --- MODIFIED: Store player view when transitioning from MouseLook to any other mode ---
+            // Only store if oldMode IS MouseLook AND requested mode IS NOT MouseLook
             // AND we are NOT already in the process of storing (debounce multiple calls in one frame)
-            // Using the captured 'oldMode' here.
-             if (oldMode == CameraMode.MouseLook && mode != CameraMode.MouseLook && playerCameraTransform != null && !hasStoredPlayerView && !isStoringView)
+            // AND playerBodyTransform is valid.
+             if (oldMode == CameraMode.MouseLook && mode != CameraMode.MouseLook && playerCameraTransform != null && playerBodyTransform != null && !hasStoredPlayerView && !isStoringView)
              {
                   isStoringView = true; // Set storing flag
-                  storedPlayerCamPosition = playerCameraTransform.position;
-                  storedPlayerCamRotation = playerCameraTransform.rotation;
+                  storedPlayerCamLocalPosition = playerCameraTransform.localPosition; // Store camera's position LOCAL to its parent (player body)
+                  storedPlayerCamXRotation = xRotation; // Store local vertical angle
+                  storedPlayerBodyYRotation = playerBodyTransform.rotation.eulerAngles.y; // Store player body's Y rotation (horizontal)
                   hasStoredPlayerView = true; // Now we have a valid stored view
-                  Debug.Log($"CameraManager: Stored player camera position {storedPlayerCamPosition}/rotation {storedPlayerCamRotation}. hasStoredPlayerView = {hasStoredPlayerView}, isStoringView = {isStoringView}");
+                  Debug.Log($"CameraManager: Stored player camera local position {storedPlayerCamLocalPosition}, vertical rotation {storedPlayerCamXRotation}, body Y rotation {storedPlayerBodyYRotation}. hasStoredPlayerView = {hasStoredPlayerView}, isStoringView = {isStoringView}");
              }
 
 
@@ -301,8 +348,10 @@ namespace Systems.CameraControl
                 case CameraMode.MouseLook:
                      // This case is now primarily for transitions not from a cinematic return
                      // (e.g., initial state, from Locked via a direct SO action).
+                     // If coming from a state that didn't store a view (e.g., Locked) or if the
+                     // return journey just finished and reset hasStoredPlayerView,
+                     // we are just setting the mode here. No movement needed.
                      Debug.Log("CameraManager: Entry logic for MouseLook mode (normal entry).");
-                     // No movement logic needed here.
                     break;
 
                 case CameraMode.CinematicView:
@@ -310,23 +359,49 @@ namespace Systems.CameraControl
                     {
                         Debug.LogError("CameraManager: SetCameraMode(CinematicView) called but targetView is null!", this);
                         // Fallback: Go back to the mode we came from (if not MouseLook -> Cinematic)
-                        // or to MouseLook if we came from MouseLook.
-                        SetCameraMode(hasStoredPlayerView ? CameraMode.MouseLook : CameraMode.Locked); // Try returning if view was stored, otherwise lock
-                        return;
+                        // or to MouseLook if we came from MouseLook and have a stored view.
+                        // If came from MouseLook and target was null, implies an error initiating the cinematic,
+                        // so attempt to return to stored player view instead of locking.
+                         if (oldMode == CameraMode.MouseLook && hasStoredPlayerView && playerBodyTransform != null)
+                         {
+                              Debug.LogWarning("CameraManager: Falling back to return to stored player view.", this);
+                              // Recalculate and start return journey immediately
+                              Vector3 returnTargetPosition = playerBodyTransform.position + playerBodyTransform.rotation * storedPlayerCamLocalPosition;
+                              Quaternion playerBodyTargetRotation = Quaternion.Euler(0f, storedPlayerBodyYRotation, 0f);
+                              Quaternion cameraLocalTargetRotation = Quaternion.Euler(storedPlayerCamXRotation, 0f, 0f);
+                              Quaternion returnTargetRotation = playerBodyTargetRotation * cameraLocalTargetRotation;
+
+                              playerBodyTransform.rotation = playerBodyTargetRotation; // Snap body rotation
+
+                              cameraMoveCoroutine = StartCoroutine(
+                                 MoveCameraCoroutine(
+                                     playerCameraTransform.position,
+                                     playerCameraTransform.rotation,
+                                     returnTargetPosition,
+                                     returnTargetRotation,
+                                     returnMoveDuration, // Use return duration for this fallback
+                                     true // Treat this error fallback as a return journey
+                                 )
+                              );
+                             // Reset the flags immediately as the 'return' is initiated
+                             hasStoredPlayerView = false;
+                             isStoringView = false;
+                             currentMode = CameraMode.MouseLook; // Set mode to MouseLook as we are returning
+                         }
+                         else
+                         {
+                              Debug.LogError("CameraManager: Falling back to Locked mode.", this);
+                              SetCameraMode(CameraMode.Locked); // If no stored view or not from MouseLook, just lock
+                         }
+                        return; // Exit this SetCameraMode call
                     }
                     // Start movement coroutine FORWARD to the cinematic target
-                    // Stop any potential return coroutine here as we are initiating a new cinematic view.
-                    if (cameraMoveCoroutine != null)
-                    {
-                        StopCoroutine(cameraMoveCoroutine);
-                        cameraMoveCoroutine = null;
-                        Debug.Log("CameraManager: Stopped any existing movement (including potential return) for new CinematicView.");
-                    }
-
+                    // If we reached here, it means we successfully validated targetView and duration.
+                    // Any existing coroutine (including potential return) was stopped above.
                     cameraMoveCoroutine = StartCoroutine(
                         MoveCameraCoroutine(
-                            playerCameraTransform.position, // Use current position as start
-                            playerCameraTransform.rotation, // Use current rotation as start
+                            playerCameraTransform.position, // Use camera's current world position as start
+                            playerCameraTransform.rotation, // Use camera's current world rotation as start
                             targetView.position,
                             targetView.rotation,
                             duration,
@@ -339,12 +414,16 @@ namespace Systems.CameraControl
                 case CameraMode.Locked:
                     Debug.Log("CameraManager: Entered Locked mode.");
                      // Ensure any ongoing coroutine (cinematic or return) is stopped if explicitly locked.
+                     // This handles cases where SetCameraMode(Locked) is called directly, e.g., by a debug command.
                      if (cameraMoveCoroutine != null)
                      {
                           StopCoroutine(cameraMoveCoroutine);
                           cameraMoveCoroutine = null;
                           Debug.Log("CameraManager: Stopped any ongoing movement due to entering Locked mode.");
                      }
+                    // Reset stored view if explicitly locked? Depends on desired behavior.
+                    // Let's keep it simple: only reset when a return journey is *initiated* by state change,
+                    // not by explicitly locking.
                     break;
             }
 
@@ -362,26 +441,33 @@ namespace Systems.CameraControl
         /// Moves the player camera smoothly between two points.
         /// Uses unscaledDeltaTime for duration calculation.
         /// Sets cameraMoveCoroutine to null upon completion.
+        /// Handles potential destruction of the camera object mid-coroutine.
         /// </summary>
         private IEnumerator MoveCameraCoroutine(Vector3 startPosition, Quaternion startRotation, Vector3 targetPosition, Quaternion targetRotation, float duration, bool isReturnJourney)
         {
-            if (playerCameraTransform == null || duration <= 0)
+             // Capture references needed *inside* the loop in case the main references are cleared later.
+             // Note: playerCameraTransform might become null if the camera object is destroyed.
+             // Let's rely on the null check *inside* the loop.
+
+            if (duration <= 0)
             {
-                 cameraMoveCoroutine = null; // Ensure coroutine reference is cleared even on early exit
-                 Debug.LogWarning("CameraManager: Camera movement coroutine exiting early due to invalid parameters.", this);
+                 Debug.LogWarning("CameraManager: Camera movement coroutine exiting early due to zero or negative duration.", this);
+                 // Ensure the camera snaps to the target if duration is effectively zero
+                 if (playerCameraTransform != null)
+                 {
+                      playerCameraTransform.position = targetPosition;
+                      playerCameraTransform.rotation = targetRotation;
+                      Debug.Log("CameraManager: Camera snapped to target due to zero duration.");
+                 }
+                 cameraMoveCoroutine = null; // Ensure coroutine reference is cleared
                  yield break;
             }
 
-            float elapsed = 0f;
-
-            // Use the *actual* current position/rotation of the camera at the start of the coroutine
-            // This handles cases where SetCameraMode is called while a previous move is in progress.
-            // We already have the start position and rotation passed in from the caller (SetCameraMode)
-            // based on the camera's state *just before* this coroutine starts.
-            // No need to capture them again here.
 
              Debug.Log($"CameraManager: Starting MoveCameraCoroutine. Duration: {duration}s, Return: {isReturnJourney}. From: {startPosition} to: {targetPosition}");
 
+
+            float elapsed = 0f;
 
             while (elapsed < duration)
             {
@@ -419,10 +505,11 @@ namespace Systems.CameraControl
             cameraMoveCoroutine = null; // Clear coroutine reference when finished
             Debug.Log("CameraManager: Camera movement coroutine finished.");
 
-            // The camera mode was already set by HandleGameStateChanged or SetCameraMode
+            // The camera mode was already set by HandleGameStateChanged (for return) or SetCameraMode (for forward)
              if (isReturnJourney)
              {
-                 Debug.Log("CameraManager: Return journey coroutine finished. Camera mode is already MouseLook.");
+                 Debug.Log("CameraManager: Return journey coroutine finished. Camera mode is already MouseLook. Player body Y rotation was snapped back.");
+                 // No additional action needed here as the mode and body rotation were handled before the coroutine started.
              }
              else
              {

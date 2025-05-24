@@ -34,12 +34,19 @@ namespace Game.NPC.States
             // Note: Play waiting/idle animation
             // context.PlayAnimation("WaitingInLine");
 
-            // *** IMPORTANT RECONCILIATION FOR QUEUE MOVEMENT ***
-            // The initial movement to the assigned spot happens BEFORE entering this state
-            // in CustomerInitializingStateSO or CustomerBrowseStateSO, which sets the Runner's
-            // CurrentTargetLocation and AssignedQueueSpotIndex and calls context.MoveToDestination.
-            // This state SO's OnUpdate and OnReachedDestination handle moving *within* the queue line.
-            // The old BaseQueueLogic component is now removed.
+            // --- NEW: Initiate movement to the assigned queue spot ---
+            if (context.CurrentTargetLocation.HasValue && context.CurrentTargetLocation.Value.browsePoint != null && context.AssignedQueueSpotIndex != -1)
+            {
+                Debug.Log($"{context.NpcObject.name}: Entering {name}. Moving to assigned spot {context.AssignedQueueSpotIndex} at {context.CurrentTargetLocation.Value.browsePoint.position}.", context.NpcObject);
+                bool moveStarted = context.MoveToDestination(context.CurrentTargetLocation.Value.browsePoint.position);
+                Debug.Log($"{context.NpcObject.name}: Called MoveToDestination from OnEnter. Result: {moveStarted}", context.NpcObject);
+            }
+            else
+            {
+                Debug.LogError($"{context.NpcObject.name}: Entering Main Queue state without a valid assigned queue spot in context! Exiting.", context.NpcObject);
+                context.TransitionToState(CustomerState.Exiting); // Or ReturningToPool
+            }
+            // -------------------------------------------------------
         }
 
         public override void OnUpdate(NpcStateContext context)
@@ -82,32 +89,40 @@ namespace Game.NPC.States
              context.Runner.AssignedQueueSpotIndex = -1; // Reset index on Runner/Context
         }
         
-        public override void OnReachedDestination(NpcStateContext context) // <-- Implement OnReachedDestination
+        public override void OnReachedDestination(NpcStateContext context)
         {
-             // This logic was triggered from the old BaseQueueLogic.OnUpdate after reaching destination.
-             Debug.Log($"{context.NpcObject.name}: Reached Main Queue spot {context.AssignedQueueSpotIndex} (detected by Runner). Stopping and Rotating.", context.NpcObject);
+            // Removed: context.MovementHandler?.StopMoving(); // Redundant, Runner does this
 
-             context.MovementHandler?.StopMoving(); // Explicitly stop movement again after Runner detects arrival
+            Debug.Log($"{context.NpcObject.name}: Reached Queue spot {context.AssignedQueueSpotIndex} (detected by Runner). Stopping and Rotating.", context.NpcObject);
 
-             // --- Start Rotation Logic (Migration from old BaseQueueLogic.OnUpdate) ---
-             // Get the Transform of the currently assigned queue spot using context helper
-             Transform currentQueueSpotTransform = context.Manager?.GetQueuePoint(context.AssignedQueueSpotIndex);
 
-             if (currentQueueSpotTransform != null)
-             {
-                  Quaternion targetRotation = currentQueueSpotTransform.rotation;
-                  Debug.Log($"CustomerAI ({context.NpcObject.name}): Starting rotation towards queue spot rotation {targetRotation.eulerAngles} via MovementHandler.", context.NpcObject);
-                  context.RotateTowardsTarget(targetRotation); // Use context helper
-             }
-             else
-             {
-                 Debug.LogWarning($"CustomerAI ({context.NpcObject.name}): Could not get Main Queue spot Transform {context.AssignedQueueSpotIndex} for rotation!", context.NpcObject);
-             }
-             // --- End Rotation Logic ---
+            // --- Start Rotation Logic ---
+            Transform currentQueueSpotTransform;
+            if (HandledState.Equals(CustomerState.Queue))
+            {
+                currentQueueSpotTransform = context.Manager?.GetQueuePoint(context.AssignedQueueSpotIndex);
+            }
+            else // Must be SecondaryQueue
+            {
+                currentQueueSpotTransform = context.Manager?.GetSecondaryQueuePoint(context.AssignedQueueSpotIndex);
+            }
 
-             // OnReachedEndOfQueue logic from the old BaseQueueLogic (which was abstract).
-             // For main queue, reaching the spot just means waiting for the Manager to call GoToRegisterFromQueue (on the Runner).
-             // So no action needed here besides stopping and rotating.
+
+            if (currentQueueSpotTransform != null)
+            {
+                Quaternion targetRotation = currentQueueSpotTransform.rotation;
+                Debug.Log($"CustomerAI ({context.NpcObject.name}): Starting rotation towards queue spot rotation {targetRotation.eulerAngles} via MovementHandler.", context.NpcObject);
+                context.RotateTowardsTarget(targetRotation); // Use context helper
+            }
+            else
+            {
+                Debug.LogWarning($"CustomerAI ({context.NpcObject.name}): Could not get Queue spot Transform {context.AssignedQueueSpotIndex} for rotation!", context.NpcObject);
+            }
+            // --- End Rotation Logic ---
+
+            // No state transition needed here, they just wait in this state.
+            // The next transition (to MovingToRegister or Exiting) is triggered externally
+            // by the CustomerManager receiving a CashRegisterFreeEvent or NpcImpatientEvent.
         }
     }
 }
