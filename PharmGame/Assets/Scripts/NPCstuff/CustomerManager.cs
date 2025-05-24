@@ -262,118 +262,250 @@ namespace CustomerManagement
              }
         }
 
-        /// <summary>
-        /// Handles the QueueSpotFreedEvent. Signals that a customer is leaving a specific queue spot.
-        /// </summary>
-        /// <param name="eventArgs">The event arguments containing the queue type and spot index.</param>
-        private void HandleQueueSpotFreed(QueueSpotFreedEvent eventArgs)
+/// <summary>
+/// Handles the QueueSpotFreedEvent. Signals that a customer is leaving a specific queue spot.
+/// This method is called *only* by the OnExit of the QueueStateSO or SecondaryQueueStateSO.
+/// It marks the specific spot free and cascades the move-up commands down the line.
+/// </summary>
+/// <param name="eventArgs">The event arguments containing the queue type and spot index.</param>
+private void HandleQueueSpotFreed(QueueSpotFreedEvent eventArgs)
+{
+    QueueType type = eventArgs.Type;
+    int spotIndex = eventArgs.SpotIndex;
+
+    // Basic validation
+    if (spotIndex < 0)
+    {
+         Debug.LogWarning($"CustomerManager: Received QueueSpotFreedEvent with invalid negative spot index {spotIndex}. Ignoring.", this);
+         return;
+    }
+
+    Debug.Log($"CustomerManager: Handling QueueSpotFreedEvent for spot {spotIndex} in {type} queue.");
+
+    bool[] occupiedArray = null;
+    List<Transform> pointsList = null;
+    CustomerState queueStateEnum;
+
+    if (type == QueueType.Main)
+    {
+        occupiedArray = queueSpotOccupied;
+        pointsList = queuePoints;
+        queueStateEnum = CustomerState.Queue;
+    }
+    else if (type == QueueType.Secondary)
+    {
+        occupiedArray = secondaryQueueSpotOccupied;
+        pointsList = secondaryQueuePoints;
+        queueStateEnum = CustomerState.SecondaryQueue;
+    }
+    else
+    {
+         Debug.LogError($"CustomerManager: Received QueueSpotFreedEvent for unknown QueueType: {type}!");
+         return;
+    }
+
+    // Further validation
+     if (occupiedArray == null || pointsList == null || spotIndex < 0 || spotIndex >= occupiedArray.Length)
+     {
+          Debug.LogWarning($"CustomerManager: Received invalid QueueSpotFreedEvent args (index {spotIndex}, type {type}) or null array/list. Ignoring.", this);
+          return;
+     }
+
+
+    // 1. Mark the spot that explicitly published the event as free in the occupied array.
+    // This spot *should* have been occupied.
+    if (occupiedArray[spotIndex])
+    {
+        occupiedArray[spotIndex] = false; // <-- Mark the spot as free
+        Debug.Log($"CustomerManager: Spot {spotIndex} in {type} queue is now marked free (triggered by State Exit).");
+    }
+    else
+    {
+        // This might happen if the spot was force-freed due to inconsistency previously
+         Debug.LogWarning($"CustomerManager: Received QueueSpotFreedEvent for spot {spotIndex} in {type} queue, but it was already marked as free. Inconsistency?", this);
+    }
+
+
+    // 2. Initiate the cascade of "move up" commands down the line.
+    // Iterate through ALL subsequent spots starting from the one *after* the freed spot.
+    // We check based on ASSIGNED INDEX, not necessarily if the spot is marked occupied in the array yet.
+    for (int currentSpotIndex = spotIndex + 1; currentSpotIndex < pointsList.Count; currentSpotIndex++)
+    {
+         // Find the Runner currently assigned to this 'currentSpotIndex' and in the correct state.
+         // We must search through all active customers in the correct queue state.
+         Game.NPC.NpcStateMachineRunner runnerToMove = null;
+         foreach (var activeRunner in activeCustomers)
+         {
+             if (activeRunner != null &&
+                 activeRunner.CurrentStateSO != null &&
+                 activeRunner.CurrentStateSO.HandledState.Equals(queueStateEnum) && // Must be in the correct queue state
+                 activeRunner.AssignedQueueSpotIndex == currentSpotIndex) // Must be assigned to this spot index
+             {
+                 runnerToMove = activeRunner;
+                 break; // Found the Runner
+             }
+         }
+
+         // If we found a runner assigned to this spot...
+         if (runnerToMove != null)
+         {
+             // Tell the runner to move to the *previous* spot (currentSpotIndex - 1)
+             int nextSpotIndex = currentSpotIndex - 1;
+             Debug.Log($"CustomerManager: Signalling {runnerToMove.gameObject.name} (Runner) assigned to spot {currentSpotIndex} to move up to spot {nextSpotIndex} in {type} queue.");
+
+             // Call the method on the Runner to initiate the move.
+             // The Runner will update its internal assigned index and start moving.
+             // It will *also* set its _isMovingToQueueSpot flag.
+             runnerToMove.MoveToQueueSpot(pointsList[nextSpotIndex], nextSpotIndex, type); // <-- Pass queueType
+
+             // !!! The physical spot (currentSpotIndex) is marked free in occupiedArray
+             //    WHEN THE RUNNER ARRIVES at the *new* spot (nextSpotIndex),
+             //    via the FreePreviousQueueSpotOnArrival call from the Runner's Update.
+             //    DO NOT mark occupiedArray[currentSpotIndex] false here.
+             // occupiedArray[currentSpotIndex] = false; // <-- REMOVE THIS LINE ENTIRELY
+         }
+         else // No runner found assigned to this spot index in the correct state
+         {
+             // This means there's a true gap or inconsistency in the *assigned indices* of runners in the queue.
+             // Log a warning, but continue the loop. The next spot might have someone.
+             // Example: Spots 0, 1 (empty assignment), 2 (occupied assignment). When spot 0 freed,
+             // loop reaches 1, finds no one assigned to 1, logs gap, continues to 2, finds NPC X assigned to 2, tells them to move to 1.
+             Debug.LogWarning($"CustomerManager: No Runner found assigned to spot {currentSpotIndex} in {type} queue state. This spot might be empty or inconsistency in assignments. Continuing cascade search.", this);
+
+             // Continue the loop. Do *not* break just because one spot is empty.
+         }
+    } // End of cascade loop
+}
+    
+    /// <summary>
+    /// Called by an NpcStateMachineRunner when it completes a MoveToQueueSpot command.
+    /// This signifies that the Runner has arrived at its *new* spot, and its *previous* spot is now free.
+    /// </summary>
+    /// <param name="queueType">The type of queue the move occurred within.</param>
+    /// <param name="previousSpotIndex">The index of the spot the runner *just left* (which is now physically free).</param>
+    /// <returns>True if the spot was successfully marked free, false otherwise.</returns>
+    public bool FreePreviousQueueSpotOnArrival(QueueType queueType, int previousSpotIndex)
+    {
+        Debug.Log($"CustomerManager: Handling FreePreviousQueueSpotOnArrival for spot {previousSpotIndex} in {queueType} queue.");
+
+        bool[] occupiedArray = null;
+        string queueName = "";
+
+        if (queueType == QueueType.Main)
         {
-            QueueType type = eventArgs.Type;
-            int spotIndex = eventArgs.SpotIndex;
-
-            Debug.Log($"CustomerManager: Handling QueueSpotFreedEvent for spot {spotIndex} in {type} queue.");
-            bool[] occupiedArray = null;
-            List<Transform> pointsList = null;
-            Queue<Game.NPC.NpcStateMachineRunner> targetQueue = null; // Queue of Runners
-
-            if (type == QueueType.Main)
-            {
-                occupiedArray = queueSpotOccupied;
-                pointsList = queuePoints;
-                targetQueue = customerQueue;
-            }
-            else if (type == QueueType.Secondary)
-            {
-                occupiedArray = secondaryQueueSpotOccupied;
-                pointsList = secondaryQueuePoints;
-                targetQueue = secondaryCustomerQueue;
-            }
-            else
-            {
-                Debug.LogError($"CustomerManager: Received QueueSpotFreedEvent for unknown QueueType: {type}!");
-                return;
-            }
-
-            if (occupiedArray != null && pointsList != null && targetQueue != null && spotIndex >= 0 && spotIndex < occupiedArray.Length)
-            {
-                occupiedArray[spotIndex] = false;
-                Debug.Log($"CustomerManager: Spot {spotIndex} in {type} queue is now free.");
-
-                // --- Logic to potentially move the next customer (Runner) up ---
-                int nextCustomerSpotIndex = spotIndex + 1;
-
-                if (nextCustomerSpotIndex < pointsList.Count)
-                {
-                    Game.NPC.NpcStateMachineRunner runnerToMove = null; // Look for Runner
-                    foreach (var runner in targetQueue) // Iterate Runners in queue
-                    {
-                        // Access AssignedQueueSpotIndex from the Runner
-                        if (runner != null && runner.AssignedQueueSpotIndex == nextCustomerSpotIndex)
-                        {
-                            runnerToMove = runner; // Found the Runner who should move up
-                            break;
-                        }
-                    }
-
-                    if (runnerToMove != null)
-                    {
-                        Debug.Log($"CustomerManager: Signalling {runnerToMove.gameObject.name} (Runner) at spot {nextCustomerSpotIndex} to move up to spot {spotIndex} in {type} queue.");
-
-                        // Call the new MoveToQueueSpot method on the Runner
-                        runnerToMove.MoveToQueueSpot(pointsList[spotIndex], spotIndex);
-                    }
-                    else
-                    {
-                        Debug.Log($"CustomerManager: No customer (Runner) found waiting for spot {nextCustomerSpotIndex} or beyond in {type} queue.");
-                    }
-                }
-                else
-                {
-                    Debug.Log($"CustomerManager: Freed spot {spotIndex} is the last in the {type} queue. No customer (Runner) behind needs to move up this specific spot.");
-                }
-            }
-            else
-            {
-                Debug.LogWarning($"CustomerManager: Received invalid QueueSpotFreedEvent args (index {spotIndex}, type {type}) or null array/list/queue.");
-            }
+            occupiedArray = queueSpotOccupied;
+            queueName = "Main";
+        }
+        else if (queueType == QueueType.Secondary)
+        {
+            occupiedArray = secondaryQueueSpotOccupied;
+            queueName = "Secondary";
+        }
+        else
+        {
+            Debug.LogError($"CustomerManager: Received FreePreviousQueueSpotOnArrival for unknown QueueType: {queueType}!", this);
+            return false;
         }
 
+         // Validate the previous spot index
+        if (occupiedArray == null || previousSpotIndex < 0 || previousSpotIndex >= occupiedArray.Length)
+        {
+            Debug.LogWarning($"CustomerManager: Received FreePreviousQueueSpotOnArrival with invalid spot index {previousSpotIndex} for {queueName} queue. Ignoring.", this);
+            return false;
+        }
 
-        /// <summary>
+        // Mark the previous spot as free.
+        if (occupiedArray[previousSpotIndex])
+        {
+             occupiedArray[previousSpotIndex] = false; // <-- Mark the spot as free on arrival
+             Debug.Log($"CustomerManager: Spot {previousSpotIndex} in {queueName} queue is now marked free (triggered by Runner Arrival).");
+             return true;
+        }
+        else
+        {
+             Debug.LogWarning($"CustomerManager: Received FreePreviousQueueSpotOnArrival for spot {previousSpotIndex} in {queueName} queue, but it was already marked as free. Inconsistency?", this);
+             // Return true even if already free, as the intent was achieved.
+             return true;
+        }
+    }
+
+
+/// <summary>
         /// Handles the CashRegisterFreeEvent. Signals that the register is available.
+        /// This method attempts to send the customer at Main Queue spot 0 to the register.
         /// </summary>
         /// <param name="eventArgs">The event arguments (currently empty).</param>
         private void HandleCashRegisterFree(CashRegisterFreeEvent eventArgs)
         {
             Debug.Log("CustomerManager: Handling CashRegisterFreeEvent.");
-            customerAtRegister = null; // The register is now free
+            customerAtRegister = null; // The register is now free (this is the Manager's tracking)
 
-            // If there are customers (Runners) in the main queue
-            if (customerQueue.Count > 0)
-{
-    Game.NPC.NpcStateMachineRunner nextRunner = customerQueue.Dequeue(); // Dequeue Runner
-    Debug.Log($"CustomerManager: Dequeued {nextRunner.gameObject.name} (Runner) from main queue. Signalling them to move to register.");
-
-    // --- NEW: Signal the Manager that THIS runner is now claiming the register spot ---
-    SignalCustomerAtRegister(nextRunner); // <-- Call here!
-    // -------------------------------------------------------------------------------
-
-    // Tell them to go to register - Call public method on the Runner
-    nextRunner.GoToRegisterFromQueue(); // This transitions the runner to MovingToRegister
-
-    // The first main queue spot (index 0) is now free because the person going to the register left it.
-    // Call the handler manually for spot 0.
-    HandleQueueSpotFreed(new QueueSpotFreedEvent(QueueType.Main, 0));
-}
-            else
+            // Find the customer currently at Main Queue spot 0.
+            // We must search *all* active customers to find the one
+            // that is currently in the Main Queue state AND assigned to index 0.
+            Game.NPC.NpcStateMachineRunner runnerAtSpot0 = null;
+            foreach (var activeRunner in activeCustomers) // <-- Iterate the list of *all* active runners
             {
-                Debug.Log("CustomerManager: Main queue is empty.");
+                if (activeRunner != null &&
+                    activeRunner.CurrentStateSO != null && // Ensure CurrentStateSO is not null
+                    activeRunner.CurrentStateSO.HandledState.Equals(CustomerState.Queue) && // Must be in the Main Queue state
+                    activeRunner.AssignedQueueSpotIndex == 0) // Must be assigned to spot 0
+                {
+                    runnerAtSpot0 = activeRunner;
+                    break; // Found the one who should go to the register
+                }
             }
 
-            // Check and trigger Secondary Queue release
-            if (customerQueue.Count < mainQueueReleaseThreshold)
+            // If we found a customer at spot 0...
+            if (runnerAtSpot0 != null)
             {
-                ReleaseNextSecondaryCustomer(); // Call the method that publishes the event
+                Debug.Log($"CustomerManager: Found {runnerAtSpot0.gameObject.name} (Runner) assigned to Main Queue spot 0. Signalling them to move to register.");
+
+                // Tell the Manager that THIS runner is now claiming the register spot
+                SignalCustomerAtRegister(runnerAtSpot0); // <-- Update Manager's 'customerAtRegister' tracking
+
+                // Tell the runner to transition to the state for moving to the register.
+                // This transitions the runner out of CustomerState.Queue.
+                // The CustomerState.Queue.OnExit method will *then* publish QueueSpotFreedEvent(Main, 0).
+                // HandleQueueSpotFreed(Main, 0) will *then* receive this event and trigger the cascade
+                // to move everyone up and free their old spots.
+                runnerAtSpot0.GoToRegisterFromQueue(); // <-- Tell the runner to move
+
+                // --- REMOVE THE MANUAL CALL TO HandleQueueSpotFreed(Main, 0) ---
+                // This call was causing the double freeing and cascade issue.
+                // The spot freeing and cascade is now handled solely by the Runner's state exit event.
+                // HandleQueueSpotFreed(new QueueSpotFreedEvent(QueueType.Main, 0)); // <-- REMOVE THIS LINE
+                // ---------------------------------------------------------------
+
+            }
+            else
+            {
+                // This might happen if the last customer in spot 0 became impatient and left,
+                // or if there's a logic error leaving spot 0 occupied but no runner there.
+                // Check the occupied array state for spot 0 to see if it *thinks* it's occupied.
+                Debug.LogWarning("CustomerManager: CashRegisterFreeEvent received, but no customer found assigned to Main Queue spot 0.", this);
+                if (queueSpotOccupied.Length > 0 && queueSpotOccupied[0])
+                {
+                    // This indicates an inconsistency. Spot 0 is marked occupied, but no runner is found there.
+                    // We must force free spot 0 to prevent the queue from being permanently blocked.
+                    Debug.LogError("CustomerManager: Inconsistency detected! Main Queue spot 0 marked occupied but no Runner found assigned to it and in state CustomerState.Queue. Forcing spot 0 free.", this);
+                    // Force free the spot 0. This will NOT trigger the cascade automatically,
+                    // but at least it allows a new customer to potentially join spot 0 later.
+                    // We could potentially trigger HandleQueueSpotFreed(Main, 0) here to force a cascade,
+                    // but that feels like trying to fix a symptom of a deeper inconsistency.
+                    // Forcing the spot free and logging the error is safer.
+                    queueSpotOccupied[0] = false; // <-- Force free spot 0
+                    Debug.Log($"CustomerManager: Main Queue spot 0 ({queuePoints[0].position}) was manually forced free due to inconsistency.", this);
+                }
+                // Else: Spot 0 was already correctly free. Nothing to do.
+            }
+
+            // Check and trigger Secondary Queue release.
+            // This check relies on the *count* of customers currently in the main queue state.
+            // GetMainQueueCount() needs to iterate the activeCustomers list now.
+            if (GetMainQueueCount() < mainQueueReleaseThreshold)
+            {
+                ReleaseNextSecondaryCustomer();
             }
         }
 
@@ -443,76 +575,154 @@ namespace CustomerManagement
              return exitPoints[Random.Range(0, exitPoints.Count)];
          }
 
-        /// <summary>
-        /// Attempts to add a customer to the queue.
-        /// </summary>
-        /// <param name="customer">The customer AI trying to join.</param>
-        /// <param name="assignedSpot">Output: The Transform of the assigned queue spot, or null.</param>
-        /// <param name="spotIndex">Output: The index of the assigned queue spot, or -1.</param>
-        /// <returns>True if successfully joined the queue, false otherwise (e.g., queue is full).</returns>
-        public bool TryJoinQueue(Game.NPC.NpcStateMachineRunner customerRunner, out Transform assignedSpot, out int spotIndex)
+/// <summary>
+    /// Attempts to add a customer to the main queue.
+    /// Finds the first available spot based on the queueSpotOccupied array.
+    /// A spot is available if it's marked as unoccupied AND it's not the current
+    /// assigned index of any other NPC currently moving up the queue.
+    /// </summary>
+    /// <param name="customerRunner">The customer Runner trying to join.</param>
+    /// <param name="assignedSpot">Output: The Transform of the assigned queue spot, or null.</param>
+    /// <param name="spotIndex">Output: The index of the assigned queue spot, or -1.</param>
+    /// <returns>True if successfully joined the queue, false otherwise (e.g., queue is full).</returns>
+    public bool TryJoinQueue(Game.NPC.NpcStateMachineRunner customerRunner, out Transform assignedSpot, out int spotIndex)
+    {
+        assignedSpot = null;
+        spotIndex = -1;
+
+        if (queuePoints == null || queuePoints.Count == 0) { Debug.LogWarning("CustomerManager: Cannot join main queue - no queue points defined!"); return false; }
+        if (queueSpotOccupied == null || queueSpotOccupied.Length != queuePoints.Count)
         {
-            assignedSpot = null;
-            spotIndex = -1;
+             Debug.LogError("CustomerManager: queueSpotOccupied array is not initialized correctly! Re-initializing.", this);
+             if(queuePoints != null) queueSpotOccupied = new bool[queuePoints.Count];
+             else return false;
+        }
 
-            if (queuePoints == null || queuePoints.Count == 0) { Debug.LogWarning("CustomerManager: Cannot join queue - no queue points defined!"); return false; }
-            if (queueSpotOccupied == null || queueSpotOccupied.Length != queuePoints.Count) { Debug.LogError("CustomerManager: queueSpotOccupied array is not initialized correctly!"); if(queuePoints != null) queueSpotOccupied = new bool[queuePoints.Count]; return false; }
+        // Iterate through the spots to find the first available one
+        for (int i = 0; i < queueSpotOccupied.Length; i++)
+        {
+            // A spot is available if:
+            // 1. The occupied array marks it as NOT occupied.
+            // 2. AND it is NOT the *assigned* index of any other active runner
+            //    that is currently in the Queue state.
+            //    This second check is to prevent a new customer from claiming spot 0
+            //    if someone is already moving to spot 0 from spot 1.
 
-            for (int i = 0; i < queueSpotOccupied.Length; i++)
+            // Find if any *other* active runner is currently assigned this spot index AND is in the main queue state
+            bool isSpotAssignedToMovingRunner = false;
+            foreach(var activeRunner in activeCustomers)
             {
-                if (!queueSpotOccupied[i])
-                {
-                    queueSpotOccupied[i] = true;
-                    customerQueue.Enqueue(customerRunner); // Enqueue the Runner
-                    assignedSpot = queuePoints[i];
-                    spotIndex = i;
-                    Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) successfully joined queue at spot {i}. Queue size: {customerQueue.Count}");
-                     // Store the assigned index on the Runner itself
-                    customerRunner.AssignedQueueSpotIndex = spotIndex;
-                    return true;
-                }
+                 if (activeRunner != null &&
+                     activeRunner != customerRunner && // Not the runner trying to join
+                     activeRunner.CurrentStateSO != null &&
+                     activeRunner.CurrentStateSO.HandledState.Equals(CustomerState.Queue) && // Is in the main queue state
+                     activeRunner.AssignedQueueSpotIndex == i) // Is assigned this spot index
+                 {
+                      // Found a runner who is currently assigned to this spot.
+                      // This spot is *not* available for a *new* customer joining the end.
+                      isSpotAssignedToMovingRunner = true;
+                      break;
+                 }
             }
 
-            Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) could not join queue - queue is full.");
-            return false;
+            // Check if the spot is available based on the array AND not assigned to a moving runner
+            if (!queueSpotOccupied[i] && !isSpotAssignedToMovingRunner)
+            {
+                queueSpotOccupied[i] = true; // Mark the spot as occupied by this new joiner
+                assignedSpot = queuePoints[i];
+                spotIndex = i;
+                Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) successfully joined main queue at spot {i}.");
+                customerRunner.AssignedQueueSpotIndex = spotIndex; // Store the assigned index on the Runner
+                return true; // Successfully joined a spot
+            }
         }
+
+        Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) could not join main queue - queue is full or spots are temporarily claimed.");
+        return false; // No free spot found
+    }
         
-        /// <summary>
-        /// Releases the next customer from the secondary queue to enter the store
-        /// by publishing an event that the customer's AI subscribes to.
-        /// </summary>
-        public void ReleaseNextSecondaryCustomer()
+/// <summary>
+/// Releases the next customer from the secondary queue to enter the store
+/// by publishing an event that the customer's AI subscribes to.
+/// Finds the customer at the first occupied spot in the secondary queue.
+/// </summary>
+public void ReleaseNextSecondaryCustomer()
+{
+    Debug.Log("CustomerManager: Attempting to release next secondary customer (Runner).");
+
+    // Find the customer currently at the first occupied Secondary Queue spot (lowest index)
+    Game.NPC.NpcStateMachineRunner runnerToRelease = null;
+    int firstOccupiedIndex = -1;
+
+    // Find the index of the first occupied spot in the secondary queue array
+    for(int i = 0; i < secondaryQueueSpotOccupied.Length; i++)
+    {
+        if (secondaryQueueSpotOccupied[i])
         {
-            Debug.Log("CustomerManager: Attempting to release next secondary customer (Runner).");
-            if (secondaryCustomerQueue.Count > 0)
-            {
-                Game.NPC.NpcStateMachineRunner nextRunner = secondaryCustomerQueue.Peek();
-
-                 if (nextRunner != null)
-                 {
-                      Debug.Log($"CustomerManager: Peeking {nextRunner.gameObject.name} (Runner) from secondary queue. Publishing ReleaseNpcFromSecondaryQueueEvent.");
-                      // Publish the event for the specific NPC GameObject that the Runner is on
-                      EventManager.Publish(new ReleaseNpcFromSecondaryQueueEvent(nextRunner.gameObject));
-
-                      // Dequeue the Runner from the queue collection
-                      secondaryCustomerQueue.Dequeue();
-                      Debug.Log($"CustomerManager: Dequeued {nextRunner.gameObject.name} (Runner) from secondary queue collection.");
-
-                      // The SecondaryQueueStateSO OnExit will publish QueueSpotFreedEvent upon state transition.
-                 }
-                 else
-                 {
-                      Debug.LogError("CustomerManager: Null customer (Runner) found at the front of the secondary queue! Dequeuing to clear.");
-                      secondaryCustomerQueue.Dequeue();
-                      if(secondaryCustomerQueue.Count > 0) ReleaseNextSecondaryCustomer();
-                 }
-
-            }
-            else
-            {
-                Debug.Log("CustomerManager: Secondary queue is empty, no one to release.");
-            }
+            firstOccupiedIndex = i; // Found the index
+            break; // Stop searching for the index
         }
+    }
+
+    // If we found an occupied spot index...
+    if (firstOccupiedIndex != -1)
+    {
+        // Now, find the Runner currently assigned to this 'firstOccupiedIndex'.
+        // Search *all* active customers to find the one
+        // that is currently in the Secondary Queue state AND assigned to this index.
+        foreach(var activeRunner in activeCustomers) // <-- Iterate the list of *all* active runners
+        {
+             if (activeRunner != null &&
+                 activeRunner.CurrentStateSO != null && // Ensure CurrentStateSO is not null
+                 activeRunner.CurrentStateSO.HandledState.Equals(CustomerState.SecondaryQueue) && // Must be in Secondary Queue state
+                 activeRunner.AssignedQueueSpotIndex == firstOccupiedIndex) // Must be assigned to this spot index
+             {
+                 runnerToRelease = activeRunner;
+                 break; // Found the one to release, exit inner loop
+             }
+        }
+
+        // Check if we successfully found the runner for the first occupied spot
+        if (runnerToRelease != null)
+        {
+             Debug.Log($"CustomerManager: Found {runnerToRelease.gameObject.name} (Runner) assigned to Secondary Queue spot {firstOccupiedIndex}. Publishing ReleaseNpcFromSecondaryQueueEvent.");
+
+             // Publish the event for the specific NPC GameObject that the Runner is on.
+             // The Runner will receive this event and transition out of SecondaryQueue state.
+             // Its SecondaryQueueStateSO.OnExit method will *then* publish
+             // QueueSpotFreedEvent(Secondary, firstOccupiedIndex).
+             // HandleQueueSpotFreed will *then* receive this event and trigger the cascade
+             // for the secondary queue.
+             EventManager.Publish(new ReleaseNpcFromSecondaryQueueEvent(runnerToRelease.gameObject));
+
+             // --- REMOVE MANUAL DEQUEUE/SPOT FREEING ---
+             // The spot freeing happens when the Runner exits the state and publishes the event.
+             // secondaryCustomerQueue.Dequeue(); // <-- REMOVE THIS LINE
+             // Debug.Log($"CustomerManager: Dequeued ... from secondary queue collection."); // Remove or update log
+             // The SecondaryQueueStateSO OnExit will publish QueueSpotFreedEvent upon state transition.
+             // -------------------------------------------
+        }
+        else // Found an occupied spot index (firstOccupiedIndex != -1) but no runner was assigned to it
+        {
+            // This indicates an inconsistency. The spot is marked occupied, but no runner is found there.
+            // We must force free this spot to prevent the secondary queue from being permanently blocked.
+            Debug.LogError($"CustomerManager: Inconsistency detected! Secondary Queue spot {firstOccupiedIndex} marked occupied but no Runner found assigned to it and in state CustomerState.SecondaryQueue. Forcing spot {firstOccupiedIndex} free.", this);
+            secondaryQueueSpotOccupied[firstOccupiedIndex] = false; // <-- Force free the spot
+             Debug.Log($"CustomerManager: Secondary Queue spot {firstOccupiedIndex} ({secondaryQueuePoints[firstOccupiedIndex].position}) was manually forced free due to inconsistency.", this);
+
+             // As this spot is now free, recursively check if there's another customer
+             // at the *next* spot who is now effectively at the front of the remaining secondary queue.
+             // This prevents a single inconsistency from blocking the entire secondary queue.
+             Debug.Log("CustomerManager: Recursively checking for the next secondary customer to release after handling inconsistency.");
+             ReleaseNextSecondaryCustomer(); // Recursive call
+        }
+    }
+    else
+    {
+        // No occupied spot index was found in the first loop. The secondary queue is empty.
+        Debug.Log("CustomerManager: Secondary queue appears empty (no spots marked occupied and no Runner found).");
+    }
+}
 
         /// <summary>
         /// Signals that a customer is currently moving towards or is at the register.
@@ -552,53 +762,115 @@ namespace CustomerManagement
             return customerAtRegister != null;
         }
 
-        /// <summary>
-        /// Attempts to add a customer to the secondary queue.
-        /// </summary>
-        /// <param name="customer">The customer AI trying to join.</param>
-        /// <param name="assignedSpot">Output: The Transform of the assigned secondary queue spot, or null.</param>
-        /// <param name="spotIndex">Output: The index of the assigned secondary queue spot, or -1.</param>
-        /// <returns>True if successfully joined the secondary queue, false otherwise (e.g., queue is full).</returns>
-        public bool TryJoinSecondaryQueue(Game.NPC.NpcStateMachineRunner customerRunner, out Transform assignedSpot, out int spotIndex)
+/// <summary>
+    /// Attempts to add a customer to the secondary queue.
+    /// Finds the first available spot based on the secondaryQueueSpotOccupied array.
+    /// Similar logic to main queue joining.
+    /// </summary>
+    /// <param name="customerRunner">The customer Runner trying to join.</param>
+    /// <param name="assignedSpot">Output: The Transform of the assigned secondary queue spot, or null.</param>
+    /// <param name="spotIndex">Output: The index of the assigned secondary queue spot, or -1.</param>
+    /// <returns>True if successfully joined the secondary queue, false otherwise (e.g., queue is full).</returns>
+    public bool TryJoinSecondaryQueue(Game.NPC.NpcStateMachineRunner customerRunner, out Transform assignedSpot, out int spotIndex)
+    {
+        assignedSpot = null;
+        spotIndex = -1;
+
+        if (secondaryQueuePoints == null || secondaryQueuePoints.Count == 0) { Debug.LogWarning("CustomerManager: Cannot join secondary queue - no points defined!"); return false; }
+        if (secondaryQueueSpotOccupied == null || secondaryQueueSpotOccupied.Length != secondaryQueuePoints.Count)
         {
-            assignedSpot = null;
-            spotIndex = -1;
-
-            if (secondaryQueuePoints == null || secondaryQueuePoints.Count == 0) { Debug.LogWarning("CustomerManager: Cannot join secondary queue - no points defined!"); return false; }
-            if (secondaryQueueSpotOccupied == null || secondaryQueueSpotOccupied.Length != secondaryQueuePoints.Count) { Debug.LogError("CustomerManager: secondaryQueueSpotOccupied array is not initialized correctly!"); if(secondaryQueuePoints != null) secondaryQueueSpotOccupied = new bool[secondaryQueuePoints.Count]; return false; }
-
-            for (int i = 0; i < secondaryQueueSpotOccupied.Length; i++)
-            {
-                if (!secondaryQueueSpotOccupied[i])
-                {
-                    secondaryQueueSpotOccupied[i] = true;
-                    secondaryCustomerQueue.Enqueue(customerRunner); // Enqueue the Runner
-                    assignedSpot = secondaryQueuePoints[i];
-                    spotIndex = i;
-                    Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) successfully joined secondary queue at spot {i}. Secondary queue size: {secondaryCustomerQueue.Count}");
-                     // Store the assigned index on the Runner itself
-                    customerRunner.AssignedQueueSpotIndex = spotIndex;
-                    return true;
-                }
-            }
-
-            Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) could not join secondary queue - secondary queue is full.");
-            return false;
+             Debug.LogError("CustomerManager: secondaryQueueSpotOccupied array is not initialized correctly! Re-initializing.", this);
+             if (secondaryQueuePoints != null) secondaryQueueSpotOccupied = new bool[secondaryQueuePoints.Count];
+             else return false;
         }
 
-        // Add getter for main queue count
-        public int GetMainQueueCount()
+        for (int i = 0; i < secondaryQueueSpotOccupied.Length; i++)
         {
-            return customerQueue.Count;
+             // Find if any *other* active runner is currently assigned this spot index AND is in the secondary queue state
+             bool isSpotAssignedToMovingRunner = false;
+             foreach (var activeRunner in activeCustomers)
+             {
+                  if (activeRunner != null &&
+                      activeRunner != customerRunner && // Not the runner trying to join
+                      activeRunner.CurrentStateSO != null &&
+                      activeRunner.CurrentStateSO.HandledState.Equals(CustomerState.SecondaryQueue) && // Is in the secondary queue state
+                      activeRunner.AssignedQueueSpotIndex == i) // Is assigned this spot index
+                  {
+                       isSpotAssignedToMovingRunner = true;
+                       break;
+                  }
+             }
+
+             if (!secondaryQueueSpotOccupied[i] && !isSpotAssignedToMovingRunner)
+             {
+                 secondaryQueueSpotOccupied[i] = true;
+                 assignedSpot = secondaryQueuePoints[i];
+                 spotIndex = i;
+                 Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) successfully joined secondary queue at spot {i}.");
+                 customerRunner.AssignedQueueSpotIndex = spotIndex;
+                 return true;
+             }
         }
+
+        Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) could not join secondary queue - secondary queue is full or spots are temporarily claimed.");
+        return false;
+    }
+
+    // GetMainQueueCount needs to filter by state now, not rely on collection count
+     public int GetMainQueueCount()
+     {
+         int count = 0;
+         foreach(var activeRunner in activeCustomers)
+         {
+              if (activeRunner != null && activeRunner.CurrentStateSO != null && activeRunner.CurrentStateSO.HandledState.Equals(CustomerState.Queue))
+              {
+                   count++;
+              }
+         }
+         return count;
+     }
 
         // Add getter for checking if main queue is full
         public bool IsMainQueueFull()
-        {
-            if (queuePoints == null || queuePoints.Count == 0) return false; // Cannot be full if no spots
-            // Check if the last spot in the main queue is occupied
-            if (queueSpotOccupied == null || queueSpotOccupied.Length == 0) return false; // Should match queuePoints.Count
-            return queueSpotOccupied[queueSpotOccupied.Length - 1];
-        }
+     {
+          if (queuePoints == null || queuePoints.Count == 0) return false; // Cannot be full if no spots
+
+          // The queue is full if TryJoinQueue fails because no spots are available.
+          // We can simulate the TryJoinQueue logic *without* actually assigning the spot.
+          // Or, more simply, check if the *last* spot is both marked occupied *and*
+          // potentially assigned to an NPC (including the one who just arrived there).
+
+          // Let's use the TryJoinQueue logic internally to check for availability.
+          // Find if there is *any* spot that TryJoinQueue would be able to assign.
+          for (int i = 0; i < queueSpotOccupied.Length; i++)
+          {
+               bool isSpotAssignedToMovingRunner = false;
+               // Check if any active Runner (excluding a potential 'self' if this were called from Runner)
+               // is in the Queue state and assigned this spot index.
+               // For IsMainQueueFull, we check against *all* active customers.
+               foreach (var activeRunner in activeCustomers)
+               {
+                    if (activeRunner != null &&
+                        activeRunner.CurrentStateSO != null &&
+                        activeRunner.CurrentStateSO.HandledState.Equals(CustomerState.Queue) &&
+                        activeRunner.AssignedQueueSpotIndex == i)
+                    {
+                         isSpotAssignedToMovingRunner = true;
+                         break;
+                    }
+               }
+
+               // If we find *any* spot that is not occupied AND not assigned to a current queueing runner,
+               // then the queue is NOT full (there's at least one spot a new customer could potentially join).
+               if (!queueSpotOccupied[i] && !isSpotAssignedToMovingRunner)
+               {
+                   return false; // Found an available spot, queue is NOT full
+               }
+          }
+
+          // If the loop finished without finding any available spot, the queue is full.
+          Debug.Log($"CustomerManager: IsMainQueueFull = true (all {queueSpotOccupied.Length} spots are occupied or temporarily claimed).");
+          return true;
+     }
     }
 }

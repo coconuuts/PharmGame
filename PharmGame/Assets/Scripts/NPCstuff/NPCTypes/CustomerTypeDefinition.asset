@@ -42,5 +42,8 @@ MonoBehaviour:
     - stateEnumName: Exiting
       stateEnumType: Game.NPC.CustomerState
       stateSO: {fileID: 11400000, guid: 34c757eb68a844a4186e858c41a0fee2, type: 2}
+    - stateEnumName: WaitingInLine
+      stateEnumType: Game.NPC.CustomerState
+      stateSO: {fileID: 11400000, guid: 6db7ecddc1fb4cf4194d11aa14dbb3aa, type: 2}
   primaryStartingStateEnumKey: LookingToShop
   primaryStartingStateEnumType: Game.NPC.CustomerState

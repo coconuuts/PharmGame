@@ -13,6 +13,7 @@ namespace Game.NPC
         WaitingAtRegister,
         Queue,
         SecondaryQueue,
+        WaitingInLine,
         TransactionActive,
         Exiting,
         ReturningToPool,
