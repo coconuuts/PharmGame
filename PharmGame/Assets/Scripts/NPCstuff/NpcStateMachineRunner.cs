@@ -1,3 +1,5 @@
+// --- START OF FILE NpcStateMachineRunner.cs ---
+
 // --- Updated NpcStateMachineRunner.cs (Including Fixes for OnReachedDestination Loop and CachedRegister Null) ---
 using UnityEngine;
 using System.Collections.Generic;
@@ -28,7 +30,7 @@ namespace Game.NPC
         // These are automatically found in Awake
         public NpcMovementHandler MovementHandler { get; private set; }
         public NpcAnimationHandler AnimationHandler { get; private set; }
-        public CustomerShopper Shopper { get; private set; } // Assumes CustomerShopper is general enough or this runner is for customers
+        public CustomerShopper Shopper { get; private set; } // Assumes CustomerShopper is general enough or this runner is for Customers
 
         // --- External References (Provided by CustomerManager or found) ---
         [HideInInspector] public CustomerManager Manager { get; private set; } // Provided by Manager
@@ -41,10 +43,14 @@ namespace Game.NPC
         private NpcStateSO previousState;
         private Coroutine activeStateCoroutine; // Coroutine started by the current state
 
-        // --- NEW FIELD to track if the *current* movement destination was a queue move-up ---
-        private bool _isMovingToQueueSpot = false;
-        // --- NEW FIELD to store the index of the *previous* queue spot when moving up ---
-        private int _previousQueueSpotIndex = -1;
+        // --- NEW FIELDS to track queue move-up status ---
+        public bool _isMovingToQueueSpot { get; private set; } = false; // True if the current movement is a move up the queue line
+        public int _previousQueueSpotIndex { get; private set; } = -1; // Stores the index the NPC just left when moving up
+        // --- FIX: Make the setter public so CustomerManager can set this when TryJoin succeeds ---
+        public QueueType _currentQueueMoveType { get; set; } // Track the type of the current MoveToQueueSpot command
+        // --- END FIX ---
+        // --- END NEW FIELDS ---
+
 
         private Stack<NpcStateSO> stateStack = new Stack<NpcStateSO>();
 
@@ -151,12 +157,13 @@ namespace Game.NPC
                     Shopper = Shopper,
                     Manager = null, // Manager is set in Initialize()
                     // CachedCashRegister is now a property reading from Runner.CachedCashRegister,
-                    // so no need to set it here in the struct initialization.
+                    // so no need to set it in the struct initialization.
                     NpcObject = this.gameObject,
                     Runner = this,
                     CurrentTargetLocation = null, // Set during navigation states
                     AssignedQueueSpotIndex = -1, // Set during queue states
                     InteractorObject = null, // Set during interaction states
+                    _currentQueueMoveType = QueueType.Main // Default or uninitialized value
                };
 
                // --- Initialize the movement arrival flag ---
@@ -173,6 +180,13 @@ namespace Game.NPC
             EventManager.Subscribe<NpcStartedTransactionEvent>(HandleTransactionStarted);
             EventManager.Subscribe<NpcTransactionCompletedEvent>(HandleTransactionCompleted);
 
+             // --- NEW: Subscribe to events published by states (primarily for Manager to listen) ---
+             // The Runner publishes these from states, but it doesn't *react* to them itself with state changes.
+             // However, it's good practice to list all potentially relevant events here.
+             EventManager.Subscribe<NpcEnteredStoreEvent>(HandleNpcEnteredStore); // Runner doesn't need to handle this with logic, but good practice to subscribe
+             EventManager.Subscribe<NpcExitedStoreEvent>(HandleNpcExitedStore);   // Runner doesn't need to handle this with logic, but good practice to subscribe
+             // --- END NEW ---
+
              // --- Subscribe to Interruption Trigger Events ---
             EventManager.Subscribe<NpcAttackedEvent>(HandleNpcAttacked);
             EventManager.Subscribe<NpcInteractedEvent>(HandleNpcInteracted);
@@ -182,6 +196,7 @@ namespace Game.NPC
             EventManager.Subscribe<NpcCombatEndedEvent>(HandleCombatEnded);
             EventManager.Subscribe<NpcInteractionEndedEvent>(HandleInteractionEnded);
             EventManager.Subscribe<NpcEmoteEndedEvent>(HandleEmoteEnded);
+
 
             Debug.Log($"{gameObject.name}: NpcStateMachineRunner subscribed to events.");
         }
@@ -194,6 +209,11 @@ namespace Game.NPC
             EventManager.Unsubscribe<NpcStartedTransactionEvent>(HandleTransactionStarted);
             EventManager.Unsubscribe<NpcTransactionCompletedEvent>(HandleTransactionCompleted);
 
+            // --- NEW: Unsubscribe from events published by states ---
+            EventManager.Unsubscribe<NpcEnteredStoreEvent>(HandleNpcEnteredStore);
+            EventManager.Unsubscribe<NpcExitedStoreEvent>(HandleNpcExitedStore);
+             // --- END NEW ---
+
             // --- Unsubscribe from Interruption Trigger Events ---
             EventManager.Unsubscribe<NpcAttackedEvent>(HandleNpcAttacked);
             EventManager.Unsubscribe<NpcInteractedEvent>(HandleNpcInteracted);
@@ -203,6 +223,7 @@ namespace Game.NPC
             EventManager.Unsubscribe<NpcCombatEndedEvent>(HandleCombatEnded);
             EventManager.Unsubscribe<NpcInteractionEndedEvent>(HandleInteractionEnded);
             EventManager.Unsubscribe<NpcEmoteEndedEvent>(HandleEmoteEnded);
+
 
             // Ensure any active state logic coroutine is stopped when disabled
             StopManagedStateCoroutine(activeStateCoroutine);
@@ -220,6 +241,7 @@ namespace Game.NPC
                 _stateContext.AssignedQueueSpotIndex = AssignedQueueSpotIndex;
                 _stateContext.Runner = this;
                 _stateContext.InteractorObject = InteractorObject;
+                _stateContext._currentQueueMoveType = _currentQueueMoveType; // Pass the queue type from Runner field
 
                 currentState.OnExit(_stateContext);
                 currentState = null;
@@ -239,12 +261,16 @@ namespace Game.NPC
             if (currentState != null)
             {
                  // Update context fields that state might need or could change
-                 // Note: CachedCashRegister is now a property, no need to set it in the struct here
+                 // Note: CachedCashRegister is now a property reading from Runner.CachedCashRegister,
+                 // so no need to set it in the struct here.
                  _stateContext.Manager = Manager;
                  _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                  _stateContext.AssignedQueueSpotIndex = AssignedQueueSpotIndex;
                  _stateContext.Runner = this;
                  _stateContext.InteractorObject = InteractorObject; // Update from Runner field
+                 // --- FIX: Pass the Runner's _currentQueueMoveType field to the context struct ---
+                 _stateContext._currentQueueMoveType = _currentQueueMoveType;
+                 // --- END FIX ---
 
 
                  // --- Animation Update (Remains here, uses Handler) ---
@@ -272,69 +298,19 @@ namespace Game.NPC
 
                       _hasReachedCurrentDestination = true; // <-- Set the flag *immediately* to prevent repeated calls this frame/next
 
-                      // --- ADD LOGIC TO HANDLE QUEUE MOVE-UP COMPLETION ---
-                // If this arrival completed a 'MoveToQueueSpot' action...
-                if (_isMovingToQueueSpot)
-                {
-                     Debug.Log($"{gameObject.name}: Completed move to queue spot {AssignedQueueSpotIndex} (was moving from {(_previousQueueSpotIndex == -1 ? "N/A" : _previousQueueSpotIndex.ToString())}). Publishing QueueSpotArrivedEvent.", this);
+                      // --- Phase 5, Substep 1: REMOVE the block that calls FreePreviousQueueSpotOnArrival on arrival ---
+                      // This logic was moved to MoveToQueueSpot.
+                      // if (_isMovingToQueueSpot) { ... Manager.FreePreviousQueueSpotOnArrival ... } // REMOVED
+                      // --- END REMOVED ---
 
-                     // Publish a *new* event or directly call a Manager method
-                     // that signifies a runner has arrived at their *new* queue spot.
-                     // This should free the *previous* spot.
-                     // Let's add a method to CustomerManager for this.
-                     if (Manager != null && _previousQueueSpotIndex != -1)
-                     {
-                          // Determine QueueType (Main or Secondary) based on current state
-                          QueueType queueType = QueueType.Main; // Default
-                          if (currentState.HandledState.Equals(CustomerState.SecondaryQueue))
-                          {
-                               queueType = QueueType.Secondary;
-                          }
-                          else if (!currentState.HandledState.Equals(CustomerState.Queue))
-                          {
-                               // Should only happen if in Queue or SecondaryQueue state, log warning
-                               Debug.LogWarning($"{gameObject.name}: Completed queue move-up but current state is not Queue or SecondaryQueue ({currentState.name})! Cannot determine QueueType.", this);
-                               // We'll still try to free the spot based on the *previous* index type,
-                               // but this indicates a potential state flow issue.
-                               // How do we know the type? We'd need to pass it into MoveToQueueSpot, too.
-                               // Or store it in the Runner when MoveToQueueSpot is called.
-                               // Let's add a field to store the type of the queue move.
+                      // Call the state SO's OnReachedDestination method, passing the populated context
+                      currentState.OnReachedDestination(_stateContext);
+                 }
+                 // --------------------------------------------------------------
 
-                               // Let's assume for now it's Main queue if not Secondary Queue state.
-                               // REVISED: Store the type when MoveToQueueSpot is called.
-                          }
-                          // Okay, need to store QueueType in Runner too.
-                          // Let's add: private QueueType _currentQueueMoveType;
-
-                          if (Manager.FreePreviousQueueSpotOnArrival(_currentQueueMoveType, _previousQueueSpotIndex))
-                          {
-                               Debug.Log($"{gameObject.name}: Successfully signaled Manager to free previous spot {_previousQueueSpotIndex} in {_currentQueueMoveType} queue.");
-                          }
-                          else
-                          {
-                              Debug.LogError($"{gameObject.name}: Failed to signal Manager to free previous spot {_previousQueueSpotIndex} in {_currentQueueMoveType} queue!", this);
-                          }
-                     }
-                     else
-                     {
-                          Debug.LogWarning($"{gameObject.name}: Completed queue move-up, but Manager is null or previous spot index is -1! Cannot free previous spot.", this);
-                     }
-
-                     // Reset the flags for queue move tracking
-                    _isMovingToQueueSpot = false;
-                    _previousQueueSpotIndex = -1;
-                    // _currentQueueMoveType = ??? // Need a default/invalid value
-                }
-                // ------------------------------------------------------
-
-                // Call the state SO's OnReachedDestination method
-                currentState.OnReachedDestination(_stateContext);
+                 // Always call OnUpdate *after* checking for arrival.
+                 currentState.OnUpdate(_stateContext);
             }
-            // --------------------------------------------------------------
-
-            // Always call OnUpdate *after* checking for arrival.
-            currentState.OnUpdate(_stateContext);
-        }
         }
 
 
@@ -396,11 +372,21 @@ namespace Game.NPC
              // Reset the movement arrival flag
              _hasReachedCurrentDestination = true; // Set to true because no active movement is occurring
 
+             // Phase 2, Substep 3: Reset queue move-up flags
+             _isMovingToQueueSpot = false;
+             _previousQueueSpotIndex = -1;
+             _currentQueueMoveType = QueueType.Main; // Reset queue type tracker
+             // --- END Phase 2, Substep 3 ---
+
+
              // Update context fields from the reset Runner fields
             _stateContext.CurrentTargetLocation = CurrentTargetLocation;
-             // _stateContext.CachedCashRegister = CachedCashRegister; // <-- REMOVED - Context property reads Runner field
+             // _stateContext.CachedCashRegister is a property reading Runner field
              _stateContext.AssignedQueueSpotIndex = AssignedQueueSpotIndex;
              _stateContext.InteractorObject = InteractorObject;
+             // --- FIX: Update context with the reset Runner field ---
+             _stateContext._currentQueueMoveType = _currentQueueMoveType;
+             // --- END FIX ---
 
 
             Shopper?.Reset(); // Reset shopper data (like inventory, impatience counters)
@@ -461,24 +447,20 @@ namespace Game.NPC
                     _stateContext.AssignedQueueSpotIndex = AssignedQueueSpotIndex;
                     _stateContext.Runner = this; // Self reference
                     _stateContext.InteractorObject = InteractorObject;
+                    // --- FIX: Pass the Runner's _currentQueueMoveType field to the context struct ---
+                    _stateContext._currentQueueMoveType = _currentQueueMoveType;
+                    // --- END FIX ---
+
 
                     currentState.OnExit(_stateContext);
-                    
-                    // Reset queue-specific runner fields when exiting the state
-                 // Moved this from the state SO's OnExit to the Runner's TransitionToState
-                 // when leaving a queue state.
-                 if (previousState != null && (previousState.HandledState.Equals(CustomerState.Queue) || previousState.HandledState.Equals(CustomerState.SecondaryQueue)))
-                 {
-                      // Do NOT reset AssignedQueueSpotIndex here if transitioning *within* the queue state (e.g. MoveToQueueSpot)
-                      // The state SO's OnExit should manage resetting its own index if it's done with the queue entirely.
-                      // Let's put the index reset back in the state SO's OnExit as originally planned.
-                 }
 
-
-                 // Reset queue movement flags on transition out of *any* state, just in case.
-                _isMovingToQueueSpot = false;
-                _previousQueueSpotIndex = -1;
-                // _currentQueueMoveType = ??? // Need a default/invalid value
+                    // Phase 2, Substep 3: Reset queue movement flags ON TRANSITION OUT OF *ANY* STATE.
+                    // This is safer than relying on individual states to reset these flags.
+                     _isMovingToQueueSpot = false;
+                     _previousQueueSpotIndex = -1;
+                    // Phase 2, Substep 3: Reset queue type tracker
+                     _currentQueueMoveType = QueueType.Main; // Reset queue type tracker
+                    // --- END Phase 2, Substep 3 ---
             }
 
             // 2. Update the current state variable
@@ -493,6 +475,9 @@ namespace Game.NPC
             _stateContext.AssignedQueueSpotIndex = AssignedQueueSpotIndex; // May have been cleared/set in OnExit or will be set in OnEnter
             _stateContext.Runner = this; // Self reference
             _stateContext.InteractorObject = InteractorObject; // May have been cleared/set in OnExit or will be set in OnEnter
+            // --- FIX: Pass the Runner's _currentQueueMoveType field to the context struct ---
+            _stateContext._currentQueueMoveType = _currentQueueMoveType; // Pass the queue type (should be default after exit unless new state sets it)
+            // --- END FIX ---
 
 
             currentState.OnEnter(_stateContext);
@@ -735,6 +720,9 @@ namespace Game.NPC
              {
                   Debug.Log($"{gameObject.name}: Runner handling ReleaseNpcFromSecondaryQueueEvent. Transitioning to Entering.");
                   // This NPC was released from the secondary queue, they should now attempt to enter the store again.
+                  // The Runner's AssignedQueueSpotIndex should already be -1 here as they were just freed by Manager.
+                  // Let's add a reset here just in case, though HandleQueueSpotFreed should clear the spot.
+                  AssignedQueueSpotIndex = -1; // Defensive reset
                   TransitionToState(GetStateSO(CustomerState.Entering));
              }
         }
@@ -759,6 +747,29 @@ namespace Game.NPC
                   TransitionToState(GetStateSO(CustomerState.Exiting));
              }
         }
+
+        // --- NEW: Handlers for store entry/exit events (primarily for Manager, but subscribed here) ---
+        // The Runner itself doesn't typically need to *do* anything specific when these events occur,
+        // as the state transitions that *cause* these events are triggered by other logic/events.
+        private void HandleNpcEnteredStore(NpcEnteredStoreEvent eventArgs)
+        {
+            // Example: Log, but no state transition needed here as the NPC is already entering/inside.
+            if (eventArgs.NpcObject == this.gameObject)
+            {
+                Debug.Log($"{gameObject.name}: Runner noted NpcEnteredStoreEvent. (No state change needed, state should already be Entering or subsequent).");
+            }
+        }
+
+        private void HandleNpcExitedStore(NpcExitedStoreEvent eventArgs)
+        {
+             // Example: Log, but no state transition needed here as the NPC is already exiting.
+             if (eventArgs.NpcObject == this.gameObject)
+             {
+                  Debug.Log($"{gameObject.name}: Runner noted NpcExitedStoreEvent. (No state change needed, state should already be Exiting).");
+             }
+        }
+        // --- END NEW ---
+
 
         // --- Interruption Trigger Event Handlers ---
         // These handlers push the current state and transition to an interrupt state if interruptible.
@@ -917,6 +928,8 @@ namespace Game.NPC
         public void GoToRegisterFromQueue()
         {
             Debug.Log($"{gameObject.name}: Runner received GoToRegisterFromQueue signal. Transitioning to MovingToRegister.");
+            // Assumes this is called while in CustomerState.Queue at spot 0.
+            // The state's OnExit will handle publishing the QueueSpotFreedEvent(Main, 0).
             TransitionToState(GetStateSO(CustomerState.MovingToRegister));
         }
 
@@ -947,27 +960,34 @@ namespace Game.NPC
         /// </summary>
         /// <param name="nextSpotTransform">The Transform of the new queue spot.</param>
         /// <param name="newSpotIndex">The index of the new queue spot.</param>
-        /// <param name="queueType">The type of queue this move belongs to.</param> // <-- ADD PARAM
-         public void MoveToQueueSpot(Transform nextSpotTransform, int newSpotIndex, QueueType queueType) // <-- ADD PARAM
+        /// <param name="queueType">The type of queue this move belongs to.</param>
+         public void MoveToQueueSpot(Transform nextSpotTransform, int newSpotIndex, QueueType queueType)
          {
              Debug.Log($"{gameObject.name}: Runner received MoveToQueueSpot signal for spot {newSpotIndex} in {queueType} queue.");
 
              // Store the *previous* assigned index BEFORE updating
-             _previousQueueSpotIndex = AssignedQueueSpotIndex;
+             int tempPreviousSpotIndex = AssignedQueueSpotIndex; // Store locally before updating the field
 
              // Update the assigned spot index and target location on the Runner
              AssignedQueueSpotIndex = newSpotIndex;
              CurrentTargetLocation = new BrowseLocation { browsePoint = nextSpotTransform, inventory = null };
+             // Phase 2, Substep 3: Store the queue type for use in FreePreviousQueueSpotOnArrival
              _currentQueueMoveType = queueType; // Store the queue type
+             // --- END Phase 2, Substep 3 ---
+
 
              // Check if the current state is appropriate for moving in a queue.
-             // ... existing state check ...
-             CustomerState currentStateEnum = CustomerState.Inactive;
+             CustomerState currentStateEnum = CustomerState.Inactive; // Default if currentState is null
              if (currentState != null)
              {
                    if (currentState.HandledState is CustomerState customerEnum)
                    {
                         currentStateEnum = customerEnum;
+                   }
+                   else if (currentState.HandledState is GeneralState generalEnum) // Also allow GeneralState if needed, though queue states are customer-specific
+                   {
+                        // Potentially handle GeneralState.Idle if they were idle in queue somehow?
+                        // For now, assume they should be in CustomerState.Queue or SecondaryQueue.
                    }
              }
 
@@ -977,21 +997,58 @@ namespace Game.NPC
              {
                   // Flag that the *current* movement is a queue move-up
                   _isMovingToQueueSpot = true; // <-- Set the flag
+                  // Store the previous spot index *only if* this is a valid move-up command in a queue state
+                  _previousQueueSpotIndex = tempPreviousSpotIndex; // Store the *old* index here
+
+                  // --- FIX: Phase 5, Substep 1 (REVISED): Free the previous spot *as soon as the NPC commits to leaving it* ---
+                  // This happens when the MoveToQueueSpot command is received as part of the cascade.
+                  // This ensures TryJoinQueue finds the spot available sooner.
+                  // This call is also responsible for setting _isMovingToQueueSpot and _previousQueueSpotIndex back to default
+                  // if it successfully frees the spot. It indicates the move has been "registered" in the data model.
+                  if (Manager != null && _previousQueueSpotIndex != -1)
+                  {
+                       Debug.Log($"{gameObject.name}: Starting move to queue spot {newSpotIndex} from {_previousQueueSpotIndex} in {_currentQueueMoveType} queue. Signalling Manager to free previous spot {_previousQueueSpotIndex} immediately.", this);
+                       if (Manager.FreePreviousQueueSpotOnArrival(_currentQueueMoveType, _previousQueueSpotIndex)) // <-- Pass the stored QueueType and previous index
+                       {
+                             Debug.Log($"{gameObject.name}: Successfully signaled Manager to free previous spot {_currentQueueMoveType} queue spot {_previousQueueSpotIndex} upon starting move.");
+                             // --- FIX: Clear move flags here if the spot was successfully freed ---
+                             // This ensures that when the Runner arrives, the _isMovingToQueueSpot check is false,
+                             // preventing the duplicate call to FreePreviousQueueSpotOnArrival.
+                             _isMovingToQueueSpot = false;
+                             _previousQueueSpotIndex = -1;
+                             _currentQueueMoveType = QueueType.Main; // Reset type tracker
+                             // --- END FIX ---
+                       }
+                       else
+                       {
+                           // Log warning but continue - maybe the spot was already free? Or error in Manager?
+                           Debug.LogWarning($"{gameObject.name}: Failed to signal Manager to free previous spot {_currentQueueMoveType} queue spot {_previousQueueSpotIndex} upon starting move. It might have already been free or Manager error.", this);
+                           // DO NOT clear flags here if Manager reports failure, something is wrong.
+                       }
+                       // Note: We no longer call FreePreviousQueueSpotOnArrival on arrival in Update for these moves.
+                  }
+                   else if (_previousQueueSpotIndex != -1)
+                   {
+                       Debug.LogWarning($"{gameObject.name}: Starting move to queue spot {newSpotIndex} from {_previousQueueSpotIndex}, but Manager is null! Cannot free previous spot.", this);
+                   }
+                  // --- END FIX ---
+
 
                   // Tell the Movement Handler to move to the new spot position using the context helper.
                   // The context helper calls MovementHandler.SetDestination AND resets the _hasReachedCurrentDestination flag.
                   if (_stateContext.MoveToDestination(nextSpotTransform.position)) // Use context helper
                   {
-                       Debug.Log($"{gameObject.name}: Successfully called MoveToDestination for new queue spot {newSpotIndex} ({nextSpotTransform.position}). _isMovingToQueueSpot = true.");
+                       Debug.Log($"{gameObject.name}: Successfully called MoveToDestination for new queue spot {newSpotIndex} ({nextSpotTransform.position})."); // _isMovingToQueueSpot might be false already now
                        // The Runner's Update loop will now detect arrival and call OnReachedDestination.
-                       // Our added logic in Update will then trigger freeing the *previous* spot.
+                       // But the logic to call Manager.FreePreviousQueueSpotOnArrival is now *removed* from Update for these moves.
                   }
                   else
                   {
                        Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Failed to set destination for new queue spot {newSpotIndex}! Cannot move up. Transitioning to Exiting.", this);
-                       _isMovingToQueueSpot = false; // Reset flag on failure
-                       _previousQueueSpotIndex = -1; // Reset index on failure
-                       // _currentQueueMoveType = ??? // Reset type
+                       // Reset flags on movement failure (if they weren't cleared above due to Manager failure)
+                       _isMovingToQueueSpot = false;
+                       _previousQueueSpotIndex = -1;
+                       _currentQueueMoveType = QueueType.Main; // Reset queue type tracker
 
                        TransitionToState(GetStateSO(CustomerState.Exiting)); // Fallback on movement failure
                   }
@@ -999,10 +1056,15 @@ namespace Game.NPC
              else
              {
                   Debug.LogWarning($"NpcStateMachineRunner ({gameObject.name}): Received MoveToQueueSpot signal for {queueType} queue but not in a matching Queue state ({currentStateEnum})! Current State SO: {currentState?.name ?? "NULL"}. Ignoring move command.", this);
+                  // If we receive a move command while not in the correct state, it's likely a logic error.
+                  // We should NOT set _isMovingToQueueSpot in this case, and definitely shouldn't move.
+                  // Reset the AssignedQueueSpotIndex that was just updated at the top of the method
+                  AssignedQueueSpotIndex = tempPreviousSpotIndex; // Revert the index update
              }
          }
 
-         private QueueType _currentQueueMoveType; // Track the type of the current MoveToQueueSpot command
+         // The _currentQueueMoveType field is now public with a public setter.
+
 
          // Public getter for Shopper's items (used by CashRegisterInteractable)
         // This method remains on the Runner for external access by systems like the Register.

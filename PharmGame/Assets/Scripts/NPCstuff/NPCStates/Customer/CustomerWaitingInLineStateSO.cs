@@ -1,3 +1,6 @@
+// --- START OF FILE CustomerWaitingInLineStateSO.cs ---
+
+// --- Updated CustomerWaitingInLineStateSO.cs ---
 using UnityEngine;
 using System.Collections;
 using System;
@@ -44,9 +47,9 @@ namespace Game.NPC.States
             // Let's add the rotation from QueueStateSO OnReachedDestination back into this OnEnter
              if (context.CurrentTargetLocation.HasValue && context.CurrentTargetLocation.Value.browsePoint != null)
              {
-                  Quaternion targetRotation = context.CurrentTargetLocation.Value.browsePoint.rotation; // Should be the rotation of the assigned queue spot
-                  Debug.Log($"CustomerAI ({context.NpcObject.name}): Starting rotation towards assigned spot rotation {targetRotation.eulerAngles} in WaitingInLine.", context.NpcObject);
-                  context.RotateTowardsTarget(targetRotation); // Use context helper
+                 Quaternion targetRotation = context.CurrentTargetLocation.Value.browsePoint.rotation; // Should be the rotation of the assigned queue spot
+                 Debug.Log($"CustomerAI ({context.NpcObject.name}): Starting rotation towards assigned spot rotation {targetRotation.eulerAngles} in WaitingInLine.", context.NpcObject);
+                 context.RotateTowardsTarget(targetRotation); // Use context helper
              }
              else
              {
@@ -68,6 +71,8 @@ namespace Game.NPC.States
         }
 
         // OnReachedDestination is not applicable here, they are already AT their spot.
+        public override void OnReachedDestination(NpcStateContext context) { /* Not applicable */ } // <-- Explicitly empty
+
 
         public override void OnExit(NpcStateContext context)
         {
@@ -79,7 +84,7 @@ namespace Game.NPC.States
             // context.PlayAnimation("Idle");
 
             // IMPORTANT: Do NOT publish QueueSpotFreedEvent here.
-            // That must happen when exiting the *moving* queue state (`CustomerState.Queue`).
+            // That must happen when exiting the *moving* queue state (`CustomerState.Queue` or `CustomerState.SecondaryQueue`).
         }
     }
 }

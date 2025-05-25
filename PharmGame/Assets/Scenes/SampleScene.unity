@@ -5744,7 +5744,7 @@ Transform:
   m_GameObject: {fileID: 600981057}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 1, z: 0, w: 0}
-  m_LocalPosition: {x: 4.08, y: 0, z: 6.91}
+  m_LocalPosition: {x: -3.75, y: 0, z: 5.14}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -7105,8 +7105,8 @@ MonoBehaviour:
   npcPrefabs:
   - {fileID: 4394407753789290286, guid: 488534cc76898354d8320c55d1770728, type: 3}
   maxCustomersInStore: 7
-  minSpawnInterval: 6
-  maxSpawnInterval: 10
+  minSpawnInterval: 2
+  maxSpawnInterval: 5
   spawnPoints:
   - {fileID: 600981058}
   BrowseLocations:
@@ -7128,6 +7128,7 @@ MonoBehaviour:
   exitPoints:
   - {fileID: 1837450462}
   mainQueueReleaseThreshold: 2
+  secondaryQueueCheckInterval: 1
 --- !u!4 &763258581
 Transform:
   m_ObjectHideFlags: 0

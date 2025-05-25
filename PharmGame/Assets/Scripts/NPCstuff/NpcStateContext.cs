@@ -1,3 +1,5 @@
+// --- START OF FILE NpcStateContext.cs ---
+
 // --- NpcStateContext.cs ---
 using UnityEngine;
 using CustomerManagement; // Needed for CustomerManager
@@ -6,8 +8,8 @@ using Systems.Inventory; // Needed for ItemDetails (for GetItemsToBuy)
 using System.Collections.Generic; // Needed for List
 using System.Collections;
 using System;
-using Game.Events; // Needed for publishing events
-using Game.NPC;
+using Game.Events; // Needed for publishing events and event args like NpcEnteredStoreEvent
+using Game.NPC; // Needed for CustomerState and GeneralState enums
 
 namespace Game.NPC.States // Context is closely related to states
 {
@@ -39,6 +41,9 @@ namespace Game.NPC.States // Context is closely related to states
         public BrowseLocation? CurrentTargetLocation;
         public int AssignedQueueSpotIndex;
         public GameObject InteractorObject;
+
+        // This is the field the Runner sets in the struct instances passed to states.
+        public QueueType _currentQueueMoveType;
 
 
         // --- Helper Methods (Accessing Handlers or Runner functionality) ---
@@ -181,6 +186,11 @@ namespace Game.NPC.States // Context is closely related to states
             }
         }
          // Access to publishing events via EventManager
+         /// <summary>
+         /// Publishes an event using the global EventManager.
+         /// </summary>
+         /// <typeparam name="T">The type of the event arguments (must be a struct).</typeparam>
+         /// <param name="eventArgs">The event arguments instance.</param>
          public void PublishEvent<T>(T eventArgs) where T : struct // Constrain to struct as per EventManager
          {
              EventManager.Publish(eventArgs);

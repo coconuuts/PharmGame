@@ -1,3 +1,5 @@
+// --- START OF FILE NPCCoreEvents.cs ---
+
 using UnityEngine; // Required for GameObject
 using Game.NPC;
 
@@ -45,6 +47,36 @@ namespace Game.Events // Keep events in their dedicated namespace
             State = state;
         }
     }
+
+    // --- NEW: Events for Store Entry/Exit ---
+    /// <summary>
+    /// Published when an NPC transitions into a state considered "inside the store"
+    /// (e.g., Entering state). Used by CustomerManager to track active count.
+    /// </summary>
+    public struct NpcEnteredStoreEvent
+    {
+        public GameObject NpcObject; // The GameObject of the NPC entering the store.
+
+        public NpcEnteredStoreEvent(GameObject npcObject)
+        {
+            NpcObject = npcObject;
+        }
+    }
+
+    /// <summary>
+    /// Published when an NPC transitions into a state considered "exiting the store"
+    /// (e.g., Exiting state). Used by CustomerManager to track active count.
+    /// </summary>
+    public struct NpcExitedStoreEvent
+    {
+        public GameObject NpcObject; // The GameObject of the NPC exiting the store.
+
+        public NpcExitedStoreEvent(GameObject npcObject)
+        {
+            NpcObject = npcObject;
+        }
+    }
+    // --- END NEW ---
 
 
     // --- Cash Register & Transaction Events ---

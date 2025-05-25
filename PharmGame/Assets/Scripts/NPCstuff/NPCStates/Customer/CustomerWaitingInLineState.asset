@@ -14,5 +14,5 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   stateID: 
   isInterruptible: 1
-  checkMovementArrival: 1
-  impatientTimeRange: {x: 10, y: 15}
+  checkMovementArrival: 0
+  impatientTimeRange: {x: 60, y: 70}
