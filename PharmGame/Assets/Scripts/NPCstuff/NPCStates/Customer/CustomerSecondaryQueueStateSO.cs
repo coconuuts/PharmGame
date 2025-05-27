@@ -30,7 +30,8 @@ namespace Game.NPC.States
             // --- Impatience Timer Setup (Migration) ---
             impatientDuration = Random.Range(impatientTimeRange.x, impatientTimeRange.y); // Use SO field
             impatientTimer = 0f;
-            Debug.Log($"{context.NpcObject.name}: Entering {name}. Starting impatience timer for {impatientDuration:F2} seconds at spot {context.AssignedQueueSpotIndex}.", context.NpcObject);
+            // Use context properties now
+            Debug.Log($"{context.NpcObject.name}: Entering {name}. Starting impatience timer for {impatientDuration:F2} seconds at spot {context.AssignedQueueSpotIndex} in {context.CurrentQueueMoveType} queue.", context.NpcObject);
             // ------------------------------
 
             // Note: Play waiting animation
@@ -38,24 +39,28 @@ namespace Game.NPC.States
 
             // --- Phase 3, Substep 1: Initiate movement to the assigned secondary queue spot ---
              // The spot's transform was set as Runner.CurrentTargetLocation by TryJoinSecondaryQueue before the transition.
+             // Access CurrentTargetLocation via Runner property on Context
             if (context.Runner.CurrentTargetLocation.HasValue && context.Runner.CurrentTargetLocation.Value.browsePoint != null && context.AssignedQueueSpotIndex != -1)
             {
                 Transform assignedSpotTransform = context.Runner.CurrentTargetLocation.Value.browsePoint; // Get transform from Runner's target
 
-                Debug.Log($"{context.NpcObject.name}: Entering {name}. Moving to assigned spot {context.AssignedQueueSpotIndex} at {assignedSpotTransform.position}.", context.NpcObject);
+                // Use context properties now
+                Debug.Log($"{context.NpcObject.name}: Entering {name}. Moving to assigned spot {context.AssignedQueueSpotIndex} at {assignedSpotTransform.position} in {context.CurrentQueueMoveType} queue.", context.NpcObject);
                  // context.MoveToDestination handles setting _hasReachedCurrentDestination = false
                 bool moveStarted = context.MoveToDestination(assignedSpotTransform.position);
 
+                 // Use context properties now
                  if (!moveStarted) // Add check for move failure
                  {
-                      Debug.LogError($"{context.NpcObject.name}: Failed to start movement to secondary queue spot {context.AssignedQueueSpotIndex}! Is the point on the NavMesh? Exiting.", context.NpcObject);
+                      Debug.LogError($"{context.NpcObject.name}: Failed to start movement to {context.CurrentQueueMoveType} queue spot {context.AssignedQueueSpotIndex}! Is the point on the NavMesh? Exiting.", context.NpcObject);
                       context.TransitionToState(GeneralState.ReturningToPool); // Fallback
                  }
                   // Note: No need to explicitly set _isMovingToQueueSpot here for the initial entry move.
             }
             else
             {
-                Debug.LogError($"{context.NpcObject.name}: Entering Secondary Queue state without a valid assigned queue spot target in context! Exiting.", context.NpcObject);
+                // Use context properties now
+                Debug.LogError($"{context.NpcObject.name}: Entering {name} state without a valid assigned queue spot target or index in context! Index: {context.AssignedQueueSpotIndex}. Target Valid: {context.Runner.CurrentTargetLocation.HasValue}. Exiting.", context.NpcObject);
                 context.TransitionToState(GeneralState.ReturningToPool); // Fallback
             }
             // --- END Phase 3, Substep 1 ---
@@ -70,7 +75,8 @@ namespace Game.NPC.States
 
             if (impatientTimer >= impatientDuration)
             {
-                Debug.Log($"{context.NpcObject.name}: IMPATIENT in Secondary Queue state at spot {context.AssignedQueueSpotIndex} after {impatientTimer:F2} seconds. Publishing NpcImpatientEvent.", context.NpcObject);
+                // Use context properties now
+                Debug.Log($"{context.NpcObject.name}: IMPATIENT in {name} state at spot {context.AssignedQueueSpotIndex} in {context.CurrentQueueMoveType} queue after {impatientTimer:F2} seconds. Publishing NpcImpatientEvent.", context.NpcObject);
                 context.PublishEvent(new NpcImpatientEvent(context.NpcObject, CustomerState.SecondaryQueue));
                 // The Runner's handler for this event will transition the state.
             }
@@ -85,10 +91,12 @@ namespace Game.NPC.States
              // This logic was triggered from the old BaseQueueLogic.OnUpdate after reaching destination.
              // Removed: context.MovementHandler?.StopMoving(); // Redundant, Runner does this
 
-             Debug.Log($"{context.NpcObject.name}: Reached Secondary Queue spot {context.AssignedQueueSpotIndex} (detected by Runner). Stopping and Rotating.", context.NpcObject);
+             // Use context properties now
+             Debug.Log($"{context.NpcObject.name}: Reached {context.CurrentQueueMoveType} Queue spot {context.AssignedQueueSpotIndex} (detected by Runner). Stopping and Rotating.", context.NpcObject);
 
              // --- Phase 3, Substep 1: Start Rotation Logic (Migration from old BaseQueueLogic.OnUpdate) ---
              // Get the Transform of the currently assigned secondary queue spot using context helper
+             // Use context properties now to get the index
              Transform currentQueueSpotTransform = context.Manager?.GetSecondaryQueuePoint(context.AssignedQueueSpotIndex); // Use Secondary getter
 
              if (currentQueueSpotTransform != null)
@@ -99,6 +107,7 @@ namespace Game.NPC.States
              }
              else
              {
+                 // Use context properties now to get the index
                  Debug.LogWarning($"CustomerAI ({context.NpcObject.name}): Could not get Secondary Queue spot Transform {context.AssignedQueueSpotIndex} for rotation!", context.NpcObject);
              }
              // --- End Rotation Logic ---
@@ -118,14 +127,15 @@ namespace Game.NPC.States
             // --- Phase 3, Substep 1: Publish the QueueSpotFreedEvent ---
              // This event must be published when the NPC EXITS this state, regardless of the reason.
              // The CustomerManager will receive this event, free the spot, and start the cascade if needed.
+             // Use context properties now
              if (context.AssignedQueueSpotIndex != -1)
              {
-                  Debug.Log($"{context.NpcObject.name}: Exiting {name}. Publishing QueueSpotFreedEvent for spot {context.AssignedQueueSpotIndex} in Secondary queue.", context.NpcObject);
-                  context.PublishEvent(new QueueSpotFreedEvent(QueueType.Secondary, context.AssignedQueueSpotIndex));
+                  Debug.Log($"{context.NpcObject.name}: Exiting {name}. Publishing QueueSpotFreedEvent for spot {context.AssignedQueueSpotIndex} in {context.CurrentQueueMoveType} queue.", context.NpcObject);
+                  context.PublishEvent(new QueueSpotFreedEvent(context.CurrentQueueMoveType, context.AssignedQueueSpotIndex));
              }
              else
              {
-                  Debug.LogWarning($"{context.NpcObject.name}: Queue spot index not set when exiting Secondary Queue state! Cannot publish QueueSpotFreedEvent.", context.NpcObject);
+                  Debug.LogWarning($"{context.NpcObject.name}: Queue spot index not set when exiting {name} state! Cannot publish QueueSpotFreedEvent.", context.NpcObject);
              }
             // --- END Phase 3, Substep 1 ---
 
@@ -134,8 +144,10 @@ namespace Game.NPC.States
             // context.PlayAnimation("Idle");
 
             // --- Phase 3, Substep 1: REMOVE AssignedQueueSpotIndex reset from here ---
-            // context.Runner.AssignedQueueSpotIndex = -1; // REMOVED - Handled by Runner.TransitionToState/ResetNPCData
+            // This is handled by NpcQueueHandler.Reset() called from Runner.ResetRunnerTransientData
+            // context.Runner.AssignedQueueSpotIndex = -1; // REMOVED
             // --- END REMOVED ---
         }
     }
 }
+// --- END OF FILE CustomerSecondaryQueueStateSO.cs ---

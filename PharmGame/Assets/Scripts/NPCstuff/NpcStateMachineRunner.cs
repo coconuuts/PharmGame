@@ -25,16 +25,24 @@ namespace Game.NPC
      [RequireComponent(typeof(NpcAnimationHandler))]
      [RequireComponent(typeof(CustomerShopper))] // Assuming CustomerShopper is a core handler for customer types
      [RequireComponent(typeof(Handlers.NpcEventHandler))] // Required event handler
-     [RequireComponent(typeof(Handlers.NpcInterruptionHandler))] // <-- NEW: Require the interruption handler
+     [RequireComponent(typeof(Handlers.NpcInterruptionHandler))] // Require the interruption handler
+     [RequireComponent(typeof(Game.NPC.Handlers.NpcQueueHandler))] // <-- NEW: Require the Queue handler
      public class NpcStateMachineRunner : MonoBehaviour
      {
           // --- References to Handler Components (Accessed by State SOs via the Context) ---
           public NpcMovementHandler MovementHandler { get; private set; }
           public NpcAnimationHandler AnimationHandler { get; private set; }
           public CustomerShopper Shopper { get; private set; }
-          // private NpcEventHandler eventHandler; // Not strictly needed as it just relays
+
           // Reference to the interruption handler (will be used to populate context and reset)
           private NpcInterruptionHandler interruptionHandler;
+          // --- Reference to the Queue handler ---
+          private NpcQueueHandler queueHandler;
+          public NpcQueueHandler QueueHandler { get { return queueHandler; } private set { queueHandler = value; } } // Make public for Context access
+          
+          // --- Public methods/properties for external access if needed ---
+          public NpcStateSO CurrentStateSO => currentState;
+          public NpcStateSO PreviousStateSO => previousState;
 
 
           // --- External References ---
@@ -44,15 +52,7 @@ namespace Game.NPC
           // --- State Management ---
           private NpcStateSO currentState;
           private NpcStateSO previousState;
-          private Coroutine activeStateCoroutine;
-
-          // --- Queue Move-Up Status ---
-          public bool _isMovingToQueueSpot { get; private set; } = false;
-          public int _previousQueueSpotIndex { get; private set; } = -1;
-          public QueueType _currentQueueMoveType { get; set; }
-          // --- END Queue Move-Up Status ---
-
-          // private Stack<NpcStateSO> stateStack = new Stack<NpcStateSO>(); // <-- MOVED in Phase 2 - REMOVED
+          private Coroutine activeStateCoroutine; 
 
           // --- Master Dictionary of all available states for THIS NPC ---
           private Dictionary<Enum, NpcStateSO> availableStates;
@@ -64,8 +64,6 @@ namespace Game.NPC
 
           // --- Internal Data/State Needed by SOs (Managed by Runner, Accessed via Context) ---
           public BrowseLocation? CurrentTargetLocation { get; internal set; } = null;
-          public int AssignedQueueSpotIndex { get; internal set; } = -1;
-          // public GameObject InteractorObject { get; internal set; } // <-- MOVED in Phase 2 - REMOVED
 
           // --- Movement Arrival Flag ---
           public bool _hasReachedCurrentDestination;
@@ -97,8 +95,6 @@ namespace Game.NPC
                get => tiData;
                internal set => tiData = value;
           }
-          // --- END PHASE 2 Fields ---
-
 
           private void Awake()
           {
@@ -106,12 +102,12 @@ namespace Game.NPC
                MovementHandler = GetComponent<NpcMovementHandler>();
                AnimationHandler = GetComponent<NpcAnimationHandler>();
                Shopper = GetComponent<CustomerShopper>();
-               // eventHandler = GetComponent<NpcEventHandler>(); // Not strictly needed
-               interruptionHandler = GetComponent<NpcInterruptionHandler>(); // <-- Get interruption handler reference
+               interruptionHandler = GetComponent<NpcInterruptionHandler>();
+               queueHandler = GetComponent<NpcQueueHandler>();
 
-               if (MovementHandler == null || AnimationHandler == null || Shopper == null || interruptionHandler == null) // <-- Add interruptionHandler null check
+               if (MovementHandler == null || AnimationHandler == null || Shopper == null || interruptionHandler == null || QueueHandler == null) // <-- Add QueueHandler null check
                {
-                    Debug.LogError($"NpcStateMachineRunner on {gameObject.name}: Missing required handler components! MovementHandler: {MovementHandler != null}, AnimationHandler: {AnimationHandler != null}, Shopper: {Shopper != null}, InterruptionHandler: {interruptionHandler != null}", this);
+                    Debug.LogError($"NpcStateMachineRunner on {gameObject.name}: Missing required handler components! MovementHandler: {MovementHandler != null}, AnimationHandler: {AnimationHandler != null}, Shopper: {Shopper != null}, InterruptionHandler: {interruptionHandler != null}, QueueHandler: {QueueHandler != null}", this);
                     enabled = false;
                }
 
@@ -125,22 +121,21 @@ namespace Game.NPC
                     return;
                }
                Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Loaded {availableStates.Count} states from {npcTypes?.Count ?? 0} type definitions.");
-               // ----------------------------------------------------
 
                // Ensure agent is disabled initially (handled by MovementHandler Awake)
                if (MovementHandler?.Agent != null) MovementHandler.Agent.enabled = false;
 
                // --- Initialize the State Context struct (partially) ---
-               // InterruptionHandler and Manager are set later when available
+               // Handlers are set here. Manager and InterruptionHandler are set later when available/in Update/TransitionToState.
+               // QueueHandler will be set in Update/TransitionToState before context is passed.
                _stateContext = new NpcStateContext
                {
                     MovementHandler = MovementHandler,
                     AnimationHandler = AnimationHandler,
                     Shopper = Shopper,
-                    Manager = null, // Set in Initialize/Activate
                     NpcObject = this.gameObject,
                     Runner = this,
-                    InterruptionHandler = null // Set in Update/TransitionToState
+                    QueueHandler = queueHandler
                };
 
                _hasReachedCurrentDestination = true;
@@ -187,24 +182,20 @@ namespace Game.NPC
 
           private void OnDisable()
           {
-               // Event subscriptions/unsubscriptions are handled by NpcEventHandler.
-
                // Stop active state coroutine managed by the Runner
                StopManagedStateCoroutine(activeStateCoroutine);
                activeStateCoroutine = null;
 
                // Call OnExit for the current state if it exists (only for transient NPCs shutting down)
+               // For TI NPCs, OnExit is called by TransitionToState(ReturningToPool) just before Deactivate().
                if (currentState != null && !IsTrueIdentityNpc)
                {
                     // Ensure context is populated before calling OnExit
                     _stateContext.Manager = Manager; // Populate Manager
                     _stateContext.CurrentTargetLocation = CurrentTargetLocation;
-                    _stateContext.AssignedQueueSpotIndex = AssignedQueueSpotIndex;
                     _stateContext.Runner = this;
-                    _stateContext._currentQueueMoveType = _currentQueueMoveType;
-                    _stateContext.InterruptionHandler = interruptionHandler; // <-- Populate InterruptionHandler
-
-
+                    _stateContext.InterruptionHandler = interruptionHandler;
+                    _stateContext.QueueHandler = QueueHandler;
                     currentState.OnExit(_stateContext);
                }
                else if (currentState != null && IsTrueIdentityNpc)
@@ -214,13 +205,8 @@ namespace Game.NPC
                     currentState = null; // Clear currentState on unexpected disable for TI
                }
 
-
-               // State stack is cleared by NpcInterruptionHandler.Reset().
-               // InteractorObject is cleared by NpcInterruptionHandler.Reset().
-
-               // Reset transient data managed by the Runner, which includes resetting the interruption handler
+               // Reset transient data managed by the Runner, which includes resetting the interruption handler AND queue handler
                ResetRunnerTransientData();
-
                Debug.Log($"{gameObject.name}: NpcStateMachineRunner OnDisable completed. State machine cleanup done.");
           }
 
@@ -232,11 +218,9 @@ namespace Game.NPC
                     // Populate context with current data before passing to state methods
                     _stateContext.Manager = Manager; // Populate Manager
                     _stateContext.CurrentTargetLocation = CurrentTargetLocation;
-                    _stateContext.AssignedQueueSpotIndex = AssignedQueueSpotIndex;
                     _stateContext.Runner = this;
-                    _stateContext._currentQueueMoveType = _currentQueueMoveType;
-                    _stateContext.InterruptionHandler = interruptionHandler; // <-- Populate InterruptionHandler
-
+                    _stateContext.InterruptionHandler = interruptionHandler;
+                    _stateContext.QueueHandler = QueueHandler;
 
                     if (MovementHandler != null && MovementHandler.Agent != null && AnimationHandler != null)
                     {
@@ -260,10 +244,9 @@ namespace Game.NPC
                          // Re-populate context just in case Update loop took time
                          _stateContext.Manager = Manager; // Populate Manager
                          _stateContext.CurrentTargetLocation = CurrentTargetLocation;
-                         _stateContext.AssignedQueueSpotIndex = AssignedQueueSpotIndex;
                          _stateContext.Runner = this;
-                         _stateContext._currentQueueMoveType = _currentQueueMoveType;
-                         _stateContext.InterruptionHandler = interruptionHandler; // <-- Populate InterruptionHandler
+                         _stateContext.InterruptionHandler = interruptionHandler;
+                         _stateContext.QueueHandler = QueueHandler;
 
                          currentState.OnReachedDestination(_stateContext);
                     }
@@ -271,12 +254,9 @@ namespace Game.NPC
                      // Re-populate context just in case Update loop took time
                     _stateContext.Manager = Manager; // Populate Manager
                     _stateContext.CurrentTargetLocation = CurrentTargetLocation;
-                    _stateContext.AssignedQueueSpotIndex = AssignedQueueSpotIndex;
                     _stateContext.Runner = this;
-                    _stateContext._currentQueueMoveType = _currentQueueMoveType;
-                    _stateContext.InterruptionHandler = interruptionHandler; // <-- Populate InterruptionHandler
-
-
+                    _stateContext.InterruptionHandler = interruptionHandler;
+                    _stateContext.QueueHandler = QueueHandler;
                     currentState.OnUpdate(_stateContext);
                }
           }
@@ -297,7 +277,8 @@ namespace Game.NPC
                this.Manager = manager;
                // Context Manager will be set in Update/TransitionToState before use
 
-               ResetRunnerTransientData(); // Resets interruption handler too
+               ResetRunnerTransientData(); // Resets interruption handler and queue handler
+               queueHandler?.Initialize(this.Manager);
 
                if (MovementHandler != null && MovementHandler.Agent != null)
                {
@@ -347,7 +328,8 @@ namespace Game.NPC
                // Context Manager will be set in Update/TransitionToState before use
                Debug.Log($"DEBUG Runner Activate ({gameObject.name}): IsTrueIdentityNpc={IsTrueIdentityNpc}, TiData is null={ (TiData == null) }, TiData ID={TiData?.Id}", this);
 
-               ResetRunnerTransientData(); // Resets interruption handler too
+               ResetRunnerTransientData(); // Resets interruption handler and queue handler
+               queueHandler?.Initialize(this.Manager);
 
                // Apply persistent position and rotation from TiData
                if (MovementHandler != null && MovementHandler.Agent != null)
@@ -370,7 +352,6 @@ namespace Game.NPC
                     TransitionToState(GetStateSO(GeneralState.ReturningToPool));
                     return;
                }
-
 
                // Determine the state to transition to based on TiData or TypeDefinition
                // Use GetPrimaryStartingStateSO - it handles loading from TiData state if available
@@ -397,7 +378,7 @@ namespace Game.NPC
           }
 
           /// <summary>
-          /// PHASE 2: Called internally by the Runner before it is returned to the pool
+          /// Called internally by the Runner before it is returned to the pool
           /// (triggered by TransitionToState(ReturningToPool) and Manager handling the event).
           /// Saves current Runner state back to the persistent TiNpcData.
           /// </summary>
@@ -426,7 +407,6 @@ namespace Game.NPC
                     TiData.SetCurrentState(null);
                }
 
-               // --- PHASE 4, SUBSTEP 1: Save simulation data on Deactivate ---
                if (currentState != null) // Only attempt to save relevant data if there's a current state
                {
                     // Assume Runner.CurrentDestinationPosition holds the last successful move target position
@@ -456,8 +436,6 @@ namespace Game.NPC
                     TiData.simulatedStateTimer = 0f;
                     Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Current state is null on Deactivate. Cleared simulated target and timer.", this);
                }
-                    // --- END PHASE 4 Saving ---
-
 
                     // Clear Runner's link to the persistent data and reset flag
                     TiData.IsActiveGameObject = false; // Mark the data record as inactive *before* pooling
@@ -467,7 +445,7 @@ namespace Game.NPC
                     Debug.Log($"DEBUG Runner Deactivate ({gameObject.name}): IsTrueIdentityNpc={IsTrueIdentityNpc}, TiData is null={ (TiData == null) }", this);
 
                     // Reset Runner's transient fields to default (Manager reference is kept)
-               ResetRunnerTransientData(); // Ensures interruption handler is reset
+               ResetRunnerTransientData(); // Ensures interruption handler and queue handler are reset
                }
 
 
@@ -480,25 +458,17 @@ namespace Game.NPC
                CurrentTargetLocation = null;
                CurrentDestinationPosition = null; // Clear the last set destination position
                CachedCashRegister = null;
-               AssignedQueueSpotIndex = -1;
-               // InteractorObject is cleared by InterruptionHandler.Reset()
-
                _hasReachedCurrentDestination = true;
-
-               _isMovingToQueueSpot = false;
-               _previousQueueSpotIndex = -1;
-               _currentQueueMoveType = QueueType.Main;
-
 
                if (!IsTrueIdentityNpc)
                {
                     Shopper?.Reset();
                }
 
-               // Reset InterruptionHandler state (stack, interactor)
-               interruptionHandler?.Reset(); // <-- Call the new Reset method
+               interruptionHandler?.Reset();
+               queueHandler?.Reset();
 
-               Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Runner transient data reset, including interruption handler."); // Updated log
+               Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Runner transient data reset, including interruption handler and queue handler."); // Updated log
           }
 
 
@@ -554,18 +524,11 @@ namespace Game.NPC
                     // Populate context before calling OnExit
                     _stateContext.Manager = Manager;
                     _stateContext.CurrentTargetLocation = CurrentTargetLocation;
-                    _stateContext.AssignedQueueSpotIndex = AssignedQueueSpotIndex;
                     _stateContext.Runner = this;
-                    _stateContext._currentQueueMoveType = _currentQueueMoveType;
-                    _stateContext.InterruptionHandler = interruptionHandler; // <-- Populate InterruptionHandler
-
+                    _stateContext.InterruptionHandler = interruptionHandler;
+                    _stateContext.QueueHandler = queueHandler;
 
                     currentState.OnExit(_stateContext);
-
-                    // Reset queue move flags on state exit
-                    _isMovingToQueueSpot = false;
-                    _previousQueueSpotIndex = -1;
-                    _currentQueueMoveType = QueueType.Main; // Default back to Main
                }
 
                // Handle TI Deactivation BEFORE changing currentState if going to ReturningToPool
@@ -581,10 +544,9 @@ namespace Game.NPC
                // Populate context before calling OnEnter
                _stateContext.Manager = Manager;
                _stateContext.CurrentTargetLocation = CurrentTargetLocation;
-               _stateContext.AssignedQueueSpotIndex = AssignedQueueSpotIndex;
                _stateContext.Runner = this;
-               _stateContext._currentQueueMoveType = _currentQueueMoveType;
-               _stateContext.InterruptionHandler = interruptionHandler; // <-- Populate InterruptionHandler
+               _stateContext.InterruptionHandler = interruptionHandler;
+               _stateContext.QueueHandler = queueHandler;
 
 
                // Call OnEnter for the new state
@@ -764,7 +726,7 @@ namespace Game.NPC
           /// </summary>
           public NpcStateSO GetPrimaryStartingStateSO()
           {
-               // --- PHASE 4, SUBSTEP 1: Check TiData state first for TI NPCs ---
+               // Check TiData state first for TI NPCs
                if (IsTrueIdentityNpc && TiData != null && TiData.CurrentStateEnum != null)
                {
                     // If TiData has a valid state saved, attempt to transition to that state.
@@ -781,7 +743,6 @@ namespace Game.NPC
                          // Continue below to use the Type Definition primary starting state
                     }
                }
-               // --- END PHASE 4 ---
 
 
                // If not a TI NPC, or TiData/state is invalid/missing, use the Type Definition primary starting state.
@@ -833,17 +794,7 @@ namespace Game.NPC
                }
           }
 
-          // --- REMOVED: Event Handlers (Moved to NpcEventHandler) ---
-          // ... (All Handle...Event methods are removed) ...
-          // --- END REMOVED ---
-
-
-          public void GoToRegisterFromQueue()
-          {
-               Debug.Log($"{gameObject.name}: Runner received GoToRegisterFromQueue signal. Transitioning to MovingToRegister.");
-               TransitionToState(GetStateSO(CustomerState.MovingToRegister));
-          }
-
+          // These methods are called by the CashRegisterInteractable OR Runner internal logic
           public void StartTransaction()
           {
                Debug.Log($"NpcStateMachineRunner ({gameObject.name}): StartTransaction called. Transitioning to TransactionActive.");
@@ -854,95 +805,6 @@ namespace Game.NPC
           {
                Debug.Log($"NpcStateMachineRunner ({gameObject.name}): OnTransactionCompleted called. Transitioning to Exiting.");
                TransitionToState(GetStateSO(CustomerState.Exiting));
-          }
-
-          public void MoveToQueueSpot(Transform nextSpotTransform, int newSpotIndex, QueueType queueType)
-          {
-               Debug.Log($"{gameObject.name}: Runner received MoveToQueueSpot signal for spot {newSpotIndex} in {queueType} queue.");
-
-               int tempPreviousSpotIndex = AssignedQueueSpotIndex;
-
-               AssignedQueueSpotIndex = newSpotIndex;
-               CurrentTargetLocation = new BrowseLocation { browsePoint = nextSpotTransform, inventory = null };
-               _currentQueueMoveType = queueType;
-
-               CustomerState currentStateEnum = CustomerState.Inactive;
-               if (currentState != null)
-               {
-                    if (currentState.HandledState is CustomerState customerEnum) currentStateEnum = customerEnum;
-                    else if (currentState.HandledState is GeneralState generalEnum) { /* Handle if needed */ }
-               }
-
-               // Ensure the current state is one where a queue move is expected
-               if (currentStateEnum == CustomerState.Queue && queueType == QueueType.Main ||
-                   currentStateEnum == CustomerState.SecondaryQueue && queueType == QueueType.Secondary)
-               {
-                    _isMovingToQueueSpot = true;
-                    _previousQueueSpotIndex = tempPreviousSpotIndex;
-
-                    if (Manager != null && _previousQueueSpotIndex != -1)
-                    {
-                         Debug.Log($"{gameObject.name}: Starting move to queue spot {newSpotIndex} from {_previousQueueSpotIndex} in {_currentQueueMoveType} queue. Signalling Manager to free previous spot {_previousQueueSpotIndex} immediately.", this);
-                         // Call the Manager method directly
-                         if (Manager.FreePreviousQueueSpotOnArrival(_currentQueueMoveType, _previousQueueSpotIndex))
-                         {
-                              Debug.Log($"{gameObject.name}: Successfully signaled Manager to free previous spot {_currentQueueMoveType} queue spot {_previousQueueSpotIndex} upon starting move.");
-                              // Reset move flags immediately as the Manager has been notified
-                              _isMovingToQueueSpot = false;
-                              _previousQueueSpotIndex = -1;
-                              _currentQueueMoveType = QueueType.Main; // Reset to default
-                         }
-                         else
-                         {
-                              Debug.LogWarning($"{gameObject.name}: Failed to signal Manager to free previous spot {_currentQueueMoveType} queue spot {_previousQueueSpotIndex} upon starting move.", this);
-                              // Decide error handling: Should we still move? Yes. Should we try signaling again on arrival? No, Manager expects signal on *start* of move.
-                              // Just log the warning, the Manager state might be inconsistent.
-                         }
-                    }
-                    else if (_previousQueueSpotIndex != -1)
-                    {
-                         // This shouldn't happen if the Runner came from a queue state and was correctly assigned.
-                         Debug.LogWarning($"{gameObject.name}: Starting move to queue spot {newSpotIndex} from {_previousQueueSpotIndex}, but Manager is null! Cannot free previous spot.", this);
-                    }
-
-                    // Initiate the physical movement to the new spot
-                    // context.MoveToDestination handles setting _hasReachedCurrentDestination = false
-                    // Populate context *before* calling state methods that use it, like MoveToDestination helper
-                     _stateContext.MovementHandler = MovementHandler; // Already set in Awake, but defensive
-                     _stateContext.AnimationHandler = AnimationHandler; // Already set in Awake, but defensive
-                     _stateContext.Shopper = Shopper; // Already set in Awake, but defensive
-                     _stateContext.Manager = Manager; // Populate Manager
-                     _stateContext.NpcObject = this.gameObject; // Already set in Awake, but defensive
-                     _stateContext.Runner = this; // Already set in Awake, but defensive
-                     _stateContext.InterruptionHandler = interruptionHandler; // <-- Populate InterruptionHandler
-                     _stateContext.CurrentTargetLocation = CurrentTargetLocation; // Already set above, but defensive
-                     _stateContext.AssignedQueueSpotIndex = AssignedQueueSpotIndex; // Already set above, but defensive
-                     _stateContext._currentQueueMoveType = _currentQueueMoveType; // Already set above, but defensive
-
-
-                    if (_stateContext.MoveToDestination(nextSpotTransform.position)) // <-- This sets CurrentDestinationPosition
-                    {
-                         Debug.Log($"{gameObject.name}: Successfully called MoveToDestination for new queue spot {newSpotIndex} ({nextSpotTransform.position}).");
-                         // Wait for OnReachedDestination to trigger arrival logic.
-                    }
-                    else
-                    {
-                         Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Failed to set destination for new queue spot {newSpotIndex}! Cannot move up. Transitioning to Exiting.", this);
-                         // Movement failed - NPC is stuck. Exit flow.
-                         // Reset move flags on failure
-                         _isMovingToQueueSpot = false;
-                         _previousQueueSpotIndex = -1;
-                         _currentQueueMoveType = QueueType.Main; // Reset to default
-
-                         TransitionToState(GetStateSO(CustomerState.Exiting)); // Fallback
-                    }
-               }
-               else
-               {
-                    // Received a move command while not in the correct queue state. Log warning and ignore.
-                    Debug.LogWarning($"NpcStateMachineRunner ({gameObject.name}): Received MoveToQueueSpot signal for {queueType} queue but not in a matching Queue state ({currentStateEnum})! Current State SO: {currentState?.name ?? "NULL"}. Ignoring move command.", this);
-                    AssignedQueueSpotIndex = tempPreviousSpotIndex; // Restore previous index if move was ignored
-               }
           }
 
 
@@ -956,12 +818,6 @@ namespace Game.NPC
                return new List<(ItemDetails details, int quantity)>();
           }
 
-          // --- Public methods/properties for external access if needed ---
-          public NpcStateSO CurrentStateSO => currentState;
-          public NpcStateSO PreviousStateSO => previousState;
-          // public NpcMovementHandler PublicMovementHandler => MovementHandler;
-
-          // --- PHASE 4, SUBSTEP 1: Add field to store last set destination position ---
           /// <summary>
           /// The position the NavMeshAgent was last commanded to move to.
           /// Used for saving state for inactive simulation.
@@ -974,7 +830,6 @@ namespace Game.NPC
           {
               CurrentDestinationPosition = position;
           }
-          // --- END PHASE 4 ---
      }
 }
 

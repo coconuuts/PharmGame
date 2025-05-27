@@ -110,7 +110,6 @@ namespace Game.NPC.Handlers // Placing handlers together
              if (runner == null) { Debug.LogError($"NpcEventHandler on {gameObject.name}: Received ReleaseNpcFromSecondaryQueueEvent but runner is null! Cannot handle.", this); return; }
 
              Debug.Log($"{gameObject.name}: EventHandler handling ReleaseNpcFromSecondaryQueueEvent. Telling Runner to Transition to Entering.");
-             runner.AssignedQueueSpotIndex = -1; // This still feels like Runner/State logic, but kept for now
              runner.TransitionToState(runner.GetStateSO(CustomerState.Entering));
         }
 

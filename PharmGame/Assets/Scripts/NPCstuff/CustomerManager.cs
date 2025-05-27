@@ -350,24 +350,24 @@ namespace CustomerManagement
                 // ensure that spot's currentOccupant reference is cleared.
                 // This is defensive; Runner.Deactivate() should clear its AssignedQueueSpotIndex
                 // and states should publish QueueSpotFreedEvent on exit.
-                if (runner.AssignedQueueSpotIndex != -1)
+                if (runner.QueueHandler.AssignedQueueSpotIndex != -1)
                 {
-                    Debug.LogWarning($"CustomerManager: TI Runner '{npcObject.name}' was pooled but still assigned to queue spot index {runner.AssignedQueueSpotIndex} in {runner._currentQueueMoveType} queue. Forcing spot free.", this);
-                    List<QueueSpot> targetQueue = (runner._currentQueueMoveType == QueueType.Main) ? mainQueueSpots : secondaryQueueSpots;
-                    if (targetQueue != null && runner.AssignedQueueSpotIndex >= 0 && runner.AssignedQueueSpotIndex < targetQueue.Count)
+                    Debug.LogWarning($"CustomerManager: TI Runner '{npcObject.name}' was pooled but still assigned to queue spot index {runner.QueueHandler.AssignedQueueSpotIndex} in {runner.QueueHandler._currentQueueMoveType} queue. Forcing spot free.", this);
+                    List<QueueSpot> targetQueue = (runner.QueueHandler._currentQueueMoveType == QueueType.Main) ? mainQueueSpots : secondaryQueueSpots;
+                    if (targetQueue != null && runner.QueueHandler.AssignedQueueSpotIndex >= 0 && runner.QueueHandler.AssignedQueueSpotIndex < targetQueue.Count)
                     {
-                        QueueSpot spot = targetQueue[runner.AssignedQueueSpotIndex];
+                        QueueSpot spot = targetQueue[runner.QueueHandler.AssignedQueueSpotIndex];
                         if (spot.currentOccupant == runner) // Double check it's this specific runner
                         {
                             spot.currentOccupant = null; // Force free the spot
-                            Debug.Log($"CustomerManager: Queue spot {runner.AssignedQueueSpotIndex} in {runner._currentQueueMoveType} queue manually freed during TI pooling cleanup.", this);
+                            Debug.Log($"CustomerManager: Queue spot {runner.QueueHandler.AssignedQueueSpotIndex} in {runner.QueueHandler._currentQueueMoveType} queue manually freed during TI pooling cleanup.", this);
                         }
                         else if (spot.currentOccupant != null)
                         {
-                            Debug.LogWarning($"CustomerManager: Queue spot {runner.AssignedQueueSpotIndex} in {runner._currentQueueMoveType} was occupied by a different NPC when TI pooled cleanup ran for '{npcObject.name}'. Data inconsistency!", this);
+                            Debug.LogWarning($"CustomerManager: Queue spot {runner.QueueHandler.AssignedQueueSpotIndex} in {runner.QueueHandler._currentQueueMoveType} was occupied by a different NPC when TI pooled cleanup ran for '{npcObject.name}'. Data inconsistency!", this);
                         }
                     }
-                    runner.AssignedQueueSpotIndex = -1; // Clear index on runner defensively
+                    runner.QueueHandler.AssignedQueueSpotIndex = -1; // Clear index on runner defensively
                 }
                 // --- END Phase 5 defensive cleanup for TI ---
 
@@ -392,24 +392,24 @@ namespace CustomerManagement
             // If the Runner was assigned to a queue spot when it was pooled,
             // ensure that spot's currentOccupant reference is cleared.
             // This is defensive; states should publish QueueSpotFreedEvent on exit.
-            if (runner.AssignedQueueSpotIndex != -1)
+            if (runner.QueueHandler.AssignedQueueSpotIndex != -1)
             {
-                Debug.LogWarning($"CustomerManager: Transient Runner '{npcObject.name}' was pooled but still assigned to queue spot index {runner.AssignedQueueSpotIndex} in {runner._currentQueueMoveType} queue. Forcing spot free.", this);
-                List<QueueSpot> targetQueue = (runner._currentQueueMoveType == QueueType.Main) ? mainQueueSpots : secondaryQueueSpots;
-                if (targetQueue != null && runner.AssignedQueueSpotIndex >= 0 && runner.AssignedQueueSpotIndex < targetQueue.Count)
+                Debug.LogWarning($"CustomerManager: Transient Runner '{npcObject.name}' was pooled but still assigned to queue spot index {runner.QueueHandler.AssignedQueueSpotIndex} in {runner.QueueHandler._currentQueueMoveType} queue. Forcing spot free.", this);
+                List<QueueSpot> targetQueue = (runner.QueueHandler._currentQueueMoveType == QueueType.Main) ? mainQueueSpots : secondaryQueueSpots;
+                if (targetQueue != null && runner.QueueHandler.AssignedQueueSpotIndex >= 0 && runner.QueueHandler.AssignedQueueSpotIndex < targetQueue.Count)
                 {
-                    QueueSpot spot = targetQueue[runner.AssignedQueueSpotIndex];
+                    QueueSpot spot = targetQueue[runner.QueueHandler.AssignedQueueSpotIndex];
                     if (spot.currentOccupant == runner) // Double check it's this specific runner
                     {
                         spot.currentOccupant = null; // Force free the spot
-                        Debug.Log($"CustomerManager: Queue spot {runner.AssignedQueueSpotIndex} in {runner._currentQueueMoveType} queue manually freed during transient pooling cleanup.", this);
+                        Debug.Log($"CustomerManager: Queue spot {runner.QueueHandler.AssignedQueueSpotIndex} in {runner.QueueHandler._currentQueueMoveType} queue manually freed during transient pooling cleanup.", this);
                     }
                     else if (spot.currentOccupant != null)
                     {
-                        Debug.LogWarning($"CustomerManager: Queue spot {runner.AssignedQueueSpotIndex} in {runner._currentQueueMoveType} was occupied by a different NPC when transient pooled cleanup ran for '{npcObject.name}'. Data inconsistency!", this);
+                        Debug.LogWarning($"CustomerManager: Queue spot {runner.QueueHandler.AssignedQueueSpotIndex} in {runner.QueueHandler._currentQueueMoveType} was occupied by a different NPC when transient pooled cleanup ran for '{npcObject.name}'. Data inconsistency!", this);
                     }
                 }
-                runner.AssignedQueueSpotIndex = -1; // Clear index on runner defensively
+                runner.QueueHandler.AssignedQueueSpotIndex = -1; // Clear index on runner defensively
             }
             // --- END Phase 5 defensive cleanup for Transient ---
 
@@ -558,7 +558,17 @@ namespace CustomerManagement
                     nextSpotData.currentOccupant = runnerToMove;
 
                     // Call the method on the Runner to initiate the move.
-                    runnerToMove.MoveToQueueSpot(nextSpotData.spotTransform, nextSpotIndex, type);
+                    if (runnerToMove.QueueHandler != null)
+                    {
+                        runnerToMove.QueueHandler.MoveToQueueSpot(nextSpotData.spotTransform, nextSpotIndex, type);
+                    } else
+                    {
+                        Debug.LogError($"CustomerManager: Runner '{runnerToMove.gameObject.name}' is missing its NpcQueueHandler component! Cannot signal move up.", runnerToMove.gameObject);
+                         // This spot is now incorrectly marked as occupied by runnerToMove, and the previous spot might not be freed.
+                         // It's a significant inconsistency. Forcing the spot to free to unblock the queue,
+                         // but the NPC is likely stuck.
+                         nextSpotData.currentOccupant = null; // Unmark the destination spot
+                    }
                 }
                 else // No occupant found for this spot index
                 {
@@ -643,7 +653,14 @@ namespace CustomerManagement
 
                     // Signal the Runner to go to the register
                     Debug.Log($"CustomerManager: Found {runnerAtSpot0.gameObject.name} occupying Main Queue spot 0. Clearing spot 0 and Signalling them to move to register.");
-                    runnerAtSpot0.GoToRegisterFromQueue(); // Tell the runner to move
+                    if (runnerAtSpot0.QueueHandler != null)
+                    {
+                       runnerAtSpot0.QueueHandler.GoToRegisterFromQueue(); // Tell the runner to move
+                    } else
+                    {
+                        Debug.LogError($"CustomerManager: Runner '{runnerAtSpot0.gameObject.name}' is missing its NpcQueueHandler component! Cannot signal move to register.", runnerAtSpot0.gameObject);
+                         // This NPC is likely stuck.
+                    }
                 }
             }
             else
@@ -821,8 +838,8 @@ namespace CustomerManagement
                     assignedSpot = spotData.spotTransform;
                     spotIndex = spotData.spotIndex;
                     Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) successfully joined main queue at spot {spotIndex}.");
-                    customerRunner.AssignedQueueSpotIndex = spotIndex; // Store the assigned index on the Runner
-                    customerRunner._currentQueueMoveType = QueueType.Main; // Set the queue type on the runner
+                    customerRunner.QueueHandler.AssignedQueueSpotIndex = spotIndex; // Store the assigned index on the Runner
+                    customerRunner.QueueHandler._currentQueueMoveType = QueueType.Main; // Set the queue type on the runner
                     return true;
                 }
             }
@@ -904,8 +921,8 @@ namespace CustomerManagement
                     assignedSpot = spotData.spotTransform;
                     spotIndex = spotData.spotIndex;
                     Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) successfully joined secondary queue at spot {spotIndex}.");
-                    customerRunner.AssignedQueueSpotIndex = spotIndex; // Store the assigned index on the Runner
-                    customerRunner._currentQueueMoveType = QueueType.Secondary; // Set the queue type on the runner
+                    customerRunner.QueueHandler.AssignedQueueSpotIndex = spotIndex; // Store the assigned index on the Runner
+                    customerRunner.QueueHandler._currentQueueMoveType = QueueType.Secondary; // Set the queue type on the runner
                     return true;
                 }
             }

@@ -25,13 +25,15 @@ namespace Game.NPC.States // Context is closely related to states
         public NpcMovementHandler MovementHandler;
         public NpcAnimationHandler AnimationHandler;
         public CustomerShopper Shopper;
-        // Reference to the new interruption handler
-        public NpcInterruptionHandler InterruptionHandler; // <-- NEW FIELD
+        // Reference to the interruption handler
+        public NpcInterruptionHandler InterruptionHandler;
+        // --- NEW: Reference to the Queue handler ---
+        public NpcQueueHandler QueueHandler;
+        // --- END NEW ---
 
 
         // --- External References ---
         public CustomerManager Manager;
-        public CashRegisterInteractable CachedCashRegister; // Cached by a state (e.g., Waiting)
         // Access the cached register via the Runner property
         public CashRegisterInteractable RegisterCached => Runner?.CachedCashRegister;
 
@@ -42,16 +44,25 @@ namespace Game.NPC.States // Context is closely related to states
 
         // Other NPC data fields (managed by Runner, accessed via Context)
         public BrowseLocation? CurrentTargetLocation;
-        public int AssignedQueueSpotIndex;
+        // AssignedQueueSpotIndex is MOVED to NpcQueueHandler, accessed via QueueHandler property
+        // public int AssignedQueueSpotIndex; // MOVED
         // InteractorObject is now managed by NpcInterruptionHandler
-        // public GameObject InteractorObject { get; internal set; } // <-- REMOVED
+        // public GameObject InteractorObject { get; internal set; } // REMOVED
 
         // Access the InteractorObject via the InterruptionHandler
-        public GameObject InteractorObject => InterruptionHandler?.InteractorObject; // <-- UPDATED GETTER
+        public GameObject InteractorObject => InterruptionHandler?.InteractorObject;
 
-
+        // _currentQueueMoveType is MOVED to NpcQueueHandler, access via QueueHandler property
         // This is the field the Runner sets in the struct instances passed to states.
-        public QueueType _currentQueueMoveType;
+        // public QueueType _currentQueueMoveType; // MOVED
+
+        // --- NEW: Public properties to access queue data via QueueHandler ---
+        public int AssignedQueueSpotIndex => QueueHandler?.AssignedQueueSpotIndex ?? -1;
+        public QueueType CurrentQueueMoveType => QueueHandler != null ? QueueHandler._currentQueueMoveType : QueueType.Main;
+        // You might also want properties for _isMovingToQueueSpot and _previousQueueSpotIndex if states need them
+        // public bool IsMovingToQueueSpot => QueueHandler?._isMovingToQueueSpot ?? false;
+        // public int PreviousQueueSpotIndex => QueueHandler?._previousQueueSpotIndex ?? -1;
+        // --- END NEW ---
 
 
         // --- Helper Methods (Accessing Handlers or Runner functionality) ---
@@ -65,29 +76,25 @@ namespace Game.NPC.States // Context is closely related to states
                 bool success = Runner.MovementHandler.SetDestination(position); // Call handler method
                 if (success)
                 {
-                    Runner._hasReachedCurrentDestination = false; // <-- Reset flag here on success
-                    // --- NEW: Store the target position on the Runner ---
+                    Runner._hasReachedCurrentDestination = false; // Reset flag here on success
+                    // Store the target position on the Runner
                     Runner.SetCurrentDestinationPosition(position);
-                    // --- END NEW ---
-                    // Debug.Log($"Context({NpcObject.name}): SetDestination successful, _hasReachedCurrentDestination = false."); // Keep logging for debugging
                 } else {
-                     // --- NEW: Clear the target position on failure ---
+                     // Clear the target position on failure
                      Runner.SetCurrentDestinationPosition(null);
-                     // --- END NEW ---
                 }
                 // MovementHandler.SetDestination logs its own warnings/errors if agent is null/disabled/position invalid
                 return success;
             }
             Debug.LogWarning($"Context({NpcObject.name}): Cannot set destination to {position}, Runner or MovementHandler is null.", NpcObject);
-            // --- NEW: Clear the target position if Runner/Handler is null ---
+            // Clear the target position if Runner/Handler is null
             Runner?.SetCurrentDestinationPosition(null);
-            // --- END NEW ---
             return false;
         }
 
         /// <summary>
-        /// Helper for state SOs to trigger state transition via the Runner.
-        /// </summary>
+         /// Helper for state SOs to trigger state transition via the Runner.
+         /// </summary>
         public void TransitionToState(NpcStateSO nextState)
         {
             Runner?.TransitionToState(nextState);
@@ -135,21 +142,17 @@ namespace Game.NPC.States // Context is closely related to states
          // Access to Shopper methods
          public List<(ItemDetails details, int quantity)> GetItemsToBuy() => Shopper?.GetItemsToBuy() ?? new List<(ItemDetails, int)>();
 
-        // Access to Manager methods
+        // Access to Manager methods (These already correctly call Manager, passing Runner)
         public BrowseLocation? GetRandomBrowseLocation() => Manager?.GetRandomBrowseLocation();
         public Transform GetRegisterPoint() => Manager?.GetRegisterPoint();
         public Transform GetRandomExitPoint() => Manager?.GetRandomExitPoint();
-        public Transform GetQueuePoint(int index) => Manager?.GetQueuePoint(index); // Add helper for queue points
+        public Transform GetQueuePoint(int index) => Manager?.GetQueuePoint(index);
         public Transform GetSecondaryQueuePoint(int index) => Manager?.GetSecondaryQueuePoint(index);
 
         public bool IsRegisterOccupied() => Manager != null && Manager.IsRegisterOccupied();
 
         public bool TryJoinQueue(NpcStateMachineRunner Runner, out Transform assignedSpot, out int spotIndex)
         {
-            // The Manager.TryJoinQueue method expects the Runner instance itself.
-            // We have the Runner instance available via context.Runner.
-            // We also need to pass the out parameters correctly.
-            // Call the Manager method directly via context.Manager
             if (Manager != null)
             {
                 // Call the Manager method, passing the Runner from the context
@@ -166,8 +169,6 @@ namespace Game.NPC.States // Context is closely related to states
 
         public bool TryJoinSecondaryQueue(out Transform assignedSpot, out int spotIndex) // REMOVED NpcStateMachineRunner parameter
         {
-             // The Manager.TryJoinSecondaryQueue method expects the Runner instance.
-             // Call the Manager method directly via context.Manager
              if (Manager != null)
              {
                   return Manager.TryJoinSecondaryQueue(Runner, out assignedSpot, out spotIndex); // Pass context.Runner
@@ -196,7 +197,7 @@ namespace Game.NPC.States // Context is closely related to states
         {
             if (Runner != null)
             {
-                Runner.CachedCashRegister = register; // <-- This sets the FIELD on the NpcStateMachineRunner class instance
+                Runner.CachedCashRegister = register; // This sets the FIELD on the NpcStateMachineRunner class instance
             }
             else
             {

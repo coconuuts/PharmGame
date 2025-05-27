@@ -1,3 +1,5 @@
+// --- START OF FILE CustomerLookToShopStateSO.cs ---
+
 // --- CustomerLookToShopStateSO.cs (Renamed from CustomerInitializingStateSO.cs) ---
 using UnityEngine;
 using System.Collections;
@@ -54,14 +56,36 @@ namespace Game.NPC.States
                 Debug.Log($"{context.NpcObject.name}: Main queue is full. Attempting to join secondary queue.", context.NpcObject);
                 Transform assignedSpot;
                 int spotIndex;
-                CustomerAI customerAIComponent = context.NpcObject.GetComponent<CustomerAI>();
-                if (customerAIComponent != null && context.Manager.TryJoinSecondaryQueue(context.Runner, out assignedSpot, out spotIndex)) // Pass context.Runner
-                {
-                    Debug.Log($"{context.NpcObject.name}: TryJoinSecondaryQueue succeeded! Assigned spot index {spotIndex} at position {assignedSpot.position}.", context.NpcObject);
-                    context.Runner.CurrentTargetLocation = new BrowseLocation { browsePoint = assignedSpot, inventory = null };
-                    context.Runner.AssignedQueueSpotIndex = spotIndex;
-                    Debug.Log($"{context.NpcObject.name}: Called MoveToDestination for secondary queue spot {spotIndex}.", context.NpcObject);
+                // The customerAIComponent is only used for GetComponent<CustomerAI> here.
+                // The TryJoinSecondaryQueue method requires the NpcStateMachineRunner instance now.
+                // context.TryJoinSecondaryQueue already passes context.Runner internally.
+                // We can remove the explicit CustomerAI component lookup here.
+                // CustomerAI customerAIComponent = context.NpcObject.GetComponent<CustomerAI>(); // This line is no longer strictly necessary
+                // if (customerAIComponent != null && context.Manager.TryJoinSecondaryQueue(context.Runner, out assignedSpot, out spotIndex)) // Pass context.Runner
 
+                // Just check if TryJoinSecondaryQueue succeeds, passing context.Runner
+                if (context.TryJoinSecondaryQueue(out assignedSpot, out spotIndex)) // context.TryJoinSecondaryQueue passes context.Runner internally
+                {
+                    Debug.Log($"{context.NpcObject.name}: TryJoinSecondaryQueue succeeded! Assigned spot index {spotIndex} at position {assignedSpot.position}. Transitioning to SecondaryQueue.", context.NpcObject);
+                    context.Runner.CurrentTargetLocation = new BrowseLocation { browsePoint = assignedSpot, inventory = null };
+
+                    // --- UPDATE: Set queue index and type on the QueueHandler ---
+                    if (context.QueueHandler != null)
+                    {
+                        context.QueueHandler.AssignedQueueSpotIndex = spotIndex;
+                        context.QueueHandler._currentQueueMoveType = QueueType.Secondary;
+                        Debug.Log($"{context.NpcObject.name}: Set QueueHandler.AssignedQueueSpotIndex = {spotIndex}, QueueHandler._currentQueueMoveType = {QueueType.Secondary}.", context.NpcObject);
+                    }
+                    else
+                    {
+                        Debug.LogError($"CustomerLookToShopStateSO ({context.NpcObject.name}): QueueHandler is null in context when trying to set queue index/type! Cannot transition.", context.NpcObject);
+                        // Fallback if QueueHandler is missing (shouldn't happen with RequireComponent)
+                        context.TransitionToState(GeneralState.ReturningToPool);
+                        yield break; // Stop coroutine
+                    }
+                    // --- END UPDATE ---
+
+                    // Movement initiated in CustomerSecondaryQueueStateSO.OnEnter now
                     context.TransitionToState(CustomerState.SecondaryQueue); // Transition via context helper
                 }
                 else
@@ -82,3 +106,4 @@ namespace Game.NPC.States
         }
     }
 }
+// --- END OF FILE CustomerLookToShopStateSO.cs ---

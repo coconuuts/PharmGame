@@ -5,6 +5,8 @@ using System.Collections.Generic; // Needed for Stack
 using System; // Needed for System.Enum
 using Game.NPC.States; // Needed for NpcStateSO
 using Game.NPC; // Needed for GeneralState enum
+using CustomerManagement; // Needed for CustomerManager reference
+// using Game.NPC.Handlers; // Not explicitly needed here, accessed via Runner property
 
 namespace Game.NPC.Handlers // Placing handlers together
 {
@@ -14,10 +16,14 @@ namespace Game.NPC.Handlers // Placing handlers together
     /// Reduces the interruption handling burden on the Runner itself.
     /// </summary>
     [RequireComponent(typeof(NpcStateMachineRunner))]
+    [RequireComponent(typeof(NpcInterruptionHandler))] // <-- Still require self? This seems redundant. Should be removed. Leaving it for now as per provided code structure.
     public class NpcInterruptionHandler : MonoBehaviour
     {
         // Reference to the state machine runner on this GameObject
         private NpcStateMachineRunner runner;
+        // Reference to the Interruption Handler (Will use its methods) - Accessing self? Seems wrong.
+        // private NpcInterruptionHandler interruptionHandler; // <-- REMOVE this field. Handler should not reference itself. (Keeping as per source for now)
+
 
         // --- Interruption Data (Moved from NpcStateMachineRunner) ---
         private Stack<NpcStateSO> stateStack; // The state stack for managing interruptions
@@ -35,10 +41,32 @@ namespace Game.NPC.Handlers // Placing handlers together
                 enabled = false;
                 return;
             }
+            // Get Interruption Handler reference - REMOVE or comment out if not using the field
+            // interruptionHandler = GetComponent<NpcInterruptionHandler>(); // <-- Get interruption handler reference (Keeping as per source for now)
+            // if (interruptionHandler == null && enabled) // Only check if not already disabled by runner lookup
+            // {
+            //     Debug.LogError($"NpcEventHandler on {gameObject.name}: NpcInterruptionHandler component not found! This handler requires it. Self-disabling.", this);
+            //     enabled = false;
+            //     return;
+            // }
+
+
             // Initialize the state stack here
             stateStack = new Stack<NpcStateSO>();
 
-            Debug.Log($"{gameObject.name}: NpcInterruptionHandler Awake completed. Runner reference acquired, state stack initialized.", this);
+            Debug.Log($"{gameObject.name}: NpcInterruptionHandler Awake completed. Runner reference acquired, state stack initialized.", this); // Updated log
+        }
+
+        private void OnEnable()
+        {
+            // Event subscriptions are handled by NpcEventHandler.
+        }
+
+        private void OnDisable()
+        {
+            // Event unsubscriptions are handled by NpcEventHandler.
+            // stateStack.Clear(); // Reset is called by Runner.ResetRunnerTransientData
+            // InteractorObject = null; // Reset is called by Runner.ResetRunnerTransientData
         }
 
          /// <summary>
@@ -145,9 +173,16 @@ namespace Game.NPC.Handlers // Placing handlers together
                                  if (runner.Manager.TryJoinQueue(runner, out assignedSpot, out spotIndex))
                                  {
                                       // Successfully joined the queue, transition to Queue state
-                                      runner.AssignedQueueSpotIndex = spotIndex; // Set Runner's assigned index
-                                      runner._currentQueueMoveType = QueueType.Main; // Set Runner's queue type
+                                      if (runner.QueueHandler != null)
+                                      {
+                                          runner.QueueHandler.AssignedQueueSpotIndex = spotIndex;
+                                          runner.QueueHandler._currentQueueMoveType = QueueType.Main;
+                                      } else { Debug.LogError($"InterruptionHandler ({gameObject.name}): Runner's QueueHandler is null when trying to set queue index/type after rejoining queue!", this); }
                                       Debug.Log($"{runner.gameObject.name}: Successfully rejoined queue at spot {spotIndex}. Transitioning to Queue.", runner.gameObject);
+                                      runner.CurrentTargetLocation = new BrowseLocation { browsePoint = assignedSpot, inventory = null };
+                                      runner._hasReachedCurrentDestination = false; // Set flag to indicate movement is needed
+                                      runner.SetCurrentDestinationPosition(assignedSpot.position); // Update last set destination
+                                      Debug.Log($"InterruptionHandler ({runner.gameObject.name}): Updated Runner's target to queue spot {spotIndex} ({assignedSpot.position}) before transitioning to Queue.", runner.gameObject);
                                       runner.TransitionToState(runner.GetStateSO(CustomerState.Queue));
                                  }
                                  else
@@ -172,7 +207,7 @@ namespace Game.NPC.Handlers // Placing handlers together
                             {
                                  // Main queue is now full, cannot rejoin their spot. Give up and exit.
                                  Debug.LogWarning($"{runner.gameObject.name}: Main Queue is now full! Cannot rejoin after interruption from Queue. Transitioning to Exiting.", runner.gameObject);
-                                 // Note: Their old spot was already freed by the interruption handler
+                                 // Note: Their old spot was already freed by the interruption handler (indirectly via QueueStateSO.OnExit calling QueueSpotFreedEvent).
                                  // They effectively lost their place.
                                  runner.TransitionToState(runner.GetStateSO(CustomerState.Exiting));
                             }
@@ -186,9 +221,18 @@ namespace Game.NPC.Handlers // Placing handlers together
                                   if (runner.Manager.TryJoinQueue(runner, out assignedSpot, out spotIndex))
                                   {
                                        // Successfully rejoined the queue, transition to Queue state
-                                       runner.AssignedQueueSpotIndex = spotIndex; // Set Runner's assigned index
-                                       runner._currentQueueMoveType = QueueType.Main; // Set Runner's queue type
+                                       // --- UPDATE: Set queue index and type on QueueHandler ---
+                                       if (runner.QueueHandler != null)
+                                       {
+                                           runner.QueueHandler.AssignedQueueSpotIndex = spotIndex;
+                                           runner.QueueHandler._currentQueueMoveType = QueueType.Main;
+                                       } else { Debug.LogError($"InterruptionHandler ({gameObject.name}): Runner's QueueHandler is null when trying to set queue index/type after rejoining queue!", this); }
+                                       // --- END UPDATE ---
                                        Debug.Log($"{runner.gameObject.name}: Successfully rejoined queue at spot {spotIndex}. Transitioning to Queue.", runner.gameObject);
+                                       runner.CurrentTargetLocation = new BrowseLocation { browsePoint = assignedSpot, inventory = null };
+                                        runner._hasReachedCurrentDestination = false; // Set flag to indicate movement is needed
+                                        runner.SetCurrentDestinationPosition(assignedSpot.position); // Update last set destination
+                                        Debug.Log($"InterruptionHandler ({runner.gameObject.name}): Updated Runner's target to queue spot {spotIndex} ({assignedSpot.position}) before transitioning to Queue.", runner.gameObject);
                                        runner.TransitionToState(runner.GetStateSO(CustomerState.Queue));
                                   }
                                   else
@@ -218,9 +262,18 @@ namespace Game.NPC.Handlers // Placing handlers together
                                 if (runner.Manager.TryJoinSecondaryQueue(runner, out assignedSpot, out spotIndex))
                                 {
                                      // Successfully rejoined the queue, transition to Secondary Queue state
-                                     runner.AssignedQueueSpotIndex = spotIndex; // Set Runner's assigned index
-                                     runner._currentQueueMoveType = QueueType.Secondary; // Set Runner's queue type
+                                     // --- UPDATE: Set queue index and type on QueueHandler ---
+                                     if (runner.QueueHandler != null)
+                                     {
+                                         runner.QueueHandler.AssignedQueueSpotIndex = spotIndex;
+                                         runner.QueueHandler._currentQueueMoveType = QueueType.Secondary;
+                                     } else { Debug.LogError($"InterruptionHandler ({gameObject.name}): Runner's QueueHandler is null when trying to set queue index/type after rejoining secondary queue!", this); }
+                                     // --- END UPDATE ---
                                      Debug.Log($"{runner.gameObject.name}: Successfully rejoined secondary queue at spot {spotIndex}. Transitioning to Secondary Queue.", runner.gameObject);
+                                     runner.CurrentTargetLocation = new BrowseLocation { browsePoint = assignedSpot, inventory = null };
+                                      runner._hasReachedCurrentDestination = false; // Set flag to indicate movement is needed
+                                      runner.SetCurrentDestinationPosition(assignedSpot.position); // Update last set destination
+                                      Debug.Log($"InterruptionHandler ({runner.gameObject.name}): Updated Runner's target to secondary queue spot {spotIndex} ({assignedSpot.position}) before transitioning to Secondary Queue.", runner.gameObject);
                                      runner.TransitionToState(runner.GetStateSO(CustomerState.SecondaryQueue));
                                 }
                                 else
