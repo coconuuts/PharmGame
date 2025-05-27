@@ -193,7 +193,8 @@ namespace Game.NPC.States // Context is closely related to states
          /// <param name="eventArgs">The event arguments instance.</param>
          public void PublishEvent<T>(T eventArgs) where T : struct // Constrain to struct as per EventManager
          {
-             EventManager.Publish(eventArgs);
+            Debug.Log($"DEBUG Context ({NpcObject.name}): Publishing Event: {typeof(T).Name}", NpcObject);
+            EventManager.Publish(eventArgs);
          }
     }
 }

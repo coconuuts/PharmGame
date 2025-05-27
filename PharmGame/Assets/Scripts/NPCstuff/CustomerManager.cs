@@ -1,5 +1,7 @@
 // --- START OF FILE CustomerManager.cs ---
 
+// --- Updated CustomerManager.cs (Phase 2, Substep 2) ---
+
 using UnityEngine;
 using System.Collections.Generic;
 using Utils.Pooling; // Required for PoolingManager
@@ -9,11 +11,13 @@ using Systems.Inventory; // Required for Inventory reference
 using Random = UnityEngine.Random; // Specify UnityEngine.Random
 using Game.Events;
 using Game.NPC.States;
+using Game.NPC.TI; // Needed for TiNpcManager (to pass the TI NPC to it)
 
 namespace CustomerManagement
 {
     /// <summary>
     /// Manages the spawning, pooling, and overall flow of customer NPCs in the store.
+    /// Now also collaborates with TiNpcManager for pooling TI NPCs.
     /// </summary>
     public class CustomerManager : MonoBehaviour
     {
@@ -41,13 +45,11 @@ namespace CustomerManagement
         [Tooltip("Point where customers will wait at the cash register.")]
         [SerializeField] private Transform registerPoint;
 
-        // --- Phase 1, Substep 2: Keep Transform lists for Inspector setup ---
         [Tooltip("Points where customers will form a queue for the cash register, ordered from closest to furthest.")]
         [SerializeField] private List<Transform> queuePoints;
 
         [Tooltip("Points where customers will form a secondary queue outside the store, ordered from furthest to closest to the entrance.")]
         [SerializeField] private List<Transform> secondaryQueuePoints;
-        // --- END Phase 1, Substep 2 ---
 
 
         [Tooltip("Points where customers will exit the store.")]
@@ -59,26 +61,8 @@ namespace CustomerManagement
         // The activeCustomers list will now represent customers *inside the store*.
         private List<Game.NPC.NpcStateMachineRunner> activeCustomers = new List<Game.NPC.NpcStateMachineRunner>(); // Track customers *inside the store*
 
-        // --- Phase 1, Substep 2: Remove bool arrays and old Queue collections ---
-        // private Queue<Game.NPC.NpcStateMachineRunner> customerQueue = new Queue<Game.NPC.NpcStateMachineRunner>(); // REMOVED
-        // private Game.NPC.NpcStateMachineRunner customerAtRegister = null; // REMOVED (Managed by RegisterInteractable and Runner cache)
-        // private bool[] queueSpotOccupied; // REMOVED
-        // private Queue<Game.NPC.NpcStateMachineRunner> secondaryCustomerQueue = new Queue<Game.NPC.NpcStateMachineRunner>(); // REMOVED
-        // private bool[] secondaryQueueSpotOccupied; // REMOVED
-        // --- END Phase 1, Substep 2 ---
-
-        // --- Phase 1, Substep 2: Add new QueueSpot lists ---
         private List<QueueSpot> mainQueueSpots;
         private List<QueueSpot> secondaryQueueSpots;
-        // --- END Phase 1, Substep 2 ---
-
-        // --- REMOVED Phase 4 fields related to main queue threshold ---
-        // [Tooltip("If the main register queue has this many customers or fewer, release the next secondary queue customer.")]
-        // [SerializeField] private int mainQueueReleaseThreshold = 2;
-        // [Tooltip("How often to check if the main queue is below the threshold to release a secondary customer.")]
-        // [SerializeField] private float secondaryQueueCheckInterval = 1.0f;
-        // private Coroutine secondaryQueueReleaseCoroutine;
-        // --- END REMOVED Phase 4 ---
 
 
         private void Awake()
@@ -108,22 +92,19 @@ namespace CustomerManagement
             // Validate essential references
             if (npcPrefabs == null || npcPrefabs.Count == 0) Debug.LogError("CustomerManager: No NPC prefabs assigned!");
             if (spawnPoints == null || spawnPoints.Count == 0) Debug.LogWarning("CustomerManager: No spawn points assigned!");
-            // --- Updated validation for BrowseLocations ---
             if (BrowseLocations == null || BrowseLocations.Count == 0) Debug.LogError("CustomerManager: No Browse locations assigned!");
              else
              {
-                  // Optional: Validate each Browse location entry
                   foreach(var location in BrowseLocations)
                   {
                        if (location.browsePoint == null) Debug.LogWarning("CustomerManager: A Browse location has a null browse point!");
                        if (location.inventory == null) Debug.LogWarning($"CustomerManager: Browse location '{location.browsePoint?.name}' has a null inventory reference!");
                   }
              }
-            // ----------------------------------------------
             if (registerPoint == null) Debug.LogWarning("CustomerManager: Register point not assigned!");
             if (exitPoints == null || exitPoints.Count == 0) Debug.LogWarning("CustomerManager: No exit points assigned!");
 
-            // --- Phase 1, Substep 2: Initialize QueueSpot lists from Transform lists ---
+            // Initialize QueueSpot lists from Transform lists
             mainQueueSpots = new List<QueueSpot>();
             if (queuePoints == null || queuePoints.Count == 0)
             {
@@ -165,9 +146,6 @@ namespace CustomerManagement
                  }
                  Debug.Log($"CustomerManager: Initialized secondary queue with {secondaryQueueSpots.Count} spots.");
             }
-            // We no longer need the original Transform lists for runtime logic after this point,
-            // but keep them serialized for Inspector setup.
-            // --- END Phase 1, Substep 2 ---
 
 
             Debug.Log("CustomerManager: Awake completed.");
@@ -177,9 +155,6 @@ namespace CustomerManagement
         {
             // Begin spawning customers
             StartCoroutine(SpawnCustomerCoroutine());
-            // --- REMOVED: Start the secondary queue release check coroutine ---
-            // secondaryQueueReleaseCoroutine = StartCoroutine(SecondaryQueueReleaseCoroutine());
-            // --- END REMOVED ---
         }
 
         private void OnEnable() // Subscribe to events when the GameObject is enabled
@@ -189,21 +164,13 @@ namespace CustomerManagement
             EventManager.Subscribe<QueueSpotFreedEvent>(HandleQueueSpotFreed);
             EventManager.Subscribe<CashRegisterFreeEvent>(HandleCashRegisterFree);
 
-            // --- NEW: Subscribe to events for managing activeCustomers count ---
+            // Subscribe to events for managing activeCustomers count
             EventManager.Subscribe<NpcEnteredStoreEvent>(HandleNpcEnteredStore);
             EventManager.Subscribe<NpcExitedStoreEvent>(HandleNpcExitedStore);
-            // --- END NEW ---
-
 
             // Subscribe to future interruption events if CustomerManager needs to react
             // EventManager.Subscribe<NpcAttackedEvent>(HandleNpcAttacked);
             // EventManager.Subscribe<NpcInteractedEvent>(HandleNpcInteracted);
-
-            // --- Phase 4: Subscribe to ReleaseNpcFromSecondaryQueueEvent if Manager needs to react (currently handled by Runner) ---
-            // The Runner handles this event to transition state. Manager might need it for data sync?
-            // Let's stick to the plan and only have Runner handle this event for now.
-            // EventManager.Subscribe<ReleaseNpcFromSecondaryQueueEvent>(HandleReleaseNpcFromSecondaryQueue);
-            // --- END Phase 4 ---
 
             Debug.Log("CustomerManager: Subscribed to events.");
         }
@@ -215,19 +182,13 @@ namespace CustomerManagement
             EventManager.Unsubscribe<QueueSpotFreedEvent>(HandleQueueSpotFreed);
             EventManager.Unsubscribe<CashRegisterFreeEvent>(HandleCashRegisterFree);
 
-            // --- NEW: Unsubscribe from events for managing activeCustomers count ---
+            // Unsubscribe from events for managing activeCustomers count
             EventManager.Unsubscribe<NpcEnteredStoreEvent>(HandleNpcEnteredStore);
             EventManager.Unsubscribe<NpcExitedStoreEvent>(HandleNpcExitedStore);
-            // --- END NEW ---
-
 
             // Unsubscribe from future interruption events
             // EventManager.Unsubscribe<NpcAttackedEvent>(HandleNpcAttacked);
             // EventManager.Unsubscribe<NpcInteractedEvent>(HandleNpcInteracted);
-
-             // --- Phase 4: Unsubscribe from secondary release event if subscribed ---
-            // EventManager.Unsubscribe<ReleaseNpcFromSecondaryQueueEvent>(HandleReleaseNpcFromSecondaryQueue);
-            // --- END Phase 4 ---
 
             Debug.Log("CustomerManager: Unsubscribed from events.");
             StopAllCoroutines(); // Stop spawning and check coroutines
@@ -256,8 +217,6 @@ namespace CustomerManagement
             // They will wait here until store capacity allows them to transition to Entering.
             if (poolingManager == null || npcPrefabs == null || npcPrefabs.Count == 0 || spawnPoints == null || spawnPoints.Count == 0 || secondaryQueueSpots == null || secondaryQueueSpots.Count == 0 || !HasAvailableSecondaryQueueSpot())
             {
-                 // Condition to spawn is now: PoolingManager exists, prefabs/spawns exist, secondary queue exists and has space.
-                 // maxCustomersInStore limit is checked *before* transitioning from SecondaryQueue to Entering.
                  Debug.Log($"CustomerManager: Spawn conditions not met. Pool Mgr: {poolingManager!=null}, Prefabs: {npcPrefabs?.Count}, Spawns: {spawnPoints?.Count}, Secondary Queue Has Space: {HasAvailableSecondaryQueueSpot()}, Secondary Spots: {secondaryQueueSpots?.Count}");
                 return;
             }
@@ -271,17 +230,26 @@ namespace CustomerManagement
                 Game.NPC.NpcStateMachineRunner customerRunner = customerObject.GetComponent<Game.NPC.NpcStateMachineRunner>();
                 if (customerRunner != null)
                 {
+                    // --- Ensure this is NOT treated as a TI NPC ---
+                    if (customerRunner.IsTrueIdentityNpc)
+                    {
+                         Debug.LogError($"CustomerManager: Attempted to spawn a pooled object ({customerObject.name}) that is still flagged as a TI NPC! This indicates a pooling or deactivation issue. Returning it immediately.", customerObject);
+                         // Attempt to return it to the pool directly, don't try to initialize it as transient
+                         if(customerObject.GetComponent<PooledObjectInfo>() != null) poolingManager.ReturnPooledObject(customerObject);
+                         else Destroy(customerObject); // Fallback
+                         return; // Abort spawn process for this object
+                    }
+                    // --- End Check ---
+
                     Transform chosenSpawnPoint = spawnPoints[Random.Range(0, spawnPoints.Count)];
                     // Warp the NPC to the spawn point - this is done by the Runner's Initialize
                     customerObject.transform.position = chosenSpawnPoint.position;
                     customerObject.transform.rotation = chosenSpawnPoint.rotation;
 
                     // Initialize the NpcStateMachineRunner, passing the manager and spawn position
+                    // This path is for TRANSIENT customers.
                     customerRunner.Initialize(this, chosenSpawnPoint.position);
 
-                    // --- REMOVED: activeCustomers.Add(customerRunner); ---
-                    // activeCustomers is now managed by NpcEnteredStoreEvent.
-                    // --- END REMOVED ---
 
                     Debug.Log($"CustomerManager: Spawned customer '{customerObject.name}' (Runner) from pool at {chosenSpawnPoint.position}.");
 
@@ -320,76 +288,150 @@ namespace CustomerManagement
         }
 
 
-        // --- Event Handlers (replace old direct call methods) ---
+        // --- Event Handlers ---
 
         /// <summary>
         /// Handles the NpcReturningToPoolEvent. Returns a customer GameObject back to the object pool.
-        /// Also removes the Runner from the active list if it somehow remained there (should be removed by NpcExitedStoreEvent).
-        /// Ensures any queue spot they might have incorrectly occupied is cleared.
+        /// Differentiates between transient and TI NPCs.
         /// </summary>
         /// <param name="eventArgs">The event arguments containing the NPC GameObject.</param>
         private void HandleNpcReturningToPool(NpcReturningToPoolEvent eventArgs)
         {
-            GameObject customerObject = eventArgs.NpcObject;
-            if (customerObject == null || poolingManager == null) return;
+            GameObject npcObject = eventArgs.NpcObject;
+            if (npcObject == null) return;
 
-            Game.NPC.NpcStateMachineRunner customerRunner = customerObject.GetComponent<Game.NPC.NpcStateMachineRunner>();
-            if (customerRunner != null)
+            Game.NPC.NpcStateMachineRunner runner = npcObject.GetComponent<Game.NPC.NpcStateMachineRunner>();
+            if (runner == null)
             {
-                 // --- REMOVED: activeCustomers.Remove(customerRunner); ---
-                 // activeCustomers is now managed by NpcExitedStoreEvent.
-                 // However, defensively remove it here just in case the state transition was missed or bugged.
-                 if (activeCustomers.Contains(customerRunner))
-                 {
-                     Debug.LogWarning($"CustomerManager: NpcReturningToPoolEvent received for '{customerObject.name}' (Runner), but it was still in activeCustomers list! Removing defensively.", this);
-                     activeCustomers.Remove(customerRunner);
-                 }
-                 Debug.Log($"CustomerManager: Handling NpcReturningToPoolEvent for '{customerObject.name}' (Runner). Total active (inside store): {activeCustomers.Count}");
+                 Debug.LogWarning($"CustomerManager: Received NpcReturningToPoolEvent for GameObject '{npcObject.name}' without NpcStateMachineRunner component. Attempting direct return.", npcObject);
+                  // Defensive check if it might still be in the active list (shouldn't be)
+                   if (activeCustomers.Contains(runner))
+                   {
+                       Debug.LogWarning($"CustomerManager: Null runner in activeCustomers list! Removing defensively.", this);
+                       activeCustomers.Remove(runner);
+                   }
+                  if(npcObject.GetComponent<PooledObjectInfo>() != null) poolingManager.ReturnPooledObject(npcObject);
+                  else Destroy(npcObject); // Fallback destroy if not pooled
+                 return; // Exit handling
+            }
 
-                 // --- Phase 5: Add cleanup for potentially occupied queue spots ---
+            // --- PHASE 2, SUBSTEP 2: Differentiate between TI and Transient NPCs ---
+            if (runner.IsTrueIdentityNpc)
+            {
+                 Debug.Log($"CustomerManager: Handling NpcReturningToPoolEvent for TI NPC '{runner.TiData?.Id ?? "Unknown TI NPC"}'. Handing off to TiNpcManager.", npcObject);
+
+                 // This is a TI NPC. It should be handled by the TiNpcManager for deactivation and pooling.
+                 TiNpcManager tiManager = TiNpcManager.Instance;
+                 if (tiManager != null)
+                 {
+                      // The Runner's Deactivate() should have already been called by TransitionToState(ReturningToPool)
+                      // Here, we just need to tell the TiNpcManager that this GameObject is ready for pooling.
+                      // We need a method on TiNpcManager to receive the GameObject.
+                      tiManager.HandleTiNpcReturnToPool(npcObject); // <-- Call the new method on TiNpcManager
+                 }
+                 else
+                 {
+                      Debug.LogError($"CustomerManager: Received NpcReturningToPoolEvent for TI NPC '{runner.TiData?.Id ?? "Unknown TI NPC"}' but TiNpcManager.Instance is null! Cannot properly handle deactivation and pooling. Destroying object.", npcObject);
+                       // Fallback: If TiNpcManager is missing, we can't save data or pool correctly. Destroy.
+                       Destroy(npcObject);
+                 }
+
+                 // Regardless of TiNpcManager outcome, we are done with this event in CustomerManager
+                 // for this specific NPC type. Do NOT proceed with the transient pooling logic below.
+                 // Also ensure it's removed from activeCustomers list if it somehow remained (should be removed by Exited state).
+                  if (activeCustomers.Contains(runner))
+                  {
+                      Debug.LogWarning($"CustomerManager: TI NPC '{runner.TiData?.Id ?? "Unknown TI NPC"}' was still in activeCustomers list! Removing defensively.", this);
+                      activeCustomers.Remove(runner);
+                  }
+
+                 // --- Phase 5: Add cleanup for potentially occupied queue spots for TI NPCs ---
                  // If the Runner was assigned to a queue spot when it was pooled,
                  // ensure that spot's currentOccupant reference is cleared.
-                 if (customerRunner.AssignedQueueSpotIndex != -1)
+                 // This is defensive; Runner.Deactivate() should clear its AssignedQueueSpotIndex
+                 // and states should publish QueueSpotFreedEvent on exit.
+                 if (runner.AssignedQueueSpotIndex != -1)
                  {
-                     Debug.LogWarning($"CustomerManager: Runner '{customerObject.name}' was pooled but still assigned to queue spot index {customerRunner.AssignedQueueSpotIndex} in {customerRunner._currentQueueMoveType} queue. Forcing spot free.", this);
-                      List<QueueSpot> targetQueue = (customerRunner._currentQueueMoveType == QueueType.Main) ? mainQueueSpots : secondaryQueueSpots;
-                      if (targetQueue != null && customerRunner.AssignedQueueSpotIndex >= 0 && customerRunner.AssignedQueueSpotIndex < targetQueue.Count)
+                     Debug.LogWarning($"CustomerManager: TI Runner '{npcObject.name}' was pooled but still assigned to queue spot index {runner.AssignedQueueSpotIndex} in {runner._currentQueueMoveType} queue. Forcing spot free.", this);
+                      List<QueueSpot> targetQueue = (runner._currentQueueMoveType == QueueType.Main) ? mainQueueSpots : secondaryQueueSpots;
+                      if (targetQueue != null && runner.AssignedQueueSpotIndex >= 0 && runner.AssignedQueueSpotIndex < targetQueue.Count)
                       {
-                           QueueSpot spot = targetQueue[customerRunner.AssignedQueueSpotIndex];
-                           if (spot.currentOccupant == customerRunner) // Double check it's this specific runner
+                           QueueSpot spot = targetQueue[runner.AssignedQueueSpotIndex];
+                           if (spot.currentOccupant == runner) // Double check it's this specific runner
                            {
                                 spot.currentOccupant = null; // Force free the spot
-                                Debug.Log($"CustomerManager: Queue spot {customerRunner.AssignedQueueSpotIndex} in {customerRunner._currentQueueMoveType} queue manually freed during pooling cleanup.", this);
+                                Debug.Log($"CustomerManager: Queue spot {runner.AssignedQueueSpotIndex} in {runner._currentQueueMoveType} queue manually freed during TI pooling cleanup.", this);
                            } else if (spot.currentOccupant != null)
                            {
-                               Debug.LogWarning($"CustomerManager: Queue spot {customerRunner.AssignedQueueSpotIndex} in {customerRunner._currentQueueMoveType} was occupied by a different NPC when pooled cleanup ran for '{customerObject.name}'. Data inconsistency!", this);
+                               Debug.LogWarning($"CustomerManager: Queue spot {runner.AssignedQueueSpotIndex} in {runner._currentQueueMoveType} was occupied by a different NPC when TI pooled cleanup ran for '{npcObject.name}'. Data inconsistency!", this);
                            }
                       }
+                      runner.AssignedQueueSpotIndex = -1; // Clear index on runner defensively
                  }
-                 // --- END Phase 5 ---
+                 // --- END Phase 5 defensive cleanup for TI ---
 
-                 poolingManager.ReturnPooledObject(customerObject);
+
+                 return; // Exit the method, let TiNpcManager handle pooling for TI NPCs
             }
-             else
-             {
-                  Debug.LogWarning($"CustomerManager: Received NpcReturningToPoolEvent for GameObject '{customerObject.name}' without NpcStateMachineRunner component. Attempting direct return.", customerObject);
-                  // Defensive check if it was in the activeCustomers list, though it shouldn't be
-                   Game.NPC.NpcStateMachineRunner runnerCandidate = customerObject.GetComponent<Game.NPC.NpcStateMachineRunner>(); // Re-get runner
-                   if (activeCustomers.Contains(runnerCandidate)) // Null check inside Contains logic
-                   {
-                        Debug.LogWarning($"CustomerManager: NpcReturningToPoolEvent received for '{customerObject.name}' (No Runner found), but null was in activeCustomers list! Removing defensively.", this);
-                        activeCustomers.Remove(runnerCandidate); // Removes null if present
-                   }
+            // --- END PHASE 2, SUBSTEP 2 ---
 
 
-                  if(customerObject.GetComponent<PooledObjectInfo>() != null) poolingManager.ReturnPooledObject(customerObject);
-                  else Destroy(customerObject); // Fallback destroy if not pooled
-             }
+            // --- Existing Transient NPC Pooling Logic ---
+            // This else block contains the original logic for transient customers
+            Debug.Log($"CustomerManager: Handling NpcReturningToPoolEvent for Transient NPC '{npcObject.name}'. Returning to pool.", npcObject);
+
+            // Remove from active list (should be removed by NpcExitedStoreEvent, but defensive)
+            if (activeCustomers.Contains(runner))
+            {
+                 Debug.LogWarning($"CustomerManager: Transient NPC '{npcObject.name}' was still in activeCustomers list! Removing defensively.", this);
+                 activeCustomers.Remove(runner);
+            }
+
+            // Phase 5: Add cleanup for potentially occupied queue spots for Transient NPCs
+            // If the Runner was assigned to a queue spot when it was pooled,
+            // ensure that spot's currentOccupant reference is cleared.
+            // This is defensive; states should publish QueueSpotFreedEvent on exit.
+            if (runner.AssignedQueueSpotIndex != -1)
+            {
+                 Debug.LogWarning($"CustomerManager: Transient Runner '{npcObject.name}' was pooled but still assigned to queue spot index {runner.AssignedQueueSpotIndex} in {runner._currentQueueMoveType} queue. Forcing spot free.", this);
+                  List<QueueSpot> targetQueue = (runner._currentQueueMoveType == QueueType.Main) ? mainQueueSpots : secondaryQueueSpots;
+                  if (targetQueue != null && runner.AssignedQueueSpotIndex >= 0 && runner.AssignedQueueSpotIndex < targetQueue.Count)
+                  {
+                       QueueSpot spot = targetQueue[runner.AssignedQueueSpotIndex];
+                       if (spot.currentOccupant == runner) // Double check it's this specific runner
+                       {
+                            spot.currentOccupant = null; // Force free the spot
+                            Debug.Log($"CustomerManager: Queue spot {runner.AssignedQueueSpotIndex} in {runner._currentQueueMoveType} queue manually freed during transient pooling cleanup.", this);
+                       } else if (spot.currentOccupant != null)
+                       {
+                           Debug.LogWarning($"CustomerManager: Queue spot {runner.AssignedQueueSpotIndex} in {runner._currentQueueMoveType} was occupied by a different NPC when transient pooled cleanup ran for '{npcObject.name}'. Data inconsistency!", this);
+                       }
+                  }
+                  runner.AssignedQueueSpotIndex = -1; // Clear index on runner defensively
+            }
+            // --- END Phase 5 defensive cleanup for Transient ---
+
+
+            // Return the transient NPC object to the pool
+            if (poolingManager != null)
+            {
+                poolingManager.ReturnPooledObject(npcObject);
+                Debug.Log($"CustomerManager: Returned transient NPC '{npcObject.name}' to pool.", npcObject);
+            }
+            else
+            {
+                // Fallback if poolingManager is somehow null
+                Debug.LogError($"CustomerManager: PoolingManager is null! Cannot return transient NPC '{npcObject.name}' to pool. Destroying object.", this);
+                Destroy(npcObject);
+            }
+            // --- End Existing Transient NPC Pooling Logic ---
         }
+
 
         /// <summary>
         /// Handles the NpcEnteredStoreEvent. Adds the NPC to the list of customers currently inside the store.
         /// This event is published by the NpcStateMachineRunner when transitioning to the Entering state.
+        /// Applies to both Transient and TI NPCs temporarily acting as customers.
         /// </summary>
         private void HandleNpcEnteredStore(NpcEnteredStoreEvent eventArgs)
         {
@@ -397,7 +439,9 @@ namespace CustomerManagement
             if (customerRunner != null && !activeCustomers.Contains(customerRunner))
             {
                 activeCustomers.Add(customerRunner);
-                Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) entered the store (received NpcEnteredStoreEvent). Total active (inside store): {activeCustomers.Count}");
+                // Determine if it's a transient or TI NPC for logging clarity
+                string npcType = customerRunner.IsTrueIdentityNpc ? $"TI NPC '{customerRunner.TiData?.Id ?? "Unknown"}'" : "Transient NPC";
+                Debug.Log($"CustomerManager: {npcType} ({customerRunner.gameObject.name}) entered the store (received NpcEnteredStoreEvent). Total active (inside store): {activeCustomers.Count}");
 
                 // Now that a customer has successfully entered the store (decrementing external queue pressure),
                 // check if we can release someone from the secondary queue if capacity allows.
@@ -416,6 +460,7 @@ namespace CustomerManagement
         /// <summary>
         /// Handles the NpcExitedStoreEvent. Removes the NPC from the list of customers currently inside the store.
         /// This event is published by the NpcStateMachineRunner when transitioning to the Exiting state.
+        /// Applies to both Transient and TI NPCs finishing their customer loop.
         /// </summary>
         private void HandleNpcExitedStore(NpcExitedStoreEvent eventArgs)
         {
@@ -423,7 +468,10 @@ namespace CustomerManagement
             if (customerRunner != null && activeCustomers.Contains(customerRunner))
             {
                 activeCustomers.Remove(customerRunner);
-                Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) exited the store (received NpcExitedStoreEvent). Total active (inside store): {activeCustomers.Count}");
+                 // Determine if it's a transient or TI NPC for logging clarity
+                string npcType = customerRunner.IsTrueIdentityNpc ? $"TI NPC '{customerRunner.TiData?.Id ?? "Unknown"}'" : "Transient NPC";
+                Debug.Log($"CustomerManager: {npcType} ({customerRunner.gameObject.name}) exited the store (received NpcExitedStoreEvent). Total active (inside store): {activeCustomers.Count}");
+
 
                 // Now that a customer has successfully exited the store (increasing external queue pressure),
                 // check if we can release someone from the secondary queue if capacity allows.
@@ -451,7 +499,6 @@ private void HandleQueueSpotFreed(QueueSpotFreedEvent eventArgs)
     QueueType type = eventArgs.Type;
     int spotIndex = eventArgs.SpotIndex; // The index that was just vacated
 
-    // Basic validation
     if (spotIndex < 0)
     {
          Debug.LogWarning($"CustomerManager: Received QueueSpotFreedEvent with invalid negative spot index {spotIndex}. Ignoring.", this);
@@ -462,84 +509,58 @@ private void HandleQueueSpotFreed(QueueSpotFreedEvent eventArgs)
 
     List<QueueSpot> targetQueue = (type == QueueType.Main) ? mainQueueSpots : secondaryQueueSpots;
 
-    // Further validation
      if (targetQueue == null || spotIndex >= targetQueue.Count)
      {
           Debug.LogWarning($"CustomerManager: Received invalid QueueSpotFreedEvent args (index {spotIndex}, type {type}) or null target queue. Ignoring.", this);
           return;
      }
 
-    // --- Phase 2, Substep 4 (REVISED): DO NOT clear the spot here. ---
-    // This event means the NPC previously assigned to this spot has LEFT the queue state.
-    // The spot's occupant should *already* be null if they left via Register/Exiting/Impatience (cleared in HandleCashRegisterFree/CheckStoreCapacityAndReleaseSecondaryCustomer)
-    // OR when the moving NPC arrived at the *next* spot via FreePreviousQueueSpotOnArrival.
-    // Rely on those points for clearing the occupant reference.
-    // The purpose of *this* handler is solely to start the cascade.
     // The freeing of spotIndex itself should have happened just before this event fired (for spot 0 exiting to Register/Exit)
-    // or happens when the moving NPC arrives at the *next* spot (for spots > 0 leaving their spot).
+    // or happens when the moving NPC arrived at the *next* spot via FreePreviousQueueSpotOnArrival.
     QueueSpot spotThatPublished = targetQueue[spotIndex]; // Get the spot data corresponding to the event source
     if (spotThatPublished.IsOccupied)
     {
         // This is an inconsistency! The spot that published the "I'm leaving" event is STILL marked occupied.
-        // This means the clearing step in HandleCashRegisterFree, CheckStoreCapacityAndReleaseSecondaryCustomer, or FreePreviousQueueSpotOnArrival FAILED for this spot.
         Debug.LogError($"CustomerManager: Inconsistency detected! QueueSpotFreedEvent received for spot {spotIndex} in {type} queue, but the spot is still marked occupied by {spotThatPublished.currentOccupant.gameObject.name} (Runner). Forcing spot free.", this);
         spotThatPublished.currentOccupant = null; // Force clear the occupant reference to fix the data
     }
     else
     {
-        // This is the expected case for spot 0 leaving or a spot being freed by arrival: it's already null.
         Debug.Log($"CustomerManager: QueueSpotFreedEvent received for spot {spotIndex} in {type} queue, spot is correctly marked free.");
     }
-    // --- END Phase 2, Substep 4 (REVISED) ---
 
 
-    // --- Phase 2, Substep 4: Initiate the cascade of "move up" commands ---
-    // Iterate through ALL subsequent spots starting from the one *after* the freed spot.
+    // Initiate the cascade of "move up" commands
     for (int currentSpotIndex = spotIndex + 1; currentSpotIndex < targetQueue.Count; currentSpotIndex++)
     {
          QueueSpot currentSpotData = targetQueue[currentSpotIndex];
 
-         // If this spot is occupied...
          if (currentSpotData.IsOccupied)
          {
              Game.NPC.NpcStateMachineRunner runnerToMove = currentSpotData.currentOccupant;
 
-             // --- Phase 5: Robustness check for valid Runner reference ---
-             if (runnerToMove == null || !runnerToMove.gameObject.activeInHierarchy || runnerToMove.GetCurrentState() == null || !(runnerToMove.GetCurrentState().HandledState.Equals(CustomerState.Queue) || runnerToMove.GetCurrentState().HandledState.Equals(CustomerState.SecondaryQueue)) ) // Check if in either queue state
+             // Robustness check for valid Runner reference
+             if (runnerToMove == null || !runnerToMove.gameObject.activeInHierarchy || runnerToMove.GetCurrentState() == null || !(runnerToMove.GetCurrentState().HandledState.Equals(CustomerState.Queue) || runnerToMove.GetCurrentState().HandledState.Equals(CustomerState.SecondaryQueue)) )
              {
-                 // Found an occupied spot data but the Runner is invalid, inactive, or in wrong state.
                  Debug.LogError($"CustomerManager: Inconsistency detected! Spot {currentSpotIndex} in {type} queue is marked occupied by a Runner ('{runnerToMove?.gameObject.name ?? "NULL Runner"}') that is invalid, inactive, or in wrong state ('{runnerToMove?.GetCurrentState()?.name ?? "NULL State"}'). Forcing spot {currentSpotIndex} free and continuing cascade search.", this);
-                 currentSpotData.currentOccupant = null; // Force free this inconsistent spot
-                 // Continue the loop - the next spot might have a valid NPC.
-                 continue; // Skip the MoveToQueueSpot call for this invalid spot
+                 currentSpotData.currentOccupant = null;
+                 continue;
              }
-             // --- END Phase 5 ---
 
-
-             // Tell the runner to move to the *previous* spot (currentSpotIndex - 1)
              int nextSpotIndex = currentSpotIndex - 1;
-             QueueSpot nextSpotData = targetQueue[nextSpotIndex]; // Get the data for the spot they are moving *to*
+             QueueSpot nextSpotData = targetQueue[nextSpotIndex];
 
              Debug.Log($"CustomerManager: Signalling {runnerToMove.gameObject.name} assigned to spot {currentSpotIndex} to move up to spot {nextSpotIndex} in {type} queue.");
 
-             // --- FIX: Phase 2, Substep 4 (REVISED): Set the destination spot's occupant BEFORE calling MoveToQueueSpot ---
-             // This marks the destination spot as occupied by the Runner that is now *moving* to it.
-             // The source spot (currentSpotIndex) is marked free by the Runner's MoveToQueueSpot *immediately*.
+             // Set the destination spot's occupant BEFORE calling MoveToQueueSpot
              nextSpotData.currentOccupant = runnerToMove;
-             // --- END FIX ---
 
              // Call the method on the Runner to initiate the move.
-             // The Runner will update its internal assigned index and start moving.
-             // It will *also* set its _isMovingToQueueSpot flag and store the *previous* index.
-             // The source spot (currentSpotIndex) will be marked free in the data
-             // WHEN THE MoveToQueueSpot is called on the Runner.
-             runnerToMove.MoveToQueueSpot(nextSpotData.spotTransform, nextSpotIndex, type); // <-- Pass the new spot's transform and index
+             runnerToMove.MoveToQueueSpot(nextSpotData.spotTransform, nextSpotIndex, type);
          }
          else // No occupant found for this spot index
          {
-             // This indicates a true gap in the queue. Log a warning.
              Debug.LogWarning($"CustomerManager: No Runner found occupying spot {currentSpotIndex} in {type} queue. This spot is a gap. Continuing cascade search.", this);
-             // Continue the loop. Do *not* break just because one spot is empty.
          }
     } // End of cascade loop
 }
@@ -547,7 +568,7 @@ private void HandleQueueSpotFreed(QueueSpotFreedEvent eventArgs)
 /// <summary>
 /// Called by an NpcStateMachineRunner when it completes a MoveToQueueSpot command.
 /// This signifies that the Runner has arrived at its *new* spot, and its *previous* spot is now free.
-/// NOTE: With the update in Runner.MoveToQueueSpot, this method is now called *immediately* when the Runner *starts* the move, not on arrival. The name is slightly misleading now but kept for reference.
+/// NOTE: This is called *immediately* when the Runner *starts* the move, not on arrival.
 /// </summary>
 /// <param name="queueType">The type of queue the move occurred within.</param>
 /// <param name="previousSpotIndex">The index of the spot the runner *just left* (which is now physically free).</param>
@@ -566,14 +587,11 @@ public bool FreePreviousQueueSpotOnArrival(QueueType queueType, int previousSpot
         return false;
     }
 
-    // --- Phase 2, Substep 5: Mark the previous spot as free in the QueueSpot data ---
+    // Mark the previous spot as free in the QueueSpot data
     QueueSpot spotToFree = targetQueue[previousSpotIndex];
 
     if (spotToFree.IsOccupied) // Check if it's occupied before freeing (defensive)
     {
-         // Optional: Check if spotToFree.currentOccupant is the Runner that called this method for robustness.
-         // For now, assume the call is valid and free the spot.
-         // The Runner calling this method *should* have just been marked as the occupant of the *next* spot.
          spotToFree.currentOccupant = null; // <-- Mark the spot as free when the Runner starts moving away
          Debug.Log($"CustomerManager: Spot {previousSpotIndex} in {queueName} queue is now marked free (clearing occupant reference on Runner starting move).");
          return true;
@@ -581,10 +599,8 @@ public bool FreePreviousQueueSpotOnArrival(QueueType queueType, int previousSpot
     else
     {
          Debug.LogWarning($"CustomerManager: Received FreePreviousQueueSpotOnArrival for spot {previousSpotIndex} in {queueName} queue, but it was already marked as free. Inconsistency?", this);
-         // Return true even if already free, as the intent was achieved.
-         return true;
+         return true; // Return true even if already free, as the intent was achieved.
     }
-    // --- END Phase 2, Substep 5 ---
 }
 
 
@@ -598,55 +614,39 @@ public bool FreePreviousQueueSpotOnArrival(QueueType queueType, int previousSpot
         {
             Debug.Log("CustomerManager: Handling CashRegisterFreeEvent.");
 
-            // --- Phase 2, Substep 6: Check if Main Queue spot 0 is occupied ---
             if (mainQueueSpots == null || mainQueueSpots.Count == 0)
             {
                  Debug.LogWarning("CustomerManager: HandleCashRegisterFree called but mainQueueSpots list is null or empty.", this);
-                 // Still check secondary queue release? Yes, register being free *might* free up store capacity if the person leaving
-                 // was counted towards it (they are, via Exiting state).
                  CheckStoreCapacityAndReleaseSecondaryCustomer(); // Call the check method
                  return;
             }
 
             QueueSpot spotZero = mainQueueSpots[0];
 
-            // If spot 0 is occupied...
             if (spotZero.IsOccupied)
             {
                 Game.NPC.NpcStateMachineRunner runnerAtSpot0 = spotZero.currentOccupant;
 
-                // --- Phase 5: Robustness check for valid Runner reference ---
+                // Robustness check for valid Runner reference
                  if (runnerAtSpot0 == null || !runnerAtSpot0.gameObject.activeInHierarchy || runnerAtSpot0.GetCurrentState() == null || !runnerAtSpot0.GetCurrentState().HandledState.Equals(CustomerState.Queue))
                  {
-                      // Found an occupied spot data but the Runner is invalid or in the wrong state.
                       Debug.LogError($"CustomerManager: Inconsistency detected! Main Queue spot 0 is marked occupied by a Runner ('{runnerAtSpot0?.gameObject.name ?? "NULL Runner"}') that is invalid, inactive, or not in the Queue state ('{runnerAtSpot0?.GetCurrentState()?.name ?? "NULL State"}'). Forcing spot 0 free.", this);
                       spotZero.currentOccupant = null; // Force free this inconsistent spot
-                      // Trigger cascade manually from spot 0 as if it left naturally.
-                      HandleQueueSpotFreed(new QueueSpotFreedEvent(QueueType.Main, 0)); // This will see spot 0 is null and start cascade from 1
+                      HandleQueueSpotFreed(new QueueSpotFreedEvent(QueueType.Main, 0)); // Trigger cascade manually from spot 0
                  }
                  else
                  {
-                     // --- Phase 2, Substep 6 (REVISED): Clear spot 0's occupant reference immediately ---
-                     // The NPC is leaving this spot *now* to go to the register. Update the data model.
+                     // Clear spot 0's occupant reference immediately
                      spotZero.currentOccupant = null; // <-- Clear spot 0's occupant
 
-                     // --- Phase 2, Substep 6: Signal the Runner to go to the register ---
+                     // Signal the Runner to go to the register
                      Debug.Log($"CustomerManager: Found {runnerAtSpot0.gameObject.name} occupying Main Queue spot 0. Clearing spot 0 and Signalling them to move to register.");
-
-                     // The Runner transitions state. Its QueueStateSO.OnExit will *still* publish QueueSpotFreedEvent(Main, 0),
-                     // which HandleQueueSpotFreed will receive, find spot 0 already null (expected), and start the cascade from spot 1.
                      runnerAtSpot0.GoToRegisterFromQueue(); // Tell the runner to move
-                     // --- END Phase 2, Substep 6 (REVISED) ---
                  }
             }
             else
             {
-                // This might happen if the last customer in spot 0 became impatient and left,
-                // or if there's a logic error leaving spot 0 occupied but no runner there.
-                // The spot is already marked free in the QueueSpot data.
                 Debug.Log("CustomerManager: CashRegisterFreeEvent received, but Main Queue spot 0 is not occupied.", this);
-                // If spot 0 is unexpectedly null, it means the NPC left *without* the event firing or the event handler failed.
-                // To recover, we should ensure the cascade is triggered just in case, but only if the list isn't empty.
                 if (mainQueueSpots.Count > 0)
                 {
                      Debug.LogWarning($"CustomerManager: Main Queue spot 0 is unexpectedly free. Manually triggering cascade from spot 1 just in case.", this);
@@ -654,18 +654,10 @@ public bool FreePreviousQueueSpotOnArrival(QueueType queueType, int previousSpot
                 }
             }
 
-            // --- Phase 4: Check and trigger Secondary Queue release based on threshold ---
-            // This check relies on the *count* of customers currently in the main queue state, using the updated GetMainQueueCount().
             CheckStoreCapacityAndReleaseSecondaryCustomer(); // Call the check method
-            // --- END Phase 4 ---
         }
 
-        // --- REMOVED Phase 4: New periodic check coroutine for secondary queue release ---
-        // private IEnumerator SecondaryQueueReleaseCoroutine() { ... REMOVED ... }
-        // --- END REMOVED Phase 4 ---
 
-
-        // --- Updated Method Name and Logic ---
          /// <summary>
          /// Checks if the *store capacity* allows releasing the next customer from the secondary queue
          /// and releases them if so and if the secondary queue is not empty.
@@ -676,7 +668,6 @@ public bool FreePreviousQueueSpotOnArrival(QueueType queueType, int previousSpot
              // Release condition: Total active customers inside the store must be less than maxCustomersInStore.
              if (activeCustomers.Count >= maxCustomersInStore)
              {
-                  // Store is at or above capacity, cannot release from secondary queue.
                   Debug.Log($"CustomerManager: Cannot release from secondary queue. Store capacity ({activeCustomers.Count}/{maxCustomersInStore}) is full.");
                   return;
              }
@@ -684,9 +675,8 @@ public bool FreePreviousQueueSpotOnArrival(QueueType queueType, int previousSpot
              Debug.Log($"CustomerManager: Store capacity ({activeCustomers.Count}/{maxCustomersInStore}) allows release from secondary queue. Attempting to release next secondary customer (Runner).");
 
              // Find the customer currently at the first occupied Secondary Queue spot (lowest index)
-             // Phase 2, Substep 7: Use the secondaryQueueSpots list
              QueueSpot firstOccupiedSpot = null;
-             if (secondaryQueueSpots != null) // Add null check for the list itself
+             if (secondaryQueueSpots != null)
              {
                  foreach(var spotData in secondaryQueueSpots) // Iterate through spots to find the first occupied one
                  {
@@ -698,45 +688,33 @@ public bool FreePreviousQueueSpotOnArrival(QueueType queueType, int previousSpot
                  }
              }
 
-             // If we found an occupied spot (should be index 0 if queue is managed correctly)...
              if (firstOccupiedSpot != null)
              {
                  Game.NPC.NpcStateMachineRunner runnerToRelease = firstOccupiedSpot.currentOccupant;
 
-                 // --- Phase 5: Robustness check for valid Runner reference ---
+                 // Robustness check for valid Runner reference
                  if (runnerToRelease == null || !runnerToRelease.gameObject.activeInHierarchy || runnerToRelease.GetCurrentState() == null || !runnerToRelease.GetCurrentState().HandledState.Equals(CustomerState.SecondaryQueue))
                  {
-                      // Found an occupied spot data but the Runner is invalid or in the wrong state.
                       Debug.LogError($"CustomerManager: Inconsistency detected! Secondary Queue spot {firstOccupiedSpot.spotIndex} is marked occupied by a Runner ('{runnerToRelease?.gameObject.name ?? "NULL Runner"}') that is invalid, inactive, or not in Secondary Queue state ('{runnerToRelease?.GetCurrentState()?.name ?? "NULL State"}'). Forcing spot {firstOccupiedSpot.spotIndex} free and trying the next spot.", this);
                       firstOccupiedSpot.currentOccupant = null; // Force free this inconsistent spot
-                      // Recursive call to try and find the *next* valid customer in the secondary queue.
                       CheckStoreCapacityAndReleaseSecondaryCustomer(); // Call self
                  }
                  else
                  {
-                     // --- Phase 2, Substep 7 (REVISED): Clear the spot's occupant reference immediately ---
-                     // The NPC is leaving this spot *now* to go into the store. Update the data model.
+                     // Clear the spot's occupant reference immediately
                       firstOccupiedSpot.currentOccupant = null; // <-- Clear spot's occupant
 
-                     // --- Phase 2, Substep 7: Publish the event for the specific NPC GameObject ---
+                     // Publish the event for the specific NPC GameObject
                      Debug.Log($"CustomerManager: Found {runnerToRelease.gameObject.name} occupying Secondary Queue spot {firstOccupiedSpot.spotIndex}. Clearing spot and Publishing ReleaseNpcFromSecondaryQueueEvent.", runnerToRelease.gameObject);
 
-                     // Publish the event for the specific NPC GameObject that the Runner is on.
-                     // The Runner will receive this event and transition out of SecondaryQueue state.
-                     // Its SecondaryQueueStateSO.OnExit method will *still* publish
-                     // QueueSpotFreedEvent(Secondary, firstOccupiedSpot.spotIndex).
-                     // HandleQueueSpotFreed will *then* receive this event, find the spot already null (expected), and start the cascade from the next spot.
                      EventManager.Publish(new ReleaseNpcFromSecondaryQueueEvent(runnerToRelease.gameObject));
-                     // --- END Phase 2, Substep 7 (REVISED) ---
                  }
              }
              else
              {
-                 // No occupied spot was found. The secondary queue is empty.
                  Debug.Log("CustomerManager: Secondary queue appears empty (no spots marked occupied).");
              }
          }
-        // --- END Updated Method ---
 
 
         /// <summary>
@@ -757,11 +735,6 @@ public bool FreePreviousQueueSpotOnArrival(QueueType queueType, int previousSpot
                 else
                 {
                     // If secondary queue is full, wait a short time before checking again.
-                    // This prevents a tight loop when max capacity is reached.
-                    // The actual check against maxCustomersInStore happens before they
-                    // transition from SecondaryQueue to Entering.
-                    // Wait for slightly less than the minimum spawn interval to be responsive
-                    // when a secondary spot frees up.
                     yield return new WaitForSeconds(minSpawnInterval / 2f);
                      Debug.Log($"CustomerManager: Spawn paused, secondary queue is full. Waiting for space... ({secondaryQueueSpots.Count} spots)");
                 }
@@ -773,9 +746,8 @@ public bool FreePreviousQueueSpotOnArrival(QueueType queueType, int previousSpot
         /// <summary>
         /// Gets a random Browse location (point and associated inventory).
         /// </summary>
-        public BrowseLocation? GetRandomBrowseLocation() // --- CORRECTED RETURN TYPE: BrowseLocation? ---
+        public BrowseLocation? GetRandomBrowseLocation()
         {
-            // --- Corrected field name: BrowseLocations ---
             if (BrowseLocations == null || BrowseLocations.Count == 0)
             {
                 Debug.LogWarning("CustomerManager: No Browse locations assigned!");
@@ -797,17 +769,18 @@ public bool FreePreviousQueueSpotOnArrival(QueueType queueType, int previousSpot
              return registerPoint;
          }
 
-         // --- Phase 2, Substep 2: Update GetSecondaryQueuePoint to use QueueSpot list ---
+         /// <summary>
+         /// Gets the Transform for a specific secondary queue point.
+         /// </summary>
          public Transform GetSecondaryQueuePoint(int index)
          {
             if (secondaryQueueSpots != null && index >= 0 && index < secondaryQueueSpots.Count)
             {
-                return secondaryQueueSpots[index].spotTransform; // Return the transform from the QueueSpot
+                return secondaryQueueSpots[index].spotTransform;
             }
             Debug.LogWarning($"CustomerManager: Requested secondary queue point index {index} is out of bounds or secondaryQueueSpots list is null!");
             return null;
          }
-         // --- END Phase 2, Substep 2 ---
 
 
          /// <summary>
@@ -823,7 +796,7 @@ public bool FreePreviousQueueSpotOnArrival(QueueType queueType, int previousSpot
              return exitPoints[Random.Range(0, exitPoints.Count)];
          }
 
-/// <summary>
+    /// <summary>
     /// Attempts to add a customer to the main queue.
     /// Finds the first available spot based on the QueueSpotData list.
     /// </summary>
@@ -836,37 +809,25 @@ public bool FreePreviousQueueSpotOnArrival(QueueType queueType, int previousSpot
         assignedSpot = null;
         spotIndex = -1;
 
-        // --- Phase 2, Substep 2: Use mainQueueSpots list ---
         if (mainQueueSpots == null || mainQueueSpots.Count == 0) { Debug.LogWarning("CustomerManager: Cannot join main queue - mainQueueSpots list is null or empty!"); return false; }
 
-        // Iterate through the spots to find the first available one
-        foreach (var spotData in mainQueueSpots) // Iterate QueueSpot objects directly
+        foreach (var spotData in mainQueueSpots)
         {
-            // A spot is available if its currentOccupant is null
-            // Phase 2, Substep 4: Simplified check - removed isSpotAssignedToMovingRunner
-            if (!spotData.IsOccupied) // Check if spotData.currentOccupant == null
+            if (!spotData.IsOccupied)
             {
-                // Phase 2, Substep 4: Assign the occupant
                 spotData.currentOccupant = customerRunner; // <-- Assign the Runner to the spot
                 assignedSpot = spotData.spotTransform;
                 spotIndex = spotData.spotIndex;
                 Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) successfully joined main queue at spot {spotIndex}.");
                 customerRunner.AssignedQueueSpotIndex = spotIndex; // Store the assigned index on the Runner
-                // Phase 2, Substep 4: Store the queue type on the runner for FreePreviousQueueSpotOnArrival
                 customerRunner._currentQueueMoveType = QueueType.Main; // Set the queue type on the runner
-                return true; // Successfully joined a spot
+                return true;
             }
         }
 
         Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) could not join main queue - main queue is full.");
-        return false; // No free spot found
-        // --- END Phase 2, Substep 2/4 ---
+        return false;
     }
-
-        // --- REMOVED public ReleaseNextSecondaryCustomer ---
-        // ReleaseNextSecondaryCustomer is now handled internally by CheckStoreCapacityAndReleaseSecondaryCustomer.
-        // public void ReleaseNextSecondaryCustomer() { ... REMOVED ... }
-        // --- END REMOVED ---
 
 
         /// <summary>
@@ -878,9 +839,6 @@ public bool FreePreviousQueueSpotOnArrival(QueueType queueType, int previousSpot
         /// <param name="customer">The customer Runner that is now occupying the register spot.</param>
         public void SignalCustomerAtRegister(Game.NPC.NpcStateMachineRunner customerRunner)
         {
-             // Phase 2, Substep 6: Removed Manager's customerAtRegister tracking.
-             // Register caching is now done directly on the Runner (CachedCashRegister).
-             // This method might be removed later if states fully manage the cache.
              if (customerRunner == null) { Debug.LogWarning("CustomerManager: SignalCustomerAtRegister called with null customerRunner."); return; }
              Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) is being signalled as being at the register (Manager tracking removed).");
         }
@@ -890,17 +848,15 @@ public bool FreePreviousQueueSpotOnArrival(QueueType queueType, int previousSpot
         /// </summary>
         /// <param name="index">The index of the desired queue point.</param>
         /// <returns>The Transform of the queue point, or null if index is out of bounds.</returns>
-        // --- Phase 2, Substep 2: Update GetQueuePoint to use QueueSpot list ---
         public Transform GetQueuePoint(int index)
         {
             if (mainQueueSpots != null && index >= 0 && index < mainQueueSpots.Count)
             {
-                return mainQueueSpots[index].spotTransform; // Return the transform from the QueueSpot
+                return mainQueueSpots[index].spotTransform;
             }
             Debug.LogWarning($"CustomerManager: Requested main queue point index {index} is out of bounds or mainQueueSpots list is null!");
             return null;
         }
-        // --- END Phase 2, Substep 2 ---
 
 
         /// <summary>
@@ -909,8 +865,6 @@ public bool FreePreviousQueueSpotOnArrival(QueueType queueType, int previousSpot
         /// </summary>
         public bool IsRegisterOccupied()
         {
-            // Check active customers (those inside the store) for their state.
-            // This is more reliable than a single Manager field, as the state machine controls the NPC's status.
             foreach(var activeRunner in activeCustomers) // Check only customers currently 'inside' the store
             {
                 if (activeRunner != null && activeRunner.GetCurrentState() != null)
@@ -918,20 +872,14 @@ public bool FreePreviousQueueSpotOnArrival(QueueType queueType, int previousSpot
                     System.Enum state = activeRunner.GetCurrentState().HandledState;
                     if (state.Equals(CustomerState.WaitingAtRegister) || state.Equals(CustomerState.TransactionActive) || state.Equals(CustomerState.MovingToRegister))
                     {
-                        // Found a runner that is involved with the register. Consider it occupied.
                         return true;
                     }
                 }
             }
-             // ALSO check secondary queue? No, register occupied refers to the *register itself*, not the waiting lines.
-             // Secondary queue is waiting to enter the *store*, not the register.
-             // Main queue is waiting *for* the register, but the register spot itself is only occupied by one person at a time.
-             // The definition of "RegisterOccupied" should match what the decision points care about: Can I walk straight to the register *now*?
-             // This is true only if no one is actively AT the register or moving to claim it.
-            return false; // No active runner found to be at the register
+            return false;
         }
 
-/// <summary>
+    /// <summary>
     /// Attempts to add a customer to the secondary queue.
     /// Finds the first available spot based on the QueueSpotData list.
     /// </summary>
@@ -939,7 +887,6 @@ public bool FreePreviousQueueSpotOnArrival(QueueType queueType, int previousSpot
     /// <param name="assignedSpot">Output: The Transform of the assigned secondary queue spot, or null.</param>
     /// <param name="spotIndex">Output: The index of the assigned secondary queue spot, or -1.</param>
     /// <returns>True if successfully joined the secondary queue, false otherwise (e.g., queue is full).</returns>
-    // --- Phase 2, Substep 2: Update TryJoinSecondaryQueue to use QueueSpot list ---
     public bool TryJoinSecondaryQueue(Game.NPC.NpcStateMachineRunner customerRunner, out Transform assignedSpot, out int spotIndex)
     {
         assignedSpot = null;
@@ -947,32 +894,25 @@ public bool FreePreviousQueueSpotOnArrival(QueueType queueType, int previousSpot
 
         if (secondaryQueueSpots == null || secondaryQueueSpots.Count == 0) { Debug.LogWarning("CustomerManager: Cannot join secondary queue - secondaryQueueSpots list is null or empty!"); return false; }
 
-        // Iterate through the spots to find the first available one
         foreach (var spotData in secondaryQueueSpots) // Iterate QueueSpot objects directly
         {
-            // A spot is available if its currentOccupant is null
-            // Phase 2, Substep 4: Simplified check - removed isSpotAssignedToMovingRunner
             if (!spotData.IsOccupied) // Check if spotData.currentOccupant == null
             {
-                // Phase 2, Substep 4: Assign the occupant
                 spotData.currentOccupant = customerRunner; // <-- Assign the Runner to the spot
                 assignedSpot = spotData.spotTransform;
                 spotIndex = spotData.spotIndex;
                 Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) successfully joined secondary queue at spot {spotIndex}.");
                 customerRunner.AssignedQueueSpotIndex = spotIndex; // Store the assigned index on the Runner
-                // Phase 2, Substep 4: Store the queue type on the runner for FreePreviousQueueSpotOnArrival
                  customerRunner._currentQueueMoveType = QueueType.Secondary; // Set the queue type on the runner
-                return true; // Successfully joined a spot
+                return true;
             }
         }
 
         Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) could not join secondary queue - secondary queue is full.");
-        return false; // No free spot found
+        return false;
     }
-    // --- END Phase 2, Substep 2/4 ---
 
 
-    // GetMainQueueCount implementation now uses the QueueSpot list (from Substep 2.3)
      public int GetMainQueueCount()
      {
          if (mainQueueSpots == null) return 0;
@@ -987,19 +927,11 @@ public bool FreePreviousQueueSpotOnArrival(QueueType queueType, int previousSpot
          return count;
      }
 
-    // IsMainQueueFull implementation now uses the QueueSpot list (from Substep 2.3)
      public bool IsMainQueueFull()
      {
-          if (mainQueueSpots == null || mainQueueSpots.Count == 0) return false; // Cannot be full if no spots
+          if (mainQueueSpots == null || mainQueueSpots.Count == 0) return false;
 
-          // Phase 2, Substep 3: Queue is full if the last spot is occupied
           return mainQueueSpots[mainQueueSpots.Count - 1].IsOccupied;
      }
-
-     // --- Phase 2, Substep 6: Remove Manager's direct customerAtRegister field and related methods ---
-     // The Register's state and the Runner's cached reference are now the sources of truth.
-     // public void SignalCustomerAtRegister(Game.NPC.NpcStateMachineRunner customerRunner) { ... removed ... }
-     // public bool IsRegisterOccupied() { ... logic moved above ... }
-     // --- END Phase 2, Substep 6 ---
     }
 }

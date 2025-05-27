@@ -7083,6 +7083,7 @@ GameObject:
   m_Component:
   - component: {fileID: 763258581}
   - component: {fileID: 763258580}
+  - component: {fileID: 763258582}
   m_Layer: 0
   m_Name: NPCmanager
   m_TagString: Untagged
@@ -7105,8 +7106,8 @@ MonoBehaviour:
   npcPrefabs:
   - {fileID: 4394407753789290286, guid: 488534cc76898354d8320c55d1770728, type: 3}
   maxCustomersInStore: 7
-  minSpawnInterval: 2
-  maxSpawnInterval: 5
+  minSpawnInterval: 5
+  maxSpawnInterval: 10
   spawnPoints:
   - {fileID: 600981058}
   BrowseLocations:
@@ -7127,8 +7128,6 @@ MonoBehaviour:
   - {fileID: 1319998595}
   exitPoints:
   - {fileID: 1837450462}
-  mainQueueReleaseThreshold: 2
-  secondaryQueueCheckInterval: 1
 --- !u!4 &763258581
 Transform:
   m_ObjectHideFlags: 0
@@ -7145,6 +7144,41 @@ Transform:
   - {fileID: 1263039298}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &763258582
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 763258579}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dabe7bdae2db4404cac554cf207ad8f6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  customerManager: {fileID: 763258580}
+  poolingManager: {fileID: 99645952}
+  playerTransform: {fileID: 1579874845}
+  tiNpcPrefabs:
+  - {fileID: 4394407753789290286, guid: 06851f3650851534b86dc6528468eb55, type: 3}
+  simulationTickInterval: 0.1
+  maxNpcsToSimulatePerTick: 10
+  simulatedMovementSpeed: 2
+  simulatedPatrolAreaMin: {x: -5, y: -5}
+  simulatedPatrolAreaMax: {x: 5, y: 5}
+  simulatedMinWaitTimeAtPoint: 2
+  simulatedMaxWaitTimeAtPoint: 4
+  simulatedChanceToShop: 0.25
+  activationRadius: 4
+  deactivationRadius: 5
+  proximityCheckInterval: 0.5
+  dummyNpcData:
+  - id: TEST1
+    homePosition: {x: 3, y: 0, z: 3}
+    homeRotation: {x: 0, y: 0, z: 0, w: 0}
+  drawInactiveNpcsGizmos: 1
+  inactiveGizmoColor: {r: 0.3254717, g: 1, b: 0.5974937, a: 1}
+  inactiveGizmoRadius: 0.3
 --- !u!1 &765084589
 GameObject:
   m_ObjectHideFlags: 0

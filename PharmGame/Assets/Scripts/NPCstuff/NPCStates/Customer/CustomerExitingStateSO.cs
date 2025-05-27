@@ -1,13 +1,14 @@
 // --- START OF FILE CustomerExitingStateSO.cs ---
 
-// --- Updated CustomerExitingStateSO.cs ---
+// --- Updated CustomerExitingStateSO.cs (Phase 3, Substep 3) ---
+
 using UnityEngine;
 using System.Collections;
 using System;
-using CustomerManagement;
-using Game.NPC;
+using CustomerManagement; // Ensure this is present
+using Game.NPC; // Ensure this is present for CustomerState and GeneralState
 using Game.Events; // Needed for NpcExitedStoreEvent
-using Game.NPC.States;
+using Game.NPC.States; // Ensure this is present
 
 namespace Game.NPC.States
 {
@@ -18,7 +19,7 @@ namespace Game.NPC.States
 
         public override void OnEnter(NpcStateContext context)
 {
-    base.OnEnter(context);
+    base.OnEnter(context); // Call base OnEnter (logs entry, enables Agent)
 
     // Signal departure to the CashRegisterInteractable and signal Manager (via Register)
     // This logic only runs if coming from *any* register-related state where the spot was claimed.
@@ -29,7 +30,7 @@ namespace Game.NPC.States
     {
         if (context.RegisterCached != null) // Use the property reading from Runner.CachedCashRegister
         {
-            Debug.Log($"{context.NpcObject.name}: Notifying CachedCashRegister '{context.RegisterCached.gameObject.name}' of customer departure.", context.NpcObject);
+            Debug.Log($"{context.NpcObject.name}: Notifying CachedCashRegister '{context.RegisterCached.gameObject.name}' of customer departure.", context.NpcObject); // <-- Use the property
             context.RegisterCached.CustomerDeparted(); // Call using the property
 
             // The CashRegisterInteractable.CustomerDeparted method *should* handle clearing
@@ -49,10 +50,18 @@ namespace Game.NPC.States
     else
     {
          // If exiting from a non-register state, ensure the cached register is null anyway
-         // (It should already be null, but defensive programming)
          Debug.Log($"{context.NpcObject.name}: Exiting from non-register state ({context.GetPreviousState()?.HandledState.ToString() ?? "NULL"}). Ensuring register reference is null.", context.NpcObject);
          context.Runner.CachedCashRegister = null;
     }
+
+
+    // --- NEW: Publish event to signal exit from the store ---
+    // This event is listened to by the CustomerManager to update the activeCustomers count.
+    // Published in OnEnter, as soon as they commit to leaving the store area.
+    Debug.Log($"{context.NpcObject.name}: Publishing NpcExitedStoreEvent.", context.NpcObject);
+    context.PublishEvent(new NpcExitedStoreEvent(context.NpcObject));
+    // --- END NEW ---
+
 
             Transform exitTarget = context.GetRandomExitPoint();
 
@@ -60,15 +69,19 @@ namespace Game.NPC.States
             {
                 context.Runner.CurrentTargetLocation = new BrowseLocation { browsePoint = exitTarget, inventory = null };
                 Debug.Log($"{context.NpcObject.name}: Setting exit destination to {exitTarget.position}.", context.NpcObject);
-                
+
                 // Initiate movement using context helper (resets _hasReachedCurrentDestination flag)
                 bool moveStarted = context.MoveToDestination(exitTarget.position);
 
                  if (!moveStarted) // Add check for move failure
                  {
                       Debug.LogError($"{context.NpcObject.name}: Failed to start movement to exit point! Is the point on the NavMesh?", context.NpcObject);
-                       // If movement fails, transition directly to ReturningToPool.
-                       // The NpcExitedStoreEvent was already published by OnEnter.
+                       // If movement fails, what's the safe fallback?
+                       // For a transient NPC, this means they are stuck and won't return to pool naturally.
+                       // For a TI NPC, they are stuck and won't return to patrol naturally.
+                       // Transitioning to ReturningToPool is a reliable way to trigger pooling/deactivation flow.
+                       // The Manager/TiManager will handle the pooling/saving based on IsTrueIdentityNpc.
+                       Debug.LogWarning($"CustomerExitingStateSO ({context.NpcObject.name}): Movement failed, falling back to ReturningToPool.", context.NpcObject);
                        context.TransitionToState(GeneralState.ReturningToPool); // Fallback
                        return; // Exit OnEnter early
                  }
@@ -77,7 +90,7 @@ namespace Game.NPC.States
             {
                 Debug.LogWarning($"{context.NpcObject.name}: No exit points available for Exiting state! Transitioning to ReturningToPool.", context.NpcObject);
                 // If no exit point, transition directly to ReturningToPool.
-                // The NpcExitedStoreEvent was already published by OnEnter.
+                Debug.LogWarning($"CustomerExitingStateSO ({context.NpcObject.name}): No exit point found, falling back to ReturningToPool.", context.NpcObject);
                 context.TransitionToState(GeneralState.ReturningToPool); // Fallback
                 return; // Exit OnEnter early
             }
@@ -90,26 +103,34 @@ namespace Game.NPC.States
         {
             base.OnUpdate(context); // Call base OnUpdate (empty)
         }
-        
+
         public override void OnReachedDestination(NpcStateContext context) // <-- Implement OnReachedDestination
         {
             // This logic was previously in CustomerExitingLogic.OnUpdate
-            Debug.Log($"{context.NpcObject.name}: Reached exit destination (detected by Runner). Transitioning to ReturningToPool.", context.NpcObject);
-            
+            Debug.Log($"{context.NpcObject.name}: Reached exit destination (detected by Runner).", context.NpcObject);
+
             // Ensure movement is stopped before transitioning (Runner does this before calling OnReachedDestination, but defensive)
             context.MovementHandler?.StopMoving();
 
-            context.TransitionToState(GeneralState.ReturningToPool); // Transition via context
+            // --- PHASE 3, SUBSTEP 3: Differentiate TI NPCs ---
+             if (context.Runner != null && context.Runner.IsTrueIdentityNpc)
+             {
+                  Debug.Log($"{context.NpcObject.name}: This is a TI NPC. Transitioning to Patrol.", context.NpcObject);
+                  // Transition to the Patrol state using the context helper
+                  context.TransitionToState(TestState.Patrol);
+             }
+             else
+             {
+                  Debug.Log($"{context.NpcObject.name}: This is a Transient NPC. Transitioning to ReturningToPool.", context.NpcObject);
+                  // Transition to the ReturningToPool state using the context helper (existing logic)
+                  context.TransitionToState(GeneralState.ReturningToPool);
+             }
+            // --- END PHASE 3, SUBSTEP 3 ---
         }
 
         public override void OnExit(NpcStateContext context)
         {
-            // --- NEW: Publish event to signal exit from the store ---
-            // This event is listened to by the CustomerManager to update the activeCustomers count.
-            // Published *before* base.OnExit to ensure it happens while state is still Exiting.
-            Debug.Log($"{context.NpcObject.name}: Publishing NpcExitedStoreEvent.", context.NpcObject);
-            context.PublishEvent(new NpcExitedStoreEvent(context.NpcObject));
-            // --- END NEW ---
+            // NOTE: The NpcExitedStoreEvent is now published in OnEnter.
 
             base.OnExit(context); // Call base OnExit (logs exit, stops movement/rotation)
 
