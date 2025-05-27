@@ -10,6 +10,7 @@ using System.Collections;
 using System;
 using Game.Events; // Needed for publishing events and event args like NpcEnteredStoreEvent
 using Game.NPC; // Needed for CustomerState and GeneralState enums
+using Game.NPC.States; // Needed for NpcStateSO
 
 namespace Game.NPC.States // Context is closely related to states
 {
@@ -24,23 +25,30 @@ namespace Game.NPC.States // Context is closely related to states
         public NpcMovementHandler MovementHandler;
         public NpcAnimationHandler AnimationHandler;
         public CustomerShopper Shopper;
+        // Reference to the new interruption handler
+        public NpcInterruptionHandler InterruptionHandler; // <-- NEW FIELD
+
 
         // --- External References ---
         public CustomerManager Manager;
         public CashRegisterInteractable CachedCashRegister; // Cached by a state (e.g., Waiting)
+        // Access the cached register via the Runner property
         public CashRegisterInteractable RegisterCached => Runner?.CachedCashRegister;
+
 
         // --- NPC-specific Data managed by the Runner/Context ---
         public GameObject NpcObject; // The GameObject the runner is on
         public NpcStateMachineRunner Runner; // Reference back to the runner (use cautiously to avoid circular calls)
 
-        // Other NPC data needed by states could be added here (e.g., CurrentTargetLocation, AssignedQueueSpotIndex)
-        // For now, let's keep those on the Runner/AI and access via Runner if needed,
-        // but moving them here makes context more self-contained for states.
-        // Let's add the commonly used ones:
+        // Other NPC data fields (managed by Runner, accessed via Context)
         public BrowseLocation? CurrentTargetLocation;
         public int AssignedQueueSpotIndex;
-        public GameObject InteractorObject;
+        // InteractorObject is now managed by NpcInterruptionHandler
+        // public GameObject InteractorObject { get; internal set; } // <-- REMOVED
+
+        // Access the InteractorObject via the InterruptionHandler
+        public GameObject InteractorObject => InterruptionHandler?.InteractorObject; // <-- UPDATED GETTER
+
 
         // This is the field the Runner sets in the struct instances passed to states.
         public QueueType _currentQueueMoveType;
@@ -58,15 +66,25 @@ namespace Game.NPC.States // Context is closely related to states
                 if (success)
                 {
                     Runner._hasReachedCurrentDestination = false; // <-- Reset flag here on success
+                    // --- NEW: Store the target position on the Runner ---
+                    Runner.SetCurrentDestinationPosition(position);
+                    // --- END NEW ---
                     // Debug.Log($"Context({NpcObject.name}): SetDestination successful, _hasReachedCurrentDestination = false."); // Keep logging for debugging
+                } else {
+                     // --- NEW: Clear the target position on failure ---
+                     Runner.SetCurrentDestinationPosition(null);
+                     // --- END NEW ---
                 }
                 // MovementHandler.SetDestination logs its own warnings/errors if agent is null/disabled/position invalid
                 return success;
             }
             Debug.LogWarning($"Context({NpcObject.name}): Cannot set destination to {position}, Runner or MovementHandler is null.", NpcObject);
+            // --- NEW: Clear the target position if Runner/Handler is null ---
+            Runner?.SetCurrentDestinationPosition(null);
+            // --- END NEW ---
             return false;
         }
-        
+
         /// <summary>
         /// Helper for state SOs to trigger state transition via the Runner.
         /// </summary>
@@ -79,7 +97,7 @@ namespace Game.NPC.States // Context is closely related to states
          /// Helper for state SOs to trigger state transition via the Runner using an Enum key.
          /// Finds the state SO using the Enum key and then transitions.
          /// </summary>
-         public void TransitionToState(Enum enumKey) 
+         public void TransitionToState(Enum enumKey)
          {
             if (enumKey == null)
             {
@@ -125,7 +143,7 @@ namespace Game.NPC.States // Context is closely related to states
         public Transform GetSecondaryQueuePoint(int index) => Manager?.GetSecondaryQueuePoint(index);
 
         public bool IsRegisterOccupied() => Manager != null && Manager.IsRegisterOccupied();
-         
+
         public bool TryJoinQueue(NpcStateMachineRunner Runner, out Transform assignedSpot, out int spotIndex)
         {
             // The Manager.TryJoinQueue method expects the Runner instance itself.
@@ -162,7 +180,7 @@ namespace Game.NPC.States // Context is closely related to states
                   return false;
              }
         }
-        public void SignalCustomerAtRegister() 
+        public void SignalCustomerAtRegister()
         {
              Manager?.SignalCustomerAtRegister(Runner); // Pass context.Runner
         }
@@ -196,5 +214,28 @@ namespace Game.NPC.States // Context is closely related to states
             Debug.Log($"DEBUG Context ({NpcObject.name}): Publishing Event: {typeof(T).Name}", NpcObject);
             EventManager.Publish(eventArgs);
          }
+
+         // --- NEW: Helper methods for Interruption Handling via the InterruptionHandler ---
+         /// <summary>
+         /// Attempts to interrupt the current state and transition to an interruption state.
+         /// </summary>
+         /// <param name="interruptStateEnum">The enum key for the desired interruption state (e.g., GeneralState.Combat).</param>
+         /// <param name="interactor">The GameObject that caused the interruption (e.g., player).</param>
+         /// <returns>True if the interruption was successfully initiated, false otherwise.</returns>
+         public bool TryInterrupt(Enum interruptStateEnum, GameObject interactor)
+         {
+             return InterruptionHandler?.TryInterrupt(interruptStateEnum, interactor) ?? false;
+         }
+
+         /// <summary>
+         /// Ends the current interruption state and returns to the previous state on the stack.
+         /// Called from an interruption state's logic when the interruption is over.
+         /// </summary>
+         public void EndInterruption()
+         {
+              InterruptionHandler?.EndInterruption();
+         }
+         // --- END NEW ---
     }
 }
+// --- END OF FILE NpcStateContext.cs ---
