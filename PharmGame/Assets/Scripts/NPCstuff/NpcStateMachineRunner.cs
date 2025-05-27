@@ -399,7 +399,6 @@ namespace Game.NPC
                if (currentState != null && currentState.HandledState != null)
                {
                     TiData.SetCurrentState(currentState.HandledState);
-                    Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Saved state '{TiData.CurrentStateEnumKey}' to TiData.", this);
                }
                else
                {
@@ -439,8 +438,6 @@ namespace Game.NPC
 
                     // Clear Runner's link to the persistent data and reset flag
                     TiData.IsActiveGameObject = false; // Mark the data record as inactive *before* pooling
-                    TiData = null; // Break the link
-                    IsTrueIdentityNpc = false;
 
                     Debug.Log($"DEBUG Runner Deactivate ({gameObject.name}): IsTrueIdentityNpc={IsTrueIdentityNpc}, TiData is null={ (TiData == null) }", this);
 

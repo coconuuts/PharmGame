@@ -134,9 +134,8 @@ namespace Game.NPC.TI
                 currentStateEnumType = null;
                 return;
             }
-            // --- DEBUG: Log state set ---
+
             Debug.Log($"DEBUG TiNpcData ({id}): Setting CurrentStateEnum to '{stateEnum.GetType().Name}.{stateEnum.ToString()}' (InstanceID: {this.GetHashCode()}).", NpcGameObject);
-            // --- END DEBUG ---
             currentStateEnumKey = stateEnum.ToString();
             currentStateEnumType = stateEnum.GetType().AssemblyQualifiedName; // Use AssemblyQualifiedName for robust loading
         }
@@ -144,18 +143,14 @@ namespace Game.NPC.TI
         // Optional: Add a method to explicitly link/unlink GameObject for clarity
         public void LinkGameObject(GameObject go)
         {
-            // --- DEBUG: Log link ---
             Debug.Log($"DEBUG TiNpcData ({id}): Linking GameObject '{go?.name ?? "NULL"}' (InstanceID: {this.GetHashCode()}). Setting NpcGameObject and isActiveGameObject=true.", NpcGameObject);
-            // --- END DEBUG ---
             this.NpcGameObject = go;
             this.isActiveGameObject = true;
         }
 
         public void UnlinkGameObject()
         {
-            // --- DEBUG: Log unlink ---
             Debug.Log($"DEBUG TiNpcData ({id}): Unlinking GameObject '{this.NpcGameObject?.name ?? "NULL"}' (InstanceID: {this.GetHashCode()}). Setting NpcGameObject=null and isActiveGameObject=false.", this.NpcGameObject);
-            // --- END DEBUG ---
             this.NpcGameObject = null;
             this.isActiveGameObject = false;
         }

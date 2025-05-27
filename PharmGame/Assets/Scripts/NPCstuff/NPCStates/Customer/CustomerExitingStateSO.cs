@@ -76,11 +76,6 @@ namespace Game.NPC.States
                  if (!moveStarted) // Add check for move failure
                  {
                       Debug.LogError($"{context.NpcObject.name}: Failed to start movement to exit point! Is the point on the NavMesh?", context.NpcObject);
-                       // If movement fails, what's the safe fallback?
-                       // For a transient NPC, this means they are stuck and won't return to pool naturally.
-                       // For a TI NPC, they are stuck and won't return to patrol naturally.
-                       // Transitioning to ReturningToPool is a reliable way to trigger pooling/deactivation flow.
-                       // The Manager/TiManager will handle the pooling/saving based on IsTrueIdentityNpc.
                        Debug.LogWarning($"CustomerExitingStateSO ({context.NpcObject.name}): Movement failed, falling back to ReturningToPool.", context.NpcObject);
                        context.TransitionToState(GeneralState.ReturningToPool); // Fallback
                        return; // Exit OnEnter early

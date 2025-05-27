@@ -797,26 +797,10 @@ namespace Game.NPC.TI // Keep in the TI namespace
 
              if (deactivatedTiData != null)
              {
-                 // --- DEBUG: Log data found ---
                  Debug.Log($"DEBUG HandleTiNpcReturnToPool: Found TiNpcData for '{deactivatedTiData.Id}' linked to GameObject '{npcObject.name}' (Data InstanceID: {deactivatedTiData.GetHashCode()}). Unlinking data and flags.", npcObject);
-                 // --- END DEBUG ---
 
                  // --- Clear the data link and flags ---
                  deactivatedTiData.UnlinkGameObject(); // Use helper to set NpcGameObject=null and isActiveGameObject=false
-                 // --- END ---
-
-                 // Ensure Runner's internal link is also cleared (should happen in Runner.Deactivate)
-                 if (runner.TiData != null)
-                 {
-                     Debug.LogError($"DEBUG HandleTiNpcReturnToPool: Inconsistency! Runner for '{deactivatedTiData.Id}' still has TiData link! Clearing it.", npcObject);
-                     runner.TiData = null;
-                 }
-                 if (runner.IsTrueIdentityNpc)
-                 {
-                      // This flag has a private setter, cannot clear directly, but indicates inconsistency
-                      Debug.LogError($"DEBUG HandleTiNpcReturnToPool: Inconsistency! Runner for '{deactivatedTiData.Id}' still has IsTrueIdentityNpc=true!.", npcObject);
-                 }
-
              }
              else
              {

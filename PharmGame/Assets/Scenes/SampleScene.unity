@@ -7106,8 +7106,8 @@ MonoBehaviour:
   npcPrefabs:
   - {fileID: 4394407753789290286, guid: 488534cc76898354d8320c55d1770728, type: 3}
   maxCustomersInStore: 7
-  minSpawnInterval: 4
-  maxSpawnInterval: 6
+  minSpawnInterval: 30
+  maxSpawnInterval: 35
   spawnPoints:
   - {fileID: 600981058}
   BrowseLocations:
@@ -7168,7 +7168,7 @@ MonoBehaviour:
   simulatedPatrolAreaMax: {x: 5, y: 5}
   simulatedMinWaitTimeAtPoint: 2
   simulatedMaxWaitTimeAtPoint: 4
-  simulatedChanceToShop: 0.25
+  simulatedChanceToShop: 0.9
   activationRadius: 4
   deactivationRadius: 5
   proximityCheckInterval: 0.5
