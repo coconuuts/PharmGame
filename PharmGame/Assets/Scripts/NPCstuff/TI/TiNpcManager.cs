@@ -1,23 +1,24 @@
-// --- START OF FILE TiNpcManager.cs ---
-
-// --- Updated TiNpcManager.cs (Added Inactive Gizmo Visualization) ---
-
 using UnityEngine;
 using System.Collections.Generic;
 using Game.NPC.TI; // Needed for TiNpcData
 using System.Linq; // Needed for LINQ (Where, FirstOrDefault)
-using Game.NPC; // Needed for NpcStateMachineRunner, GeneralState, CustomerState
+using Game.NPC; // Needed for NpcStateMachineRunner, GeneralState, CustomerState enums
 using Game.NPC.States; // Needed for State SOs (to check HandledState)
+using Game.NPC.BasicStates; // Needed for BasicState enum, BasicNpcStateManager, BasicNpcStateSO
 using Utils.Pooling; // Needed for PoolingManager
 using System.Collections; // Needed for Coroutine
 using System; // Needed for Enum and Type
+using Game.NPC.Types; // Needed for TestState enum (Patrol)
+using CustomerManagement; // Needed for CustomerManager
+using Game.NPC.Handlers;
 
 namespace Game.NPC.TI // Keep in the TI namespace
 {
     /// <summary>
     /// Manages the persistent data for True Identity (TI) NPCs.
     /// Handles loading, storing, and tracking TI NPC data independent of their GameObjects.
-    /// Implements off-screen simulation logic and proximity-based activation/deactivation.
+    /// Implements off-screen simulation logic (delegating to BasicNpcStateManager)
+    /// and proximity-based activation/deactivation.
     /// Uses a single collection of data records and filters on the fly.
     /// </summary>
     public class TiNpcManager : MonoBehaviour
@@ -32,6 +33,8 @@ namespace Game.NPC.TI // Keep in the TI namespace
         [SerializeField] private PoolingManager poolingManager; // Assign PoolingManager directly
          [Tooltip("Reference to the Player's Transform for proximity checks.")]
         [SerializeField] private Transform playerTransform; // Assign Player Transform
+        // Reference to BasicNpcStateManager (will be obtained in Awake/Start)
+        private BasicNpcStateManager basicNpcStateManager; // <-- NEW Reference
 
         [Header("TI NPC Setup")]
         [Tooltip("List of NPC prefabs that this manager can pool and activate for TI NPCs.")]
@@ -42,19 +45,6 @@ namespace Game.NPC.TI // Keep in the TI namespace
         [SerializeField] private float simulationTickInterval = 0.1f; // Process a batch every 0.1 seconds (10 Hz)
         [Tooltip("The maximum number of inactive NPCs to simulate per tick.")]
         [SerializeField] private int maxNpcsToSimulatePerTick = 10; // Process 10 NPCs per tick
-
-        [Tooltip("Simulated speed for off-screen movement (units per second).")]
-        [SerializeField] private float simulatedMovementSpeed = 3.5f; // Match NavMeshAgent speed roughly
-
-         [Tooltip("Configured patrol area for simulating inactive Patrol state.")]
-         [SerializeField] private Vector2 simulatedPatrolAreaMin = new Vector2(-10f, -10f); // Match PatrolStateSO
-         [SerializeField] private Vector2 simulatedPatrolAreaMax = new Vector2(10f, 10f);
-        [Tooltip("Minimum simulated wait time at a patrol point.")]
-        [SerializeField] private float simulatedMinWaitTimeAtPoint = 1f; // Match PatrolStateSO
-        [Tooltip("Maximum simulated wait time at a patrol point.")]
-        [SerializeField] private float simulatedMaxWaitTimeAtPoint = 3f;
-        [Tooltip("Simulated probability (0-1) of a TI NPC transitioning to LookingToShop when inactive after waiting at a patrol point.")]
-        [Range(0f, 1f)][SerializeField] private float simulatedChanceToShop = 0.2f; // Match PatrolStateSO
 
 
         [Header("Proximity Activation Settings (Phase 4)")]
@@ -87,21 +77,25 @@ namespace Game.NPC.TI // Keep in the TI namespace
             public string id;
             public Vector3 homePosition;
             public Quaternion homeRotation = Quaternion.identity; // Default rotation
+            [Tooltip("Initial Basic State for this dummy NPC.")]
+            [SerializeField] public BasicState initialBasicState = BasicState.BasicPatrol; // <-- NEW: Initial Basic State
         }
 
         // --- Persistent Data Storage ---
         // Use a single dictionary as the source of truth for all TI NPC data
         private Dictionary<string, TiNpcData> allTiNpcs = new Dictionary<string, TiNpcData>();
 
-        // REMOVED: activeTiNpcs and inactiveTiNpcs lists are no longer maintained.
-        // Status is determined by the IsActiveGameObject flag on TiNpcData.
-
-        // Internal index for round-robin simulation (iterating over the full collection)
+        // Internal index for round-robin simulation batching
         private int simulationIndex = 0;
 
          // Coroutine references
          private Coroutine simulationCoroutine;
          private Coroutine proximityCheckCoroutine;
+
+        // --- State Mapping Dictionaries (NEW) ---
+        private Dictionary<Enum, Enum> activeToBaseStateMap;
+        private Dictionary<Enum, Enum> basicToActiveStateMap;
+        // --- END NEW ---
 
 
         private void Awake()
@@ -110,7 +104,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
             if (Instance == null)
             {
                 Instance = this;
-                // Optional: DontDestroyOnLoad(gameObject);
+                // Optional: DontDestroyOnLoad(gameObject); // Consider if this manager should persist
             }
             else
             {
@@ -118,6 +112,9 @@ namespace Game.NPC.TI // Keep in the TI namespace
                 Destroy(gameObject);
                 return;
             }
+
+            // Setup State Mappings
+            SetupStateMappings(); // <-- Call mapping setup
 
             Debug.Log("TiNpcManager: Awake completed.");
         }
@@ -145,6 +142,15 @@ namespace Game.NPC.TI // Keep in the TI namespace
               {
                   Debug.LogError("TiNpcManager: CustomerManager instance not found or not assigned! TI NPCs cannot activate into customer roles. Assign in Inspector or ensure it's a functioning Singleton.", this);
               }
+
+             // Get reference to BasicNpcStateManager (NEW)
+             basicNpcStateManager = BasicNpcStateManager.Instance; // <-- Get manager instance
+             if (basicNpcStateManager == null)
+             {
+                  Debug.LogError("TiNpcManager: BasicNpcStateManager instance not found! Cannot simulate inactive TI NPCs. Ensure BasicNpcStateManager is in the scene.", this);
+                  // Do NOT disable manager entirely, just simulation won't work.
+             }
+
 
              // Validate Player Transform
              if (playerTransform == null)
@@ -175,12 +181,17 @@ namespace Game.NPC.TI // Keep in the TI namespace
 
             Debug.Log($"TiNpcManager: Started. Loaded {allTiNpcs.Count} TI NPCs.");
 
-            // REMOVED: Initial population of active/inactive lists is no longer needed.
-
              Debug.Log($"TiNpcManager: Start completed.");
 
-            // Start the simulation loop
-            simulationCoroutine = StartCoroutine(SimulateInactiveNpcsRoutine());
+            // Start the simulation loop if BasicNpcStateManager is available
+             if (basicNpcStateManager != null)
+             {
+                simulationCoroutine = StartCoroutine(SimulateInactiveNpcsRoutine());
+                Debug.Log("TiNpcManager: Simulation coroutine started.");
+             } else {
+                  Debug.LogWarning("TiNpcManager: BasicNpcStateManager is null, cannot start simulation coroutine.");
+             }
+
 
             // Start the proximity check coroutine
              if (playerTransform != null)
@@ -196,8 +207,8 @@ namespace Game.NPC.TI // Keep in the TI namespace
 
         private void OnEnable()
         {
-             // Restart simulation coroutine if manager was disabled and re-enabled
-             if (simulationCoroutine == null && allTiNpcs.Count > 0) // Check total count now
+             // Restart simulation coroutine if manager was disabled and re-enabled AND the basic manager exists
+             if (simulationCoroutine == null && allTiNpcs.Count > 0 && basicNpcStateManager != null)
              {
                   Debug.Log("TiNpcManager: Restarting simulation coroutine on OnEnable.");
                   simulationCoroutine = StartCoroutine(SimulateInactiveNpcsRoutine());
@@ -257,16 +268,109 @@ namespace Game.NPC.TI // Keep in the TI namespace
                  {
                      // Draw a sphere at the data's stored world position
                      Gizmos.DrawSphere(tiData.CurrentWorldPosition, inactiveGizmoRadius);
-                     // Optional: Draw the ID as text for easier identification
-                     // Handles.Label(tiData.CurrentWorldPosition + Vector3.up * (inactiveGizmoRadius + 0.1f), tiData.Id); // Requires using UnityEditor; and Handles
+                     // Optional: Draw the ID as text for easier identification (Requires UnityEditor and Handles)
+                     // try { UnityEditor.Handles.Label(tiData.CurrentWorldPosition + Vector3.up * (inactiveGizmoRadius + 0.1f), tiData.Id); } catch {}
                  }
              }
         }
         // --- END DEBUG ---
 
+        /// <summary>
+        /// Sets up the mapping dictionaries between active and basic states.
+        /// </summary>
+        private void SetupStateMappings()
+        {
+             activeToBaseStateMap = new Dictionary<Enum, Enum>();
+             basicToActiveStateMap = new Dictionary<Enum, Enum>();
+
+             // Define the mappings based on the plan
+
+             // Active -> Basic mappings
+             // General States
+             activeToBaseStateMap[GeneralState.Idle] = BasicState.BasicPatrol; // Assume general idle/non-customer states map to patrol
+             activeToBaseStateMap[GeneralState.Emoting] = BasicState.BasicPatrol; // Assume these interruptions resume patrol when inactive
+             activeToBaseStateMap[GeneralState.Social] = BasicState.BasicPatrol;
+             activeToBaseStateMap[GeneralState.Combat] = BasicState.BasicPatrol; // Combatting NPC when inactive -> patrol
+             // Note: GeneralState.Initializing, GeneralState.ReturningToPool, GeneralState.Death are terminal or transient and don't map to simulation states
+
+             // Test States
+             activeToBaseStateMap[TestState.Patrol] = BasicState.BasicPatrol;
+
+             // Customer States
+             activeToBaseStateMap[CustomerState.LookingToShop] = BasicState.BasicLookToShop;
+             activeToBaseStateMap[CustomerState.Entering] = BasicState.BasicEnteringStore;
+             activeToBaseStateMap[CustomerState.Browse] = BasicState.BasicBrowse;
+             activeToBaseStateMap[CustomerState.MovingToRegister] = BasicState.BasicWaitForCashier; // Collapse multiple active states to one basic state
+             activeToBaseStateMap[CustomerState.WaitingAtRegister] = BasicState.BasicWaitForCashier;
+             activeToBaseStateMap[CustomerState.Queue] = BasicState.BasicWaitForCashier;
+             activeToBaseStateMap[CustomerState.SecondaryQueue] = BasicState.BasicExitingStore; // Secondary queue maps to Exiting simulation (giving up)
+             activeToBaseStateMap[CustomerState.Exiting] = BasicState.BasicExitingStore;
+              // CustomerState.Inactive and CustomerState.TransactionActive are not mapped
+
+
+             // Basic -> Active mappings
+             basicToActiveStateMap[BasicState.BasicPatrol] = TestState.Patrol;
+             basicToActiveStateMap[BasicState.BasicLookToShop] = CustomerState.LookingToShop;
+             basicToActiveStateMap[BasicState.BasicEnteringStore] = CustomerState.Entering;
+             basicToActiveStateMap[BasicState.BasicBrowse] = CustomerState.Browse;
+             basicToActiveStateMap[BasicState.BasicWaitForCashier] = CustomerState.Queue; // This is the DEFAULT mapping, can be overridden during activation for specific logic.
+             basicToActiveStateMap[BasicState.BasicExitingStore] = CustomerState.Exiting;
+             // BasicState.None is not mapped back to an active state, handled by activation logic.
+
+
+             Debug.Log($"TiNpcManager: State mappings setup. Active->Basic: {activeToBaseStateMap.Count}, Basic->Active: {basicToActiveStateMap.Count}");
+        }
+
 
         /// <summary>
-        /// The low-tick simulation routine. Iterates over all TI NPC data but only simulates inactive ones in batches.
+        /// Gets the corresponding Basic State enum for a given Active State enum.
+        /// Returns BasicState.BasicPatrol if no direct mapping is found (fallback for unmapped active states).
+        /// </summary>
+        public Enum GetBasicStateFromActiveState(Enum activeStateEnum)
+        {
+            if (activeStateEnum == null)
+            {
+                 Debug.LogWarning($"TiNpcManager: GetBasicStateFromActiveState called with null activeStateEnum. Falling back to BasicPatrol.");
+                 return BasicState.BasicPatrol; // Safe default if input is null
+            }
+
+             if (activeToBaseStateMap.TryGetValue(activeStateEnum, out Enum basicStateEnum))
+             {
+                  return basicStateEnum;
+             }
+
+             // Fallback for active states that don't have a defined mapping (e.g., unlisted states, future states)
+             // Assume these should default to patrolling when inactive.
+             Debug.LogWarning($"TiNpcManager: No Basic State mapping found for Active State '{activeStateEnum.GetType().Name}.{activeStateEnum.ToString()}'. Falling back to BasicPatrol.");
+             return BasicState.BasicPatrol; // Default fallback for unmapped active states
+        }
+
+        /// <summary>
+        /// Gets the corresponding Active State enum for a given Basic State enum.
+        /// Returns GeneralState.Idle if no direct mapping is found (should not happen with correct setup).
+        /// </summary>
+        public Enum GetActiveStateFromBasicState(Enum basicStateEnum)
+        {
+             if (basicStateEnum == null)
+             {
+                  Debug.LogWarning($"TiNpcManager: GetActiveStateFromBasicState called with null basicStateEnum. Falling back to GeneralState.Idle.");
+                  return GeneralState.Idle; // Safe active fallback if input is null
+             }
+
+             if (basicToActiveStateMap.TryGetValue(basicStateEnum, out Enum activeStateEnum))
+             {
+                  return activeStateEnum;
+             }
+
+             // Error if a Basic State doesn't have a mapping back to an Active State
+             Debug.LogError($"TiNpcManager: No Active State mapping found for Basic State '{basicStateEnum.GetType().Name}.{basicStateEnum.ToString()}'! Returning GeneralState.Idle as fallback. Review mappings!");
+             return GeneralState.Idle; // Error fallback
+        }
+
+
+        /// <summary>
+        /// The low-tick simulation routine. Iterates over all TI NPC data but only simulates inactive ones in batches,
+        /// delegating simulation logic to the BasicNpcStateManager.
         /// </summary>
         private IEnumerator SimulateInactiveNpcsRoutine()
         {
@@ -276,29 +380,19 @@ namespace Game.NPC.TI // Keep in the TI namespace
 
                   if (allTiNpcs.Count == 0) // Check total count now
                   {
-                       // --- DEBUG: Log when skipping simulation because no NPCs ---
-                       // Debug.Log("DEBUG Simulation Tick: No TI NPCs to simulate."); // Too noisy
-                       // --- END DEBUG ---
                        yield return new WaitForSeconds(simulationTickInterval * 5); // Wait a bit longer if empty
                        continue;
                   }
 
                   // Get a list of inactive NPCs to process this tick (efficiently using LINQ)
-                  // Skip using simulationIndex directly to avoid issues with list modification during iteration.
-                  // Instead, filter all NPCs and take a batch starting from the current index.
                   List<TiNpcData> inactiveBatch = allTiNpcs.Values
                       .Where(data => !data.IsActiveGameObject) // Filter for inactive ones
-                      // The simulationIndex should now advance across the *filtered* list of inactive NPCs.
-                      // Let's get the list of all inactive NPCs first, then process a batch from that list.
                        .ToList(); // Convert to a list of *all* inactive NPCs
 
-                   // Calculate the index within the *inactive list*
                    int totalInactiveCount = inactiveBatch.Count;
 
                    if (totalInactiveCount == 0)
                    {
-                        // No inactive NPCs to simulate this tick
-                        // Debug.Log("DEBUG Simulation Tick: No inactive NPCs currently."); // Too noisy
                         yield return new WaitForSeconds(simulationTickInterval * 2);
                         continue;
                    }
@@ -307,251 +401,84 @@ namespace Game.NPC.TI // Keep in the TI namespace
                    if (simulationIndex >= totalInactiveCount)
                    {
                         simulationIndex = 0;
-                        // Debug.Log("DEBUG Simulation Tick: Wrapped simulation index.");
                    }
 
                    // Get the batch from the list of inactive NPCs
+                   // Ensure we don't try to Skip past the end of the list if totalInactiveCount is small
                    List<TiNpcData> currentBatch = inactiveBatch.Skip(simulationIndex).Take(maxNpcsToSimulatePerTick).ToList();
 
 
                   if (currentBatch.Count == 0)
                   {
-                       // This should only happen if maxNpcsToSimulatePerTick is 0, or something is wrong.
-                       Debug.LogWarning($"DEBUG Simulation Tick: Current batch is empty despite total inactive count being {totalInactiveCount}! Check maxNpcsToSimulatePerTick ({maxNpcsToSimulatePerTick}) or logic.");
-                        yield return new WaitForSeconds(simulationTickInterval * 2);
-                        continue;
+                       // This can happen if simulationIndex is exactly totalInactiveCount and totalInactiveCount < maxNpcsToSimulatePerTick
+                       // In this case, we processed the last batch in the previous tick, and simulationIndex wrapped to 0
+                       // but the list is now empty. Just continue to the next wait period.
+                       // Debug.LogWarning($"SIM TiNpcManager: Current batch is empty despite total inactive count being {totalInactiveCount}! Check maxNpcsToSimulatePerTick ({maxNpcsToSimulatePerTick}) or logic.");
+                        yield return new WaitForSeconds(simulationTickInterval * 2); // Wait a bit longer
+                        continue; // Go to next iteration
                   }
-
 
                    // Process the batch
                   int countProcessedThisTick = 0;
                    int batchSize = currentBatch.Count; // Use batch size for index advancement
 
-                  foreach (var npcData in currentBatch) // Iterate over the temporary batch list
-                  {
-                       // --- DEBUG: Check IsActiveGameObject *before* simulating ---
-                       // This check is crucial to confirm if an active NPC is mistakenly in this list (should not happen with this approach)
-                       // The Where clause already filtered for !data.IsActiveGameObject, so this check should always be false.
-                       Debug.Log($"DEBUG Simulation Tick: Processing NPC '{npcData.Id}' (Data InstanceID: {npcData.GetHashCode()}). IsActiveGameObject: {npcData.IsActiveGameObject}. NpcGameObject is null: {(npcData.NpcGameObject == null)}.", npcData.NpcGameObject);
+                   foreach (var npcData in currentBatch) // Iterate over the temporary batch list
+                   {
+                       // This check is crucial to confirm if an active NPC is mistakenly in this list (should not happen with filtering)
                        if (npcData.IsActiveGameObject)
                        {
-                           // This is an error condition given the filtering, but log defensively.
-                           Debug.LogError($"DEBUG Simulation Tick: Found ACTIVE NPC '{npcData.Id}' (GameObject '{npcData.NpcGameObject?.name ?? "NULL"}') in the INACTIVE batch after filtering! This should not happen. Skipping.", npcData.NpcGameObject);
+                           Debug.LogError($"SIM TiNpcManager: Found ACTIVE NPC '{npcData.Id}' (GameObject '{npcData.NpcGameObject?.name ?? "NULL"}') in the INACTIVE batch after filtering! This should not happen. Skipping simulation for this NPC.", npcData.NpcGameObject);
                            countProcessedThisTick++; // Still count this entry as processed in the batch
                            continue; // Skip simulation logic for this NPC
                        }
-                       // --- END DEBUG ---
 
-
-                       // --- Simulate State Logic (Only runs if IsActiveGameObject is false) ---
-                       System.Enum currentStateEnum = npcData.CurrentStateEnum;
-
-                       if (currentStateEnum != null)
+                       // --- DELEGATE SIMULATION TO BASICNPCSTATEMANAGER (NEW) ---
+                       if (basicNpcStateManager != null)
                        {
-                            // Simulate Patrol State
-                            if (currentStateEnum.Equals(TestState.Patrol))
+                            // Ensure the data's current state is a BasicState before simulating.
+                            // This should be set during deactivation, but defensive check/fallback.
+                            if (npcData.CurrentStateEnum == null || !basicNpcStateManager.IsBasicState(npcData.CurrentStateEnum))
                             {
-                                 if (npcData.simulatedTargetPosition == null || Vector3.Distance(npcData.CurrentWorldPosition, npcData.simulatedTargetPosition.Value) < 0.1f)
-                                 {
-                                      // Reached previous target or no target, simulate waiting
-                                      if (npcData.simulatedStateTimer <= 0)
-                                      {
-                                           npcData.simulatedStateTimer = UnityEngine.Random.Range(simulatedMinWaitTimeAtPoint, simulatedMaxWaitTimeAtPoint);
-                                           // --- DEBUG: Log starting wait ---
-                                           Debug.Log($"DEBUG Simulation Tick: NPC '{npcData.Id}' reached simulated patrol target. Starting simulated wait timer for {npcData.simulatedStateTimer:F2}s.", npcData.NpcGameObject);
-                                           // --- END DEBUG ---
-                                      }
-                                      else
-                                      {
-                                           npcData.simulatedStateTimer -= simulationTickInterval;
-
-                                           if (npcData.simulatedStateTimer <= 0)
-                                           {
-                                                bool decidedToShop = UnityEngine.Random.value <= simulatedChanceToShop;
-                                                 // --- DEBUG: Log wait finish and decision ---
-                                                 Debug.Log($"DEBUG Simulation Tick: NPC '{npcData.Id}' finished simulated wait. Decided to shop: {decidedToShop}.", npcData.NpcGameObject);
-                                                 // --- END DEBUG ---
-
-                                                if (decidedToShop)
-                                                {
-                                                     npcData.SetCurrentState(CustomerState.LookingToShop); // TiNpcData SetCurrentState logs
-                                                     npcData.simulatedTargetPosition = null;
-                                                }
-                                                else
-                                                {
-                                                     Vector3 randomPoint = GetRandomPointInPatrolAreaSimulated();
-                                                     npcData.simulatedTargetPosition = randomPoint;
-                                                      // TiNpcData SetCurrentState logs state change, but we didn't change state here (still Patrol)
-                                                      Debug.Log($"DEBUG Simulation Tick: NPC '{npcData.Id}' decided to continue patrolling. Setting new simulated patrol target: {randomPoint}.", npcData.NpcGameObject);
-                                                }
-                                                npcData.simulatedStateTimer = 0; // Reset timer
-                                           }
-                                            // else { Debug.Log($"DEBUG Simulation Tick: NPC '{npcData.Id}' waiting... {npcData.simulatedStateTimer:F2}s remaining."); } // Too noisy
-                                      }
-                                 }
-                                 else // Moving towards target
-                                 {
-                                      Vector3 direction = (npcData.simulatedTargetPosition.Value - npcData.CurrentWorldPosition).normalized;
-                                      float moveDistance = simulatedMovementSpeed * simulationTickInterval;
-                                      npcData.CurrentWorldPosition += direction * moveDistance;
-                                       // Debug.Log($"DEBUG Simulation Tick: NPC '{npcData.Id}' moving towards {npcData.simulatedTargetPosition.Value}. New Pos: {npcData.CurrentWorldPosition}."); // Too noisy
-                                 }
+                                 Debug.LogWarning($"SIM TiNpcManager: NPC '{npcData.Id}' is inactive but its state '{npcData.CurrentStateEnum?.GetType().Name}.{npcData.CurrentStateEnum?.ToString() ?? "NULL"}' is not a BasicState (or null)! Assuming BasicPatrol and re-initializingsimulation state.", npcData.NpcGameObject);
+                                 // Force a transition to BasicPatrol as a fallback if state is not a BasicState or is null
+                                 basicNpcStateManager.TransitionToBasicState(npcData, BasicState.BasicPatrol);
+                                 // The transition calls OnEnter for the new state. We don't need to call SimulateTick again in this same tick,
+                                 // the next tick will handle it.
+                                 // basicNpcStateManager.SimulateTickForNpc(npcData, simulationTickInterval); // REMOVED - avoids potential double simulation in one tick
+                            } else {
+                                // State is valid BasicState, simulate normally
+                                basicNpcStateManager.SimulateTickForNpc(npcData, simulationTickInterval);
                             }
-                            // Simulate Other States (Simplifications for Phase 4)
-                             // Added more specific simulation logic based on common states
-                            else if (currentStateEnum.Equals(CustomerState.LookingToShop))
-                            {
-                                // Simulation cannot handle queues or store capacity.
-                                // In simulation, LookingToShop could decide based on simple factors (e.g., always try to enter/shop, or always go back to patrol).
-                                // Simplified: Always go back to Patrol in simulation for LookingToShop if they have no items. If they have items, simulate finishing shopping and exiting.
-                                if (npcData.simulatedStateTimer <= 0) // If timer hasn't started
-                                {
-                                     // Start a short timer simulating the decision-making time
-                                     npcData.simulatedStateTimer = UnityEngine.Random.Range(1f, 3f);
-                                     Debug.Log($"DEBUG Simulation Tick: NPC '{npcData.Id}' in simulated LookingToShop. Starting decision timer for {npcData.simulatedStateTimer:F2}s.", npcData.NpcGameObject);
-                                }
-                                else
-                                {
-                                     npcData.simulatedStateTimer -= simulationTickInterval;
-                                     if (npcData.simulatedStateTimer <= 0)
-                                     {
-                                          // Assuming Shopper.HasItems isn't easily simulated here without more data.
-                                          // Simple Rule: Simulate trying to shop, then either exiting (if "bought" enough) or going back to patrol.
-                                          // For simulation simplicity, just transition to Exiting or Patrol randomly after the timer.
-                                           bool simulateFinishedShopping = UnityEngine.Random.value < 0.5f; // 50/50 chance to finish shopping flow
-                                          if (simulateFinishedShopping)
-                                          {
-                                               Debug.Log($"DEBUG Simulation Tick: NPC '{npcData.Id}' finished simulated LookToShop decision. Simulating shopping complete -> exiting flow.", npcData.NpcGameObject);
-                                               npcData.SetCurrentState(CustomerState.Exiting); // Transition to simulated exit
-                                               npcData.simulatedTargetPosition = null;
-                                               npcData.simulatedStateTimer = 0f;
-                                          } else
-                                          {
-                                              Debug.Log($"DEBUG Simulation Tick: NPC '{npcData.Id}' finished simulated LookToShop decision. Simulating not shopping -> patrol.", npcData.NpcGameObject);
-                                              npcData.SetCurrentState(TestState.Patrol); // Transition back to simulated patrol
-                                              npcData.simulatedTargetPosition = null;
-                                              npcData.simulatedStateTimer = 0f;
-                                          }
-                                     }
-                                }
-                            }
-                             else if (currentStateEnum.Equals(CustomerState.Browse))
-                             {
-                                  // Simulate browsing time, then transition to LookingToShop (to simulate decision logic) or Exiting/Queue.
-                                   if (npcData.simulatedStateTimer <= 0) // If timer hasn't started
-                                   {
-                                        // Start a browse timer
-                                        npcData.simulatedStateTimer = UnityEngine.Random.Range(3f, 8f); // Match BrowseStateSO browseTimeRange
-                                         Debug.Log($"DEBUG Simulation Tick: NPC '{npcData.Id}' in simulated Browse. Starting browse timer for {npcData.simulatedStateTimer:F2}s.", npcData.NpcGameObject);
-                                   }
-                                   else
-                                   {
-                                        npcData.simulatedStateTimer -= simulationTickInterval;
-                                        if (npcData.simulatedStateTimer <= 0)
-                                        {
-                                             // After browsing, simulate making a decision (go to register/queue or another browse).
-                                             // Simplification: Just go back to LookingToShop simulation for the next decision.
-                                             Debug.Log($"DEBUG Simulation Tick: NPC '{npcData.Id}' finished simulated Browse. Transitioning to simulated LookingToShop for next decision.", npcData.NpcGameObject);
-                                             npcData.SetCurrentState(CustomerState.LookingToShop); // Transition to simulated decision state
-                                             npcData.simulatedTargetPosition = null;
-                                             npcData.simulatedStateTimer = 0f;
-                                        }
-                                   }
-                             }
-                             else if (currentStateEnum.Equals(CustomerState.Queue) || currentStateEnum.Equals(CustomerState.SecondaryQueue) || currentStateEnum.Equals(CustomerState.WaitingAtRegister))
-                             {
-                                 // Inactive in queue/waiting state: just wait. No complex simulation of queue movement.
-                                 // Simulate impatience eventually transitioning to Exiting.
-                                  // Use a long wait timer simulating queue time + potential impatience
-                                  if (npcData.simulatedStateTimer <= 0)
-                                  {
-                                       // Start a long wait timer simulating queue time + impatience
-                                       npcData.simulatedStateTimer = UnityEngine.Random.Range(20f, 50f); // Example: 20-50s simulated time in queue/wait
-                                        Debug.Log($"DEBUG Simulation Tick: NPC '{npcData.Id}' in simulated Queue/Waiting state. Starting long wait timer for {npcData.simulatedStateTimer:F2}s.", npcData.NpcGameObject);
-                                  }
-                                  else
-                                  {
-                                       npcData.simulatedStateTimer -= simulationTickInterval;
-                                       if (npcData.simulatedStateTimer <= 0)
-                                       {
-                                            Debug.Log($"DEBUG Simulation Tick: NPC '{npcData.Id}' finished simulated queue/wait. Transitioning to simulated Exiting (simulated impatience or transaction finish).", npcData.NpcGameObject);
-                                            npcData.SetCurrentState(CustomerState.Exiting); // Transition to simulated exit
-                                            npcData.simulatedTargetPosition = null;
-                                            npcData.simulatedStateTimer = 0f;
-                                       }
-                                  }
-
-                             }
-                            else if (currentStateEnum.Equals(CustomerState.Exiting))
-                            {
-                                 // Inactive in Exiting state: Simulate finishing instantly and return to patrol.
-                                  Debug.Log($"DEBUG Simulation Tick: NPC '{npcData.Id}' in simulated Exiting state. Simulating instantaneous exit and return to patrol.", npcData.NpcGameObject);
-                                  npcData.SetCurrentState(TestState.Patrol); // TiNpcData SetCurrentState logs
-                                  npcData.simulatedTargetPosition = null;
-                                   npcData.simulatedStateTimer = 0f;
-                            }
-                             else if (currentStateEnum.Equals(GeneralState.ReturningToPool) || currentStateEnum.Equals(GeneralState.Initializing) || currentStateEnum.Equals(GeneralState.Death))
-                             {
-                                  // These should be very short or terminal states. Assume instant transition to patrol in simulation.
-                                  Debug.Log($"DEBUG Simulation Tick: NPC '{npcData.Id}' found in transient simulated state '{currentStateEnum.GetType().Name}.{currentStateEnum.ToString()}'. Forcing back to Patrol.", npcData.NpcGameObject);
-                                  npcData.SetCurrentState(TestState.Patrol); // TiNpcData SetCurrentState logs
-                                  npcData.simulatedTargetPosition = null;
-                                  npcData.simulatedStateTimer = 0f;
-                             }
-                             else // Unhandled inactive state (MovingToRegister, TransactionActive, Combat, Social, Emoting)
-                             {
-                                  // Log a warning and transition to Patrol as a safe default in simulation.
-                                  Debug.LogWarning($"DEBUG Simulation Tick: NPC '{npcData.Id}': Found in unhandled inactive state '{currentStateEnum.GetType().Name}.{currentStateEnum.ToString()}'. Transitioning to Patrol as fallback.", npcData.NpcGameObject);
-                                  npcData.SetCurrentState(TestState.Patrol); // TiNpcData SetCurrentState logs
-                                  npcData.simulatedTargetPosition = null;
-                                  npcData.simulatedStateTimer = 0f; // Reset timer for unhandled states
-                             }
                        }
-                       else // Null state
+                       else
                        {
-                             Debug.LogWarning($"DEBUG Simulation Tick: NPC '{npcData.Id}': Found with null state. Transitioning to Patrol as fallback.", npcData.NpcGameObject);
-                             npcData.SetCurrentState(TestState.Patrol); // TiNpcData SetCurrentState logs
-                             npcData.simulatedTargetPosition = null;
-                             npcData.simulatedStateTimer = 0f;
+                            Debug.LogError("SIM TiNpcManager: BasicNpcStateManager is null! Cannot simulate inactive NPCs.", this);
+                            // Break out of the foreach loop if manager is null to avoid repeated errors
+                            break;
                        }
-                       // --- End Simulate State Logic ---
+                       // --- END DELEGATION ---
 
                        countProcessedThisTick++;
                   }
 
                   // Advance the simulation index by the number of NPCs processed in this batch.
-                  // This ensures round-robin processing across the *filtered list of inactive NPCs*.
-                  // Use the size of the *currentBatch* to advance the index.
+                  // This must be done *after* iterating the batch.
                   simulationIndex += batchSize;
 
                   // The simulation index should now wrap based on the total number of *inactive* NPCs,
-                  // NOT the total number of all NPCs. Recalculate total inactive count after processing.
+                  // NOT the total number of all NPCs. Recalculate total inactive count.
                    totalInactiveCount = allTiNpcs.Values.Count(data => !data.IsActiveGameObject);
-                  if (simulationIndex >= totalInactiveCount && totalInactiveCount > 0)
+                  if (totalInactiveCount > 0) // Avoid division by zero or wrapping when list is empty
                   {
-                      simulationIndex = 0;
-                  } else if (totalInactiveCount == 0)
-                  {
+                      simulationIndex %= totalInactiveCount;
+                  } else {
                        simulationIndex = 0; // Reset if no inactive NPCs left
                   }
 
-
-                  // Log simulation tick summary
-                   Debug.Log($"DEBUG Simulation Tick: Processed {countProcessedThisTick} inactive NPCs this tick (batch size: {batchSize}). Total TI NPCs: {allTiNpcs.Count}. Total Inactive: {totalInactiveCount}. Next simulation index: {simulationIndex}.");
+                  // Log simulation tick summary (Optional, can be noisy)
+                  // Debug.Log($"SIM TiNpcManager: Simulated {countProcessedThisTick} inactive NPCs this tick. Total inactive: {totalInactiveCount}. Next batch starts at index {simulationIndex}.");
              }
         }
-
-         /// <summary>
-         /// Gets a random point within the defined XZ patrol area bounds (for simulation).
-         /// Uses a fixed Y height (e.g., 0) for simplicity as NavMesh sampling is not available.
-         /// </summary>
-        private Vector3 GetRandomPointInPatrolAreaSimulated()
-        {
-             float randomX = UnityEngine.Random.Range(simulatedPatrolAreaMin.x, simulatedPatrolAreaMax.x);
-             float randomZ = UnityEngine.Random.Range(simulatedPatrolAreaMin.y, simulatedPatrolAreaMax.y); // Note: using y for Z axis in Vector2
-             return new Vector3(randomX, 0f, randomZ); // Assume ground is at Y=0 for simulation
-        }
-        // --- END PHASE 4, SUBSTEP 1 ---
 
 
         /// <summary>
@@ -570,82 +497,127 @@ namespace Game.NPC.TI // Keep in the TI namespace
                         continue; // Skip check logic
                    }
 
+                   if (basicNpcStateManager == null) // Added check for basic manager
+                   {
+                       Debug.LogError("TiNpcManager: BasicNpcStateManager is null. Cannot perform TI NPC deactivation/activation checks that require state mapping/initialization.", this);
+                       yield return new WaitForSeconds(proximityCheckInterval * 5);
+                       continue; // Cannot proceed without basic manager
+                   }
+
                    Vector3 playerPosition = playerTransform.position;
 
-                   // --- Check for NPCs to ACTIVATE ---
+                   // Create lists of data to process (avoid modifying collection while iterating)
                    List<TiNpcData> toActivate = new List<TiNpcData>();
-                   // Iterate over all NPCs to find candidates for activation
+                   List<TiNpcData> potentiallyToDeactivate = new List<TiNpcData>(); // Collect active NPCs to check
+
+                   // --- Populate lists ---
                    foreach (var tiData in allTiNpcs.Values)
                    {
-                       // Only consider for activation if genuinely inactive and has no GameObject link
-                       if (!tiData.IsActiveGameObject && tiData.NpcGameObject == null)
+                       if (!tiData.IsActiveGameObject && tiData.NpcGameObject == null) // Genuinely inactive
                        {
-                           float distanceSq = (tiData.CurrentWorldPosition - playerPosition).sqrMagnitude;
+                           float distanceSq = (tiData.CurrentWorldPosition - playerPosition).sqrMagnitude; // Use data position for inactive
                            if (distanceSq <= activationRadius * activationRadius)
                            {
-                                // --- DEBUG: Log NPC found for activation ---
-                                Debug.Log($"DEBUG Proximity Check: Inactive NPC '{tiData.Id}' (Data InstanceID: {tiData.GetHashCode()}) within activation radius ({Mathf.Sqrt(distanceSq):F2}m). Adding to activation list.", tiData.NpcGameObject);
-                                // --- END DEBUG ---
+                                Debug.Log($"PROXIMITY {tiData.Id}: Inactive NPC within activation radius ({Mathf.Sqrt(distanceSq):F2}m). Adding to activation list.");
                                 toActivate.Add(tiData);
                            }
                        }
+                       else if (tiData.IsActiveGameObject && tiData.NpcGameObject != null) // Genuinely active
+                       {
+                            potentiallyToDeactivate.Add(tiData);
+                       } else {
+                           // Inconsistent state (IsActiveGameObject true but NpcGameObject null, or vice versa)
+                           Debug.LogError($"TiNpcManager: Inconsistent state for TI NPC '{tiData.Id}'. IsActiveGameObject={tiData.IsActiveGameObject}, NpcGameObject={(tiData.NpcGameObject != null ? tiData.NpcGameObject.name : "NULL")}. Forcing cleanup.", tiData.NpcGameObject);
+                           // Attempt to force cleanup - unlink data, potentially destroy object if still exists
+                           if (tiData.NpcGameObject != null) Destroy(tiData.NpcGameObject);
+                           tiData.UnlinkGameObject();
+                       }
                    }
 
+                   // --- Process Activation List ---
                    if (toActivate.Count > 0)
                    {
-                       Debug.Log($"DEBUG Proximity Check: Found {toActivate.Count} NPCs to activate this tick. Activating now...");
+                       Debug.Log($"PROXIMITY TiNpcManager: Found {toActivate.Count} NPCs to activate this tick. Activating now...");
                         foreach (var tiData in toActivate)
                        {
-                            ActivateTiNpc(tiData); // Call the activation method (links GameObject and sets flag)
+                            ActivateTiNpc(tiData); // Call the activation method
                        }
-                       // NO explicit list update needed here. The data is updated directly by LinkGameObject.
                    }
 
-
-                   // --- Check for NPCs to DEACTIVATE ---
-                   // Iterate over all NPCs to find candidates for deactivation.
-                   // We need to iterate over a copy if triggering state transitions
-                   // that might modify the collection during the loop, but iterating
-                   // allTiNpcs.Values and triggering external events/calls is generally safe.
-                   List<TiNpcData> allNpcsCopy = new List<TiNpcData>(allTiNpcs.Values);
-                   foreach (var tiData in allNpcsCopy) // Iterate over a copy of all data
+                   // --- Process Deactivation List ---
+                   foreach (var tiData in potentiallyToDeactivate) // Iterate over the collected list
                    {
-                        // Only consider for deactivation if genuinely active and has a GameObject link
+                        // Re-check if it's still active and has a GameObject link (defensive)
                         if (tiData.IsActiveGameObject && tiData.NpcGameObject != null)
                         {
-                           float distanceSq = (tiData.NpcGameObject.transform.position - playerPosition).sqrMagnitude; // Use GameObject position
+                           float distanceSq = (tiData.NpcGameObject.transform.position - playerPosition).sqrMagnitude; // Use GameObject position for active
                            if (distanceSq >= deactivationRadius * deactivationRadius)
                            {
-                                // Check if the NPC is in a state that should prevent deactivation (e.g., Combat, Transaction)
                                 NpcStateMachineRunner runner = tiData.NpcGameObject.GetComponent<NpcStateMachineRunner>();
                                 if (runner != null)
                                 {
                                      NpcStateSO currentStateSO = runner.GetCurrentState();
-                                     if (currentStateSO != null && !currentStateSO.IsInterruptible) // Check if *current state* prevents interruption/deactivation
+                                     // Check if the NPC is in a state that should prevent deactivation (e.g., Combat, Transaction)
+                                     // If the current state is NOT interruptible, we skip deactivation for this tick.
+                                     if (currentStateSO != null && !currentStateSO.IsInterruptible)
                                      {
-                                          Debug.Log($"DEBUG Proximity Check: Deactivation check for '{tiData.Id}' (GameObject '{tiData.NpcGameObject.name}') failed. Current state '{currentStateSO.name}' is not interruptible. Skipping trigger this tick.", tiData.NpcGameObject);
+                                          Debug.Log($"PROXIMITY {tiData.Id}: Deactivation check skipped. Current state '{currentStateSO.name}' is not interruptible.");
                                           continue; // Skip deactivation attempt for this NPC this tick
                                      }
 
-                                     // If the state IS interruptible (or no state/interruptible state) and outside radius, trigger deactivation
-                                     Debug.Log($"DEBUG Proximity Check: TI NPC '{tiData.Id}' (GameObject '{tiData.NpcGameObject.name}', Data InstanceID: {tiData.GetHashCode()}) outside deactivation radius ({Mathf.Sqrt(distanceSq):F2}m). State is interruptible or null. Triggering TransitionToState(ReturningToPool).", tiData.NpcGameObject);
-                                     // Transition the Runner to the ReturningToPool state.
-                                     // This starts the entire deactivation/pooling flow.
-                                     runner.TransitionToState(runner.GetStateSO(GeneralState.ReturningToPool));
-                                     // The Runner.Deactivate() method will be called by TransitionToState before the state changes.
-                                     // HandleTiNpcReturnToPool will be called later by the pooling event, clearing data link/flag.
+                                     // --- Determine and Save the Basic State before triggering Pooling ---
+                                     Enum currentActiveState = currentStateSO?.HandledState; // Get the enum key of the current active state
+                                     Enum targetBasicState = GetBasicStateFromActiveState(currentActiveState); // Map to the corresponding basic state
+
+                                     if (targetBasicState != null)
+                                     {
+                                         // Save the determined Basic State to the TiNpcData
+                                          tiData.SetCurrentState(targetBasicState);
+                                          Debug.Log($"PROXIMITY {tiData.Id}: Active state '{currentActiveState?.GetType().Name}.{currentActiveState?.ToString() ?? "NULL"}' maps to Basic State '{targetBasicState.GetType().Name}.{targetBasicState.ToString()}'. Saving this state to TiData.");
+
+                                         // --- NEW FIX: Call OnEnter for the target Basic State to initialize simulation data ---
+                                         BasicNpcStateSO targetBasicStateSO = basicNpcStateManager.GetBasicStateSO(targetBasicState);
+                                         if(targetBasicStateSO != null)
+                                         {
+                                             Debug.Log($"PROXIMITY {tiData.Id}: Calling OnEnter for Basic State '{targetBasicStateSO.name}' to initialize simulation data.");
+                                             targetBasicStateSO.OnEnter(tiData, basicNpcStateManager); // Pass the data and the manager
+                                         } else
+                                         {
+                                             // This shouldn't happen if mapping and GetBasicStateSO work, but defensive
+                                             Debug.LogError($"PROXIMITY {tiData.Id}: Could not get target Basic State SO for '{targetBasicState.GetType().Name}.{targetBasicState.ToString()}' during deactivation. Cannot initialize simulation state data!", tiData.NpcGameObject);
+                                             // Data might be left in a bad state, but proceed with pooling.
+                                         }
+                                         // --- END NEW FIX ---
+
+
+                                         // --- Trigger Deactivation Flow ---
+                                         Debug.Log($"PROXIMITY {tiData.Id}: TI NPC outside deactivation radius ({Mathf.Sqrt(distanceSq):F2}m). State is interruptible or null. Triggering TransitionToState(ReturningToPool).");
+                                         // Transition the Runner to the ReturningToPool state.
+                                         // The Runner.TransitionToState handles calling Runner.Deactivate() *before* entering the state.
+                                         // Runner.Deactivate() will now save the *Basic State* we just set on tiData, and position/rotation.
+                                         // HandleTiNpcReturnToPool will be called later by the pooling event, clearing data link/flag.
+                                         runner.TransitionToState(runner.GetStateSO(GeneralState.ReturningToPool));
+                                         // --- END Trigger ---
+
+                                     }
+                                     else
+                                     {
+                                         // This shouldn't happen if GetBasicStateFromActiveState has a fallback, but defensive.
+                                         Debug.LogError($"PROXIMITY {tiData.Id}: Could not determine a Basic State mapping for active state '{currentActiveState?.GetType().Name}.{currentActiveState?.ToString() ?? "NULL"}'. Cannot save state for simulation! Forcing cleanup.", tiData.NpcGameObject);
+                                          // Fallback: Destroy the GameObject and unlink the data without attempting to save a simulation state
+                                          Destroy(tiData.NpcGameObject);
+                                          tiData.UnlinkGameObject();
+                                     }
                                 }
                                 else
                                 {
-                                     Debug.LogError($"TiNpcManager: Active TI NPC '{tiData.Id}' GameObject '{tiData.NpcGameObject.name}' missing Runner! Inconsistency detected. Forcing cleanup.", tiData.NpcGameObject);
-                                     // Critical error - force clean up GameObject and update data state
+                                     Debug.LogError($"TiNpcManager: Active TI NPC '{tiData.Id}' GameObject '{tiData.NpcGameObject?.name ?? "NULL"}' missing Runner! Inconsistency detected. Forcing cleanup.", tiData.NpcGameObject);
                                       Destroy(tiData.NpcGameObject); // Destroy the GameObject
                                       tiData.UnlinkGameObject(); // Use helper to clear data link and flags
                                 }
                            }
                         }
                    }
-                   // NO explicit list update needed here. The data flags were updated directly by UnlinkGameObject.
               }
          }
         // --- END ProximityCheckRoutine ---
@@ -658,18 +630,16 @@ namespace Game.NPC.TI // Keep in the TI namespace
          /// <param name="tiData">The persistent data of the NPC to activate.</param>
          private void ActivateTiNpc(TiNpcData tiData)
          {
-              // Check if it's genuinely inactive before proceeding
+               // Check if it's genuinely inactive before proceeding
               if (tiData == null || tiData.IsActiveGameObject || tiData.NpcGameObject != null)
               {
-                   // --- DEBUG: Log why activation was skipped ---
-                   Debug.Log($"DEBUG TiNpcManager: Skipping activation attempt for '{tiData?.Id ?? "NULL"}' (Data InstanceID: {tiData?.GetHashCode() ?? 0}). Reason: tiData is null ({tiData == null}), IsActiveGameObject={tiData?.IsActiveGameObject}, NpcGameObject is null={(tiData?.NpcGameObject == null)}.", tiData?.NpcGameObject);
-                   // --- END DEBUG ---
+                   Debug.Log($"PROXIMITY TiNpcManager: Skipping activation attempt for '{tiData?.Id ?? "NULL"}'. Reason: tiData is null ({tiData == null}), IsActiveGameObject={tiData?.IsActiveGameObject}, NpcGameObject is null={(tiData?.NpcGameObject == null)}.");
                    return; // Already active or invalid
               }
 
-              if (tiNpcPrefabs == null || tiNpcPrefabs.Count == 0 || poolingManager == null || customerManager == null)
+              if (tiNpcPrefabs == null || tiNpcPrefabs.Count == 0 || poolingManager == null || customerManager == null || basicNpcStateManager == null) // Added basicNpcStateManager check
               {
-                   Debug.LogError("TiNpcManager: Cannot activate TI NPC. TI Prefabs list, PoolingManager, or CustomerManager is null.", this);
+                   Debug.LogError("TiNpcManager: Cannot activate TI NPC. TI Prefabs list, PoolingManager, CustomerManager, or BasicNpcStateManager is null.", this);
                    return;
               }
 
@@ -681,37 +651,161 @@ namespace Game.NPC.TI // Keep in the TI namespace
                    NpcStateMachineRunner runner = npcObject.GetComponent<NpcStateMachineRunner>();
                    if (runner != null)
                    {
-                       // --- DEBUG: Log flag status before linking ---
-                        Debug.Log($"DEBUG TiNpcManager: ActivateTiNpc '{tiData.Id}' (Data InstanceID: {tiData.GetHashCode()}): Flag status BEFORE LinkGameObject: IsActiveGameObject={tiData.IsActiveGameObject}, NpcGameObject is null={(tiData.NpcGameObject == null)}.", npcObject);
-                       // --- END DEBUG ---
+                       Debug.Log($"PROXIMITY TiNpcManager: Activating TI NPC '{tiData.Id}'. Linking data to GameObject '{npcObject.name}'.");
 
                        // --- Store GameObject reference and update flags on TiNpcData ---
                        tiData.LinkGameObject(npcObject); // Use helper to set NpcGameObject and isActiveGameObject=true
                        // --- END ---
 
-                       // --- DEBUG: Log flag status AFTER linking ---
-                        Debug.Log($"DEBUG TiNpcManager: ActivateTiNpc '{tiData.Id}' (Data InstanceID: {tiData.GetHashCode()}): Flag status AFTER LinkGameObject: IsActiveGameObject={tiData.IsActiveGameObject}, NpcGameObject is null={(tiData.NpcGameObject == null)}.", npcObject);
-                       // --- END DEBUG ---
+                       // --- Determine the starting state based on saved data (MODIFIED HERE) ---
+                       Enum savedStateEnum = tiData.CurrentStateEnum;
+                       Enum startingActiveStateEnum = null; // The active state we will transition to
+                       bool handledActivationBySavedState = false; // Flag to know if we used the specific logic below
 
-                       // --- DEBUG: Assert that the flag is true immediately after setting ---
-                        Debug.Assert(tiData.IsActiveGameObject, $"Assertion Failed: isActiveGameObject should be true immediately after LinkGameObject for '{tiData.Id}'!");
-                       // --- END DEBUG ---
+                       // --- NEW FIX: Handle activation from BasicWaitForCashierState ---
+                       if (savedStateEnum != null && savedStateEnum.Equals(BasicState.BasicWaitForCashier))
+                       {
+                           Debug.Log($"PROXIMITY {tiData.Id}: Saved state is BasicWaitForCashier. Checking live queue/register status.", npcObject);
+                           handledActivationBySavedState = true; // We are handling this specific case
 
+                           // Check register occupancy
+                           if (customerManager.IsRegisterOccupied() == false)
+                           {
+                                // Register is free, go straight there
+                                Debug.Log($"PROXIMITY {tiData.Id}: Register is free. Activating to MovingToRegister state.", npcObject);
+                                startingActiveStateEnum = CustomerState.MovingToRegister;
+                                // Clear simulation data as active state takes over
+                                tiData.simulatedTargetPosition = null;
+                                tiData.simulatedStateTimer = 0f;
+                           }
+                           else
+                           {
+                                // Register is busy, try to join the main queue
+                                Debug.Log($"PROXIMITY {tiData.Id}: Register is busy. Attempting to join main queue.", npcObject);
 
-                        // Call the Runner's Activate method
-                       runner.Activate(tiData, customerManager); // Pass the persistent data and CustomerManager
-                        // Runner.Activate sets Runner.IsTrueIdentityNpc and Runner.TiData
+                                // Need the Runner's QueueHandler to configure it *before* the state transition
+                                NpcQueueHandler queueHandler = runner.QueueHandler; // Get handler reference
+                                if (queueHandler != null)
+                                {
+                                     Transform assignedSpotTransform;
+                                     int assignedSpotIndex;
 
-                       // --- DEBUG: Log successful activation initiation ---
-                       Debug.Log($"DEBUG TiNpcManager: Activation initiated for TI NPC '{tiData.Id}' (GameObject '{npcObject.name}'). Runner.Activate called.", npcObject);
-                       // --- END DEBUG ---
+                                     if (customerManager.TryJoinQueue(runner, out assignedSpotTransform, out assignedSpotIndex))
+                                     {
+                                         // Successfully joined queue, setup the handler and transition to Queue state
+                                         Debug.Log($"PROXIMITY {tiData.Id}: Successfully joined main queue at spot {assignedSpotIndex}. Activating to Queue state.", npcObject);
+                                         // Use the new SetupQueueSpot method to configure the handler and runner target
+                                         queueHandler.SetupQueueSpot(assignedSpotTransform, assignedSpotIndex, QueueType.Main);
+                                         startingActiveStateEnum = CustomerState.Queue;
+                                         // Clear simulation data as active state takes over
+                                         tiData.simulatedTargetPosition = null;
+                                         tiData.simulatedStateTimer = 0f;
+
+                                     }
+                                     else
+                                     {
+                                         // Main queue is full, cannot be a customer right now
+                                         Debug.Log($"PROXIMITY {tiData.Id}: Main queue is full. Cannot join. Activating to Exiting state.", npcObject);
+                                         startingActiveStateEnum = CustomerState.Exiting; // Give up on shopping
+                                         // Clear simulation data as active state takes over
+                                         tiData.simulatedTargetPosition = null;
+                                         tiData.simulatedStateTimer = 0f;
+                                     }
+                                }
+                                else
+                                {
+                                     // QueueHandler missing - critical error for queue state
+                                     Debug.LogError($"PROXIMITY {tiData.Id}: Runner is missing NpcQueueHandler component during BasicWaitForCashier activation! Cannot handle queue logic. Activating to Exiting as fallback.", npcObject);
+                                     startingActiveStateEnum = CustomerState.Exiting; // Fallback
+                                     // Clear simulation data
+                                     tiData.simulatedTargetPosition = null;
+                                     tiData.simulatedStateTimer = 0f;
+                                }
+                           }
+                       }
+                         // --- END NEW FIX ---
+                       
+                                             // --- Handle activation from BasicBrowseState (NEW FIX) ---
+                         else if (savedStateEnum != null && savedStateEnum.Equals(BasicState.BasicBrowse))
+                         {
+                              Debug.Log($"PROXIMITY {tiData.Id}: Saved state is BasicBrowse. Getting a new browse location from CustomerManager.", npcObject);
+                              handledActivationBySavedState = true; // We are handling this specific case
+
+                              BrowseLocation? newBrowseLocation = customerManager?.GetRandomBrowseLocation();
+
+                              if (newBrowseLocation.HasValue && newBrowseLocation.Value.browsePoint != null)
+                              {
+                                   // Set the runner's target location BEFORE transitioning to the state
+                                   runner.CurrentTargetLocation = newBrowseLocation; // Set Runner's target field
+                                   runner.SetCurrentDestinationPosition(newBrowseLocation.Value.browsePoint.position); // Also set runner's last destination position field
+                                   runner._hasReachedCurrentDestination = false; // Mark as needing to move
+                                   startingActiveStateEnum = CustomerState.Browse; // Set the target state to active Browse
+
+                                   Debug.Log($"PROXIMITY {tiData.Id}: Successfully got new browse location {newBrowseLocation.Value.browsePoint.name}. Activating to Browse state.", npcObject);
+
+                                   // Clear simulation data as active state takes over
+                                   tiData.simulatedTargetPosition = null; // Clear simulated target
+                                   tiData.simulatedStateTimer = 0f; // Reset timer
+                              }
+                              else
+                              {
+                                   Debug.LogError($"PROXIMITY {tiData.Id}: Could not get a valid browse location from CustomerManager during BasicBrowse activation! Activating to Exiting as fallback.", npcObject);
+                                   startingActiveStateEnum = CustomerState.Exiting; // Fallback if cannot get browse location
+                                   // Clear simulation data
+                                   tiData.simulatedTargetPosition = null;
+                                   tiData.simulatedStateTimer = 0f;
+                              }
+                         }
+                         // --- END BasicBrowseState handling ---
+
+                       // --- Existing Logic (for states OTHER THAN BasicWaitForCashier) ---
+                         if (!handledActivationBySavedState) // Only run this if the BasicWaitForCashier case was NOT handled
+                         {
+                              if (savedStateEnum != null && basicNpcStateManager.IsBasicState(savedStateEnum))
+                              {
+                                   // If the saved state is a BasicState (but NOT BasicWaitForCashier), map it to the corresponding Active State
+                                   startingActiveStateEnum = GetActiveStateFromBasicState(savedStateEnum);
+                                   Debug.Log($"PROXIMITY {tiData.Id}: Saved state '{savedStateEnum.GetType().Name}.{savedStateEnum.ToString()}' is a Basic State. Mapping to Active State '{startingActiveStateEnum?.GetType().Name}.{startingActiveStateEnum?.ToString() ?? "NULL"}'.", npcObject);
+
+                                   // Reset simulation data when transitioning from simulation to active
+                                   tiData.simulatedTargetPosition = null; // Clear simulated target
+                                   tiData.simulatedStateTimer = 0f; // Reset timer on activation
+
+                              }
+                              else if (savedStateEnum != null)
+                              {
+                                   // If the saved state is NOT a BasicState (e.g., an old Active state saved directly),
+                                   // try to use it directly as the starting active state.
+                                   startingActiveStateEnum = savedStateEnum;
+                                   Debug.Log($"PROXIMITY {tiData.Id}: Saved state '{savedStateEnum.GetType().Name}.{savedStateEnum.ToString()}' is NOT a Basic State. Attempting to use as Active starting state.", npcObject);
+                                   // Clear existing simulation data anyway as it's old simulation data.
+                                   tiData.simulatedTargetPosition = null;
+                                   tiData.simulatedStateTimer = 0f;
+                              }
+                              else
+                              {
+                                   // If no state was saved, or mapping failed, startingActiveStateEnum remains null.
+                                   // The Runner will then fall back to its GetPrimaryStartingStateSO logic (which checks TypeDefs).
+                                   Debug.Log($"PROXIMITY {tiData.Id}: No valid saved state found or mapped. Runner will determine primary starting state from TypeDefs.", npcObject);
+                                   // Ensure simulation data is clean if no saved state existed
+                                   tiData.simulatedTargetPosition = null;
+                                   tiData.simulatedStateTimer = 0f;
+                              }
+                         }
+                       // --- END Existing Logic ---
+
+                       // Call the Runner's Activate method with the determined starting state override
+                       // If startingActiveStateEnum is null, Runner.Activate will use GetPrimaryStartingStateSO().
+                       runner.Activate(tiData, customerManager, startingActiveStateEnum); // <-- Pass determined override state Enum
+
+                       Debug.Log($"PROXIMITY TiNpcManager: Activation initiated for TI NPC '{tiData.Id}' (GameObject '{npcObject.name}'). Runner.Activate called with override state: {startingActiveStateEnum?.GetType().Name}.{startingActiveStateEnum?.ToString() ?? "NULL"}");
 
                    }
                    else
                    {
                        Debug.LogError($"TiNpcManager: Pooled object '{npcObject.name}' is missing NpcStateMachineRunner during activation! Returning invalid object to pool.", npcObject);
                         // Unlink data because activation failed
-                        tiData.UnlinkGameObject(); // Use helper to clear link and flags
+                        tiData.UnlinkGameObject(); // Use helper to clear data link and flags
                        poolingManager.ReturnPooledObject(npcObject); // Return invalid object
                    }
               }
@@ -719,7 +813,6 @@ namespace Game.NPC.TI // Keep in the TI namespace
               {
                   Debug.LogError($"TiNpcManager: Failed to get a pooled TI NPC GameObject for activation of '{tiData.Id}'! Pool might be exhausted.", this);
               }
-              // active/inactive lists are no longer managed here. Status is determined by IsActiveGameObject flag.
          }
 
 
@@ -732,6 +825,12 @@ namespace Game.NPC.TI // Keep in the TI namespace
              }
 
              allTiNpcs.Clear();
+
+             if (basicNpcStateManager == null)
+             {
+                  Debug.LogError("TiNpcManager: BasicNpcStateManager not found. Cannot initialize dummy TI NPC data with proper basic states or targets for simulation.", this);
+                  return; // Cannot load dummy data correctly
+             }
 
              foreach (var entry in dummyNpcData)
              {
@@ -752,29 +851,40 @@ namespace Game.NPC.TI // Keep in the TI namespace
                   newNpcData.CurrentWorldPosition = newNpcData.HomePosition;
                   newNpcData.CurrentWorldRotation = newNpcData.HomeRotation;
 
-                   newNpcData.SetCurrentState(TestState.Patrol); // TiNpcData SetCurrentState logs
-                   newNpcData.simulatedTargetPosition = GetRandomPointInPatrolAreaSimulated(); // Give them a first target for simulation
-                   newNpcData.simulatedStateTimer = 0f;
+                  // --- Initialize with the specified Basic State from dummy data (NEW) ---
+                   Enum initialBasicStateEnum = entry.initialBasicState;
 
-                  // Flags and GameObject link are initialized in the TiNpcData constructor now (isActiveGameObject=false, NpcGameObject=null)
+                   // Validate the initial state exists as a Basic State SO
+                   BasicNpcStateSO initialStateSO = basicNpcStateManager.GetBasicStateSO(initialBasicStateEnum);
+                   if (initialStateSO == null)
+                   {
+                        Debug.LogError($"TiNpcManager: Dummy NPC '{entry.id}' configured with initial Basic State '{initialBasicStateEnum}', but no BasicStateSO asset found for this state! Skipping NPC load.", this);
+                        continue; // Skip loading this NPC if its initial state is invalid
+                   }
+
+                   newNpcData.SetCurrentState(initialBasicStateEnum); // Set the initial Basic State
+
+                   // Call the OnEnter for this initial basic state immediately to set up simulation data (timer, target)
+                   // This replicates the OnEnter call that would happen if the NPC transitioned into this state.
+                   initialStateSO.OnEnter(newNpcData, basicNpcStateManager); // Pass the data and the manager
+
+                  // Flags and GameObject link are initialized in the TiNpcData constructor (isActiveGameObject=false, NpcGameObject=null)
 
                   allTiNpcs.Add(newNpcData.Id, newNpcData);
+                   Debug.Log($"TiNpcManager: Loaded dummy NPC '{newNpcData.Id}' with initial Basic State '{initialBasicStateEnum}'. Simulation timer initialized to {newNpcData.simulatedStateTimer:F2}s, Target: {newNpcData.simulatedTargetPosition?.ToString() ?? "NULL"}.");
              }
         }
-
-        // REMOVED: UpdateActiveInactiveLists is no longer needed.
 
         // --- Public Methods ---
 
         /// <summary>
         /// Called by CustomerManager when a TI NPC's GameObject is
         /// ready to be returned to the pool after deactivation.
+        /// Handles the final cleanup and data unlinking.
         /// </summary>
         public void HandleTiNpcReturnToPool(GameObject npcObject)
         {
-             // --- DEBUG: Log handler entry ---
-             Debug.Log($"DEBUG TiNpcManager: HandleTiNpcReturnToPool received GameObject '{npcObject.name}'.", npcObject);
-             // --- END DEBUG ---
+             Debug.Log($"POOL TiNpcManager: HandleTiNpcReturnToPool received GameObject '{npcObject.name}'.");
 
              if (npcObject == null)
              {
@@ -797,43 +907,54 @@ namespace Game.NPC.TI // Keep in the TI namespace
 
              if (deactivatedTiData != null)
              {
-                 Debug.Log($"DEBUG HandleTiNpcReturnToPool: Found TiNpcData for '{deactivatedTiData.Id}' linked to GameObject '{npcObject.name}' (Data InstanceID: {deactivatedTiData.GetHashCode()}). Unlinking data and flags.", npcObject);
+                 Debug.Log($"POOL TiNpcManager: Found TiNpcData for '{deactivatedTiData.Id}' linked to GameObject '{npcObject.name}'. Unlinking data and flags.");
 
                  // --- Clear the data link and flags ---
                  deactivatedTiData.UnlinkGameObject(); // Use helper to set NpcGameObject=null and isActiveGameObject=false
+                 // --- END ---
              }
              else
              {
                   // This warning indicates the NpcGameObject -> TiNpcData link was already broken before this handler was called.
-                  // The runner's TiData should have been cleared in Runner.Deactivate.
-                  // The IsActiveGameObject flag should also have been cleared by Runner.Deactivate.
-                  // It might still be a TI NPC if it was pooled without a proper state transition.
-                 Debug.LogWarning($"TiNpcManager: Could not find TiNpcData linked to returning GameObject '{npcObject.name}' in HandleTiNpcReturnToPool! Data link already lost or inconsistent.", npcObject);
+                  // This could happen if Runner.Deactivate somehow failed or if the object was pooled via another path.
+                 Debug.LogWarning($"POOL TiNpcManager: Could not find TiNpcData linked to returning GameObject '{npcObject.name}' in HandleTiNpcReturnToPool! Data link already lost or inconsistent. Runner.IsTrueIdentityNpc: {runner.IsTrueIdentityNpc}.", npcObject);
 
-                 // Defensive cleanup: If we couldn't find the linked data, how do we know it was a TI NPC?
-                 // Rely on the Runner's flag set during activation, even if TiData link is broken.
-                 if (runner.IsTrueIdentityNpc)
+                 // Defensive cleanup: If it was a TI NPC (check runner flag), try to find the data by ID if available
+                 if (runner.IsTrueIdentityNpc && runner.TiData != null && !string.IsNullOrEmpty(runner.TiData.Id))
                  {
-                      Debug.LogError($"TiNpcManager: GameObject '{npcObject.name}' is flagged as TI ({runner.IsTrueIdentityNpc}), but TiNpcData link was lost! Cannot save state. Forcing Shopper reset and pooling.", npcObject);
-                       // Runner.IsTrueIdentityNpc = false; // Cannot set private setter directly
-                 } else {
-                      Debug.LogWarning($"TiNpcManager: Received GameObject '{npcObject.name}' flagged NOT as TI in HandleTiNpcReturnToPool, which is unexpected. Shopper reset and pooling anyway.", npcObject);
+                      // Try to find the data using the ID saved in the runner (if still there)
+                      TiNpcData dataById = GetTiNpcData(runner.TiData.Id);
+                      if (dataById != null)
+                      {
+                           Debug.LogError($"POOL TiNpcManager: Found TiNpcData by ID '{dataById.Id}' ({dataById.GetHashCode()}), but GameObject link was missing! Forcing link cleanup on data object. GameObject was likely pooled incorrectly.", npcObject);
+                           dataById.UnlinkGameObject(); // Unlink the data object
+                      } else {
+                           Debug.LogError($"POOL TiNpcManager: Runner flagged as TI ({runner.IsTrueIdentityNpc}), but TiData link was lost, and TiData ID '{runner.TiData.Id}' lookup failed! Cannot perform data cleanup.", npcObject);
+                      }
                  }
+                 else if (runner.IsTrueIdentityNpc)
+                 {
+                      Debug.LogError($"POOL TiNpcManager: Runner flagged as TI ({runner.IsTrueIdentityNpc}), but TiData link was lost and TiData ID was null/empty! Cannot perform data cleanup.", npcObject);
+                 }
+                 // If runner is not flagged as TI, the CustomerManager should have handled it.
+                 // If we somehow get a non-TI here, it's a flow error, but pool it anyway.
 
              }
 
 
              // Ensure Shopper Inventory is Cleared for safety, regardless of data link state
-             if (runner.Shopper != null)
-             {
-                  runner.Shopper.Reset();
-                  // --- DEBUG: Log Shopper reset ---
-                  Debug.Log($"DEBUG HandleTiNpcReturnToPool: Cleared Shopper inventory for returning GameObject '{npcObject.name}'.", npcObject);
-                  // --- END DEBUG ---
-             }
+             // NOTE: If TI Shopper data needs to be persistent, this Reset should be more selective
+             // or happen elsewhere (e.g., only reset transient parts).
+             // For now, Shopper is marked for persistence in the Runner's ResetRunnerTransientData
+             // by *not* resetting if IsTrueIdentityNpc is true. Clearing it here is a conflict.
+             // Let's remove clearing it here and rely on the Runner's Reset logic.
+             // if (runner.Shopper != null)
+             // {
+             //      runner.Shopper.Reset(); // REMOVED
+             //      Debug.Log($"POOL TiNpcManager: Shopper inventory reset attempted for returning GameObject '{npcObject.name}'.", npcObject); // REMOVED
+             // }
 
-
-             Debug.Log($"TiNpcManager: Returning TI NPC GameObject '{npcObject.name}' to pool.", npcObject);
+             Debug.Log($"POOL TiNpcManager: Returning TI NPC GameObject '{npcObject.name}' to pool.");
              if (poolingManager != null)
              {
                  poolingManager.ReturnPooledObject(npcObject);
@@ -843,9 +964,6 @@ namespace Game.NPC.TI // Keep in the TI namespace
                  Debug.LogError($"TiNpcManager: PoolingManager is null! Cannot return TI NPC GameObject '{npcObject.name}' to pool. Destroying.", this);
                  Destroy(npcObject);
              }
-
-             // REMOVED: UpdateActiveInactiveLists is no longer called here.
-             // The data flags were updated directly.
         }
 
 
@@ -885,6 +1003,23 @@ namespace Game.NPC.TI // Keep in the TI namespace
         public int GetTotalTiNpcCount()
         {
             return allTiNpcs.Count;
+        }
+
+         /// <summary>
+         /// Gets a random point within the defined XZ patrol area bounds (for simulation).
+         /// Uses a fixed Y height (e.g., 0) for simplicity as NavMesh sampling is not available.
+         /// This method is now only used by LoadDummyNpcData for initial targets.
+         /// Patrol simulation logic now uses the version in BasicPatrolStateSO.
+         /// </summary>
+        private Vector3 GetRandomPointInPatrolAreaSimulated()
+        {
+             // Keep the logic here for dummy data initialization, but the simulation logic should use the SO's version.
+             // These bounds should ideally match the BasicPatrolStateSO's bounds.
+             Vector2 simulatedPatrolAreaMin = new Vector2(-10f, -10f); // Hardcoded to match BasicPatrolStateSO for dummy data
+             Vector2 simulatedPatrolAreaMax = new Vector2(10f, 10f); // Hardcoded to match BasicPatrolStateSO for dummy data
+             float randomX = UnityEngine.Random.Range(simulatedPatrolAreaMin.x, simulatedPatrolAreaMax.x);
+             float randomZ = UnityEngine.Random.Range(simulatedPatrolAreaMin.y, simulatedPatrolAreaMax.y); // Note: using y for Z axis in Vector2
+             return new Vector3(randomX, 0f, randomZ); // Assume ground is at Y=0 for simulation
         }
     }
 }

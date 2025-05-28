@@ -310,7 +310,10 @@ namespace Game.NPC
           /// PHASE 2: Called by the TiNpcManager to activate a TRUE IDENTITY NPC.
           /// Configures the Runner and GameObject based on the persistent data.
           /// </summary>
-          public void Activate(TiNpcData tiData, CustomerManagement.CustomerManager customerManager) // Full namespace for CustomerManager
+          /// <param name="tiData">The persistent data for this TI NPC.</param>
+          /// <param name="customerManager">Reference to the CustomerManager singleton.</param>
+          /// <param name="overrideStartingState">Optional: An active state enum to transition to immediately instead of determining via GetPrimaryStartingStateSO.</param>
+          public void Activate(TiNpcData tiData, CustomerManagement.CustomerManager customerManager, Enum overrideStartingState = null)
           {
                if (tiData == null)
                {
@@ -321,15 +324,16 @@ namespace Game.NPC
 
                Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Activating TI NPC '{tiData.Id}'. Loading state and position.", this);
 
-               IsTrueIdentityNpc = true;
-               TiData = tiData;
-               this.Manager = customerManager;
+               // --- Set TI identity flags and data link (DO NOT REMOVE THESE) ---
+               IsTrueIdentityNpc = true; // <-- This flag is set TRUE here
+               TiData = tiData; // <-- Data link is set here
+               this.Manager = customerManager; // <-- Manager link is set here
+               // --- END Set TI identity ---
 
-               // Context Manager will be set in Update/TransitionToState before use
-               Debug.Log($"DEBUG Runner Activate ({gameObject.name}): IsTrueIdentityNpc={IsTrueIdentityNpc}, TiData is null={ (TiData == null) }, TiData ID={TiData?.Id}", this);
+               Debug.Log($"DEBUG Runner Activate ({gameObject.name}): IsTrueIdentityNpc={IsTrueIdentityNpc}, TiData is null={ (TiData == null) }, TiData ID={TiData?.Id}");
 
-               ResetRunnerTransientData(); // Resets interruption handler and queue handler
-               queueHandler?.Initialize(this.Manager);
+               queueHandler?.Initialize(this.Manager); // Re-initialize QueueHandler with Manager
+
 
                // Apply persistent position and rotation from TiData
                if (MovementHandler != null && MovementHandler.Agent != null)
@@ -353,18 +357,34 @@ namespace Game.NPC
                     return;
                }
 
-               // Determine the state to transition to based on TiData or TypeDefinition
-               // Use GetPrimaryStartingStateSO - it handles loading from TiData state if available
-               NpcStateSO startingState = GetPrimaryStartingStateSO();
+               // --- Determine the state to transition to ---
+               NpcStateSO startingState = null;
+
+               if (overrideStartingState != null) // Check if an override state was provided
+               {
+                    Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Using override starting state '{overrideStartingState.GetType().Name}.{overrideStartingState.ToString()}' provided by TiNpcManager.");
+                    startingState = GetStateSO(overrideStartingState); // Get the state SO using the override enum
+               }
+
+               if (startingState == null) // If no override, or override state SO wasn't found
+               {
+                   // Fallback to the default logic: check TypeDef primary state
+                   Debug.Log($"NpcStateMachineRunner ({gameObject.name}): No valid override state provided/found. Determining primary starting state from TypeDefs.");
+                   // Note: GetPrimaryStartingStateSO no longer attempts to load state from TiData itself in this flow.
+                   // TiNpcManager Activate handles reading TiData state and providing it as an override.
+                   startingState = GetPrimaryStartingStateSO();
+               }
+
 
                if (startingState != null)
                {
-                    Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Transitioning TI NPC '{tiData.Id}' to state '{startingState.name}'.", this);
+                    Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Transitioning TI NPC '{tiData.Id}' to starting state '{startingState.name}'.");
                     TransitionToState(startingState);
                }
                else
                {
-                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): GetPrimaryStartingStateSO returned null for TI NPC '{tiData.Id}'. Cannot find any valid starting state. Transitioning to ReturningToPool (for pooling).", this);
+                    // This implies GetPrimaryStartingStateSO also failed after override lookup.
+                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): No valid starting state found after override and primary lookup for TI NPC '{tiData.Id}'. Cannot find any valid starting state. Transitioning to ReturningToPool (for pooling).", this);
                     TransitionToState(GetStateSO(GeneralState.ReturningToPool));
                }
 
@@ -390,60 +410,19 @@ namespace Game.NPC
                     return;
                }
 
-               Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Deactivating TI NPC '{TiData.Id}'. Saving state and position to TiData.", this);
+               Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Deactivating TI NPC '{TiData.Id}'. Saving state and position to TiData.");
 
-               // Save current state back to TiData
+               // --- Save necessary data to TiData ---
                TiData.CurrentWorldPosition = transform.position;
                TiData.CurrentWorldRotation = transform.rotation;
 
-               if (currentState != null && currentState.HandledState != null)
-               {
-                    TiData.SetCurrentState(currentState.HandledState);
-               }
-               else
-               {
-                    Debug.LogWarning($"NpcStateMachineRunner ({gameObject.name}): Current state is null or has null HandledState when deactivating TI NPC '{TiData.Id}'. Clearing state in TiData.", this);
-                    TiData.SetCurrentState(null);
-               }
+               Debug.Log($"NpcStateMachineRunner ({gameObject.name}): State '{TiData.CurrentStateEnumKey}' already set and saved to TiData by TiNpcManager for simulation.");
 
-               if (currentState != null) // Only attempt to save relevant data if there's a current state
-               {
-                    // Assume Runner.CurrentDestinationPosition holds the last successful move target position
-                    // Save it if the current state is one that typically involves moving to a target
-                    if (currentState.HandledState.Equals(TestState.Patrol) || currentState.HandledState.Equals(CustomerState.Exiting) ||
-                         currentState.HandledState.Equals(CustomerState.Entering) || currentState.HandledState.Equals(CustomerState.MovingToRegister) ||
-                         currentState.HandledState.Equals(CustomerState.Queue) || currentState.HandledState.Equals(CustomerState.SecondaryQueue)) // Added queue states, entering, moving to register as they have destinations
-                    {
-                         TiData.simulatedTargetPosition = CurrentDestinationPosition; // Save the last target
-                         Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Saved simulated target position {TiData.simulatedTargetPosition} to TiData on Deactivate (State: {currentState.HandledState}).", this);
-                    }
-                    else // For states without a continuous move target, clear the simulated target
-                    {
-                         TiData.simulatedTargetPosition = null;
-                         Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Cleared simulated target position on Deactivate (State: {currentState.HandledState}).", this);
-                    }
+               Debug.Log($"DEBUG Runner Deactivate ({gameObject.name}): IsTrueIdentityNpc={IsTrueIdentityNpc}, TiData is null={ (TiData == null) }");
 
-                    // Saving simulated timer is harder to do generically. Simulation starts timers from 0 for simplicity.
-                    TiData.simulatedStateTimer = 0f; // Reset simulation timer on deactivate
-                     Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Reset simulated state timer to 0 on Deactivate.", this);
-
-               }
-               else
-               {
-                    // If currentState is null, ensure simulation data is cleared/defaulted
-                    TiData.simulatedTargetPosition = null;
-                    TiData.simulatedStateTimer = 0f;
-                    Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Current state is null on Deactivate. Cleared simulated target and timer.", this);
-               }
-
-                    // Clear Runner's link to the persistent data and reset flag
-                    TiData.IsActiveGameObject = false; // Mark the data record as inactive *before* pooling
-
-                    Debug.Log($"DEBUG Runner Deactivate ({gameObject.name}): IsTrueIdentityNpc={IsTrueIdentityNpc}, TiData is null={ (TiData == null) }", this);
-
-                    // Reset Runner's transient fields to default (Manager reference is kept)
+               // Reset other Runner's transient fields and handlers (Manager reference is kept)
                ResetRunnerTransientData(); // Ensures interruption handler and queue handler are reset
-               }
+          }
 
 
         /// <summary>
@@ -719,30 +698,22 @@ namespace Game.NPC
 
           /// <summary>
           /// Determines the primary starting state for this NPC based on its configured types.
-          /// For TI NPCs, attempts to load state from TiData first.
+          /// For TI NPCs, attempts to load state from TiData first (if not already handled by Activate override).
           /// </summary>
           public NpcStateSO GetPrimaryStartingStateSO()
           {
-               // Check TiData state first for TI NPCs
-               if (IsTrueIdentityNpc && TiData != null && TiData.CurrentStateEnum != null)
-               {
-                    // If TiData has a valid state saved, attempt to transition to that state.
-                    // Use GetStateSO to ensure the state is actually available in the loaded TypeDefs
-                    NpcStateSO savedState = GetStateSO(TiData.CurrentStateEnum);
-                    if (savedState != null)
-                    {
-                         Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Found valid saved state '{TiData.CurrentStateEnumKey}' in TiData for TI NPC '{TiData.Id}'. Using this as primary start state.", this);
-                         return savedState; // Return the state loaded from data
-                    }
-                    else
-                    {
-                         Debug.LogWarning($"NpcStateMachineRunner ({gameObject.name}): Saved state '{TiData.CurrentStateEnumKey}' from TiData not found in compiled states for TI NPC '{TiData.Id}'. Falling back to Type Definition primary state.", this);
-                         // Continue below to use the Type Definition primary starting state
-                    }
-               }
+               // This method is now primarily a fallback if Activate did NOT provide an override state.
+               // The logic here for loading state from TiData might need reconsideration
+               // if TiData.CurrentStateEnum is expected to be a BasicState now.
+               // Let's assume if Activate didn't provide an override, it means
+               // either it's a transient NPC, or a TI NPC with no saved state,
+               // or a TI NPC with a saved state that couldn't be mapped to Basic.
+               // In these cases, we default to the Type Definition's primary start state.
+
+               Debug.Log($"NpcStateMachineRunner ({gameObject.name}): GetPrimaryStartingStateSO called. Checking Type Definition primary state.");
 
 
-               // If not a TI NPC, or TiData/state is invalid/missing, use the Type Definition primary starting state.
+               // Use the Type Definition primary starting state.
                Enum startingStateEnum = null;
                NpcTypeDefinitionSO primaryTypeDef = null;
 
@@ -765,24 +736,25 @@ namespace Game.NPC
 
                if (startingStateEnum != null)
                {
-                    Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Found primary starting state '{startingStateEnum.GetType().Name}.{startingStateEnum.ToString()}' defined in type '{primaryTypeDef.name}'. Looking up state SO.", this);
+                    Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Found primary starting state '{startingStateEnum.GetType().Name}.{startingStateEnum.ToString()}' defined in type '{primaryTypeDef?.name ?? "Unknown Type"}'. Looking up state SO.");
                     NpcStateSO startState = GetStateSO(startingStateEnum);
 
                     if (startState == null)
                     {
-                         Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): GetStateSO returned null for primary starting state '{startingStateEnum.GetType().Name}.{startingStateEnum.ToString()}'. Cannot provide a safe start state.", this);
+                         Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): GetStateSO returned null for primary starting state '{startingStateEnum.GetType().Name}.{startingStateEnum.ToString()}'. Cannot provide a safe start state.");
                     }
                     return startState;
                }
                else
                {
-                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): No valid primary starting state configured in any assigned type definitions! Cannot start NPC state machine.", this);
+                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): No valid primary starting state configured in any assigned type definitions! Cannot start NPC state machine. Attempting ReturningToPool fallback.");
                     NpcStateSO finalFallback = null;
+                    // Hardcoded fallback to ReturningToPool if no primary start state is defined
                     if (availableStates != null) availableStates.TryGetValue(GeneralState.ReturningToPool, out finalFallback);
 
                     if (finalFallback != null)
                     {
-                         Debug.LogWarning($"NpcStateMachineRunner ({gameObject.name}): No primary start state configured, attempting hardcoded ReturningToPool as final fallback.", this);
+                         Debug.LogWarning($"NpcStateMachineRunner ({gameObject.name}): No primary start state configured, attempting hardcoded ReturningToPool as final fallback.");
                          return finalFallback;
                     }
 

@@ -5875,6 +5875,37 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   rowIndex: 0
   columnIndex: 0
+--- !u!1 &615418563
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 615418564}
+  m_Layer: 0
+  m_Name: GameObject
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &615418564
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 615418563}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -9, y: 0, z: 2.5}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &616226776
 GameObject:
   m_ObjectHideFlags: 0
@@ -7084,6 +7115,7 @@ GameObject:
   - component: {fileID: 763258581}
   - component: {fileID: 763258580}
   - component: {fileID: 763258582}
+  - component: {fileID: 763258583}
   m_Layer: 0
   m_Name: NPCmanager
   m_TagString: Untagged
@@ -7106,8 +7138,8 @@ MonoBehaviour:
   npcPrefabs:
   - {fileID: 4394407753789290286, guid: 488534cc76898354d8320c55d1770728, type: 3}
   maxCustomersInStore: 7
-  minSpawnInterval: 30
-  maxSpawnInterval: 35
+  minSpawnInterval: 14
+  maxSpawnInterval: 15
   spawnPoints:
   - {fileID: 600981058}
   BrowseLocations:
@@ -7163,12 +7195,6 @@ MonoBehaviour:
   - {fileID: 4394407753789290286, guid: 06851f3650851534b86dc6528468eb55, type: 3}
   simulationTickInterval: 0.1
   maxNpcsToSimulatePerTick: 10
-  simulatedMovementSpeed: 2
-  simulatedPatrolAreaMin: {x: -5, y: -5}
-  simulatedPatrolAreaMax: {x: 5, y: 5}
-  simulatedMinWaitTimeAtPoint: 2
-  simulatedMaxWaitTimeAtPoint: 4
-  simulatedChanceToShop: 0.9
   activationRadius: 4
   deactivationRadius: 5
   proximityCheckInterval: 0.5
@@ -7176,9 +7202,29 @@ MonoBehaviour:
   - id: TEST1
     homePosition: {x: 3, y: 0, z: 3}
     homeRotation: {x: 0, y: 0, z: 0, w: 0}
+    initialBasicState: 1
   drawInactiveNpcsGizmos: 1
   inactiveGizmoColor: {r: 0.3254717, g: 1, b: 0.5974937, a: 1}
   inactiveGizmoRadius: 0.3
+--- !u!114 &763258583
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 763258579}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 60708217bdf878e44a3b70b067f750a4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  basicStateAssets:
+  - {fileID: 11400000, guid: 179c0f1f3ff94fc40b88019829f85dab, type: 2}
+  - {fileID: 11400000, guid: 824c2b210193cc1418164792af868c77, type: 2}
+  - {fileID: 11400000, guid: afe00de40b307fb42bf2b1824b8e4d32, type: 2}
+  - {fileID: 11400000, guid: 597bab764aeaf674aadcd649a9235a7f, type: 2}
+  - {fileID: 11400000, guid: 79e0e11f3d6cb6543a0838231c9240af, type: 2}
+  - {fileID: 11400000, guid: a5e2d468e5c87554a924f00e44ac6a10, type: 2}
 --- !u!1 &765084589
 GameObject:
   m_ObjectHideFlags: 0
@@ -25933,3 +25979,4 @@ SceneRoots:
   - {fileID: 5155355730881662875}
   - {fileID: 4515658556456049941}
   - {fileID: 897122725006673636}
+  - {fileID: 615418564}

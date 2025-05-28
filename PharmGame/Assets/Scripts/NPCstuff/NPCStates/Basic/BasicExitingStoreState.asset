@@ -9,14 +9,12 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: dd6885aa8a141784a9389170b6685d55, type: 3}
-  m_Name: PatrolState
+  m_Script: {fileID: 11500000, guid: 5a478a75ebf85204cb5d0415b1fe48a2, type: 3}
+  m_Name: BasicExitingStoreState
   m_EditorClassIdentifier: 
-  stateID: 
-  isInterruptible: 1
-  checkMovementArrival: 1
-  patrolAreaMin: {x: -5, y: -5}
-  patrolAreaMax: {x: 5, y: 5}
-  minWaitTimeAtPoint: 3
-  maxWaitTimeAtPoint: 5
-  chanceToShop: 0
+  shouldUseTimeout: 1
+  minInactiveTimeout: 10
+  maxInactiveTimeout: 20
+  simulatedExitPosition: {x: -5.75, y: 0, z: 2.5}
+  simulatedMovementSpeed: 2
+  simulatedArrivalThreshold: 0.75

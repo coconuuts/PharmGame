@@ -258,13 +258,68 @@ namespace Game.NPC.Handlers // Placing handlers together
                   runner.SetCurrentDestinationPosition(null);
              }
         }
+        
+        /// <summary>
+        /// Called externally (e.g., by TiNpcManager) to manually set the NPC's assigned queue spot and type,
+        /// and update the Runner's target. Used for NPCs activating directly into a queue spot.
+        /// Does NOT trigger movement or notify the manager.
+        /// </summary>
+        /// <param name="spotTransform">The Transform of the spot to assign.</param>
+        /// <param name="spotIndex">The index of the spot to assign.</param>
+        /// <param name="queueType">The type of queue (Main or Secondary).</param>
+        public void SetupQueueSpot(Transform spotTransform, int spotIndex, QueueType queueType)
+        {
+             if (runner == null || spotTransform == null)
+             {
+                  Debug.LogError($"NpcQueueHandler ({gameObject.name}): Cannot setup queue spot - missing Runner({runner != null}) or spotTransform is null.", this);
+                  AssignedQueueSpotIndex = -1; // Ensure clean state on error
+                  _currentQueueMoveType = QueueType.Main; // Ensure clean state on error
+                  runner.CurrentTargetLocation = null; // Ensure clean state on error
+                  runner.SetCurrentDestinationPosition(null); // Ensure clean state on error
+                  return;
+             }
+
+             Debug.Log($"{gameObject.name}: NpcQueueHandler setting up queue spot {spotIndex} in {queueType} queue.");
+
+             // Update this handler's internal queue data
+             AssignedQueueIndex_Internal(spotIndex); // Use internal helper method
+             QueueType_Internal(queueType); // Use internal helper method
+
+             // Update the Runner's target location and destination position fields.
+             // This is the target the NPC needs to reach when it becomes active and enters the state.
+             runner.CurrentTargetLocation = new BrowseLocation { browsePoint = spotTransform, inventory = null };
+             runner.SetCurrentDestinationPosition(spotTransform.position); // Set the destination position
+
+             // Do NOT set runner._hasReachedCurrentDestination = false here.
+             // The state that receives this setup (e.g., QueueStateSO.OnEnter)
+             // is responsible for initiating the movement and setting that flag.
+        }
+
+        /// <summary>
+        /// Called by a manager (like CustomerManager) to assign this NPC to a queue spot.
+        /// Updates the internal queue data fields.
+        /// </summary>
+        /// <param name="index">The index of the assigned spot.</param>
+        /// <param name="type">The type of queue (Main or Secondary).</param>
+        public void ReceiveQueueAssignment(int index, QueueType type)
+        {
+            // Basic validation
+            if (index < -1) // Allow -1 for 'no spot assigned'
+            {
+                Debug.LogError($"NpcQueueHandler ({gameObject.name}): Received invalid queue assignment index {index}! Ignoring.", this);
+                return;
+            }
+            AssignedQueueIndex_Internal(index);
+            QueueType_Internal(type);
+            Debug.Log($"NpcQueueHandler ({gameObject.name}): Received queue assignment: Index {index}, Type {type}.");
+        }
 
          // --- Internal Setters for clarity and potential logging/callbacks ---
-         private void AssignedQueueIndex_Internal(int index)
-         {
-             // Optional: Add logging or validation here
-             AssignedQueueSpotIndex = index;
-         }
+        private void AssignedQueueIndex_Internal(int index)
+        {
+            // Optional: Add logging or validation here
+            AssignedQueueSpotIndex = index;
+        }
 
          private void QueueType_Internal(QueueType type)
          {

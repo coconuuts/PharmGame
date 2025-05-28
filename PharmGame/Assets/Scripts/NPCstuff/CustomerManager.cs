@@ -834,13 +834,25 @@ namespace CustomerManagement
             {
                 if (!spotData.IsOccupied)
                 {
-                    spotData.currentOccupant = customerRunner; // <-- Assign the Runner to the spot
+                    spotData.currentOccupant = customerRunner; // <-- Assign the Runner to the spot in Manager's data
                     assignedSpot = spotData.spotTransform;
                     spotIndex = spotData.spotIndex;
                     Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) successfully joined main queue at spot {spotIndex}.");
-                    customerRunner.QueueHandler.AssignedQueueSpotIndex = spotIndex; // Store the assigned index on the Runner
-                    customerRunner.QueueHandler._currentQueueMoveType = QueueType.Main; // Set the queue type on the runner
-                    return true;
+
+                    // Call the public method on the QueueHandler to receive the assignment
+                    if (customerRunner.QueueHandler != null)
+                    {
+                        customerRunner.QueueHandler.ReceiveQueueAssignment(spotIndex, QueueType.Main); // <-- NEW CALL
+                    }
+                    else
+                    {
+                        Debug.LogError($"CustomerManager: Runner '{customerRunner.gameObject.name}' is missing its NpcQueueHandler component! Cannot assign queue spot.", customerRunner.gameObject);
+                        // Revert the spot assignment in manager's data if we can't tell the handler
+                        spotData.currentOccupant = null;
+                        return false; // Signal failure
+                    }
+
+                    return true; // Success
                 }
             }
 
@@ -917,13 +929,25 @@ namespace CustomerManagement
             {
                 if (!spotData.IsOccupied) // Check if spotData.currentOccupant == null
                 {
-                    spotData.currentOccupant = customerRunner; // <-- Assign the Runner to the spot
+                    spotData.currentOccupant = customerRunner; // <-- Assign the Runner to the spot in Manager's data
                     assignedSpot = spotData.spotTransform;
                     spotIndex = spotData.spotIndex;
                     Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) successfully joined secondary queue at spot {spotIndex}.");
-                    customerRunner.QueueHandler.AssignedQueueSpotIndex = spotIndex; // Store the assigned index on the Runner
-                    customerRunner.QueueHandler._currentQueueMoveType = QueueType.Secondary; // Set the queue type on the runner
-                    return true;
+
+                    // Call the public method on the QueueHandler to receive the assignment
+                    if (customerRunner.QueueHandler != null)
+                    {
+                        customerRunner.QueueHandler.ReceiveQueueAssignment(spotIndex, QueueType.Secondary); // <-- NEW CALL
+                    }
+                    else
+                    {
+                        Debug.LogError($"CustomerManager: Runner '{customerRunner.gameObject.name}' is missing its NpcQueueHandler component! Cannot assign secondary queue spot.", customerRunner.gameObject);
+                        // Revert the spot assignment in manager's data if we can't tell the handler
+                        spotData.currentOccupant = null;
+                        return false; // Signal failure
+                    }
+
+                    return true; // Success
                 }
             }
 

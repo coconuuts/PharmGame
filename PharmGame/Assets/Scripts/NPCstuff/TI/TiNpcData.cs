@@ -1,8 +1,11 @@
+// --- START OF FILE TiNpcData.cs ---
+
 using UnityEngine;
 using System;
 using Game.NPC.States;
 using Systems.Inventory;
 using Game.NPC.Types;
+using Game.NPC.BasicStates; // Needed for BasicState enum
 
 namespace Game.NPC.TI
 {
@@ -28,9 +31,10 @@ namespace Game.NPC.TI
         [SerializeField] private Quaternion currentWorldRotation;
 
         // Storing state using strings to allow serialization across different enum types
-        [Tooltip("The string name of the NPC's current state enum value.")]
+        // This will store EITHER an active state enum (like CustomerState, TestState) OR a BasicState enum
+        [Tooltip("The string name of the NPC's current state enum value (can be Active or Basic).")]
         [SerializeField] private string currentStateEnumKey;
-        [Tooltip("The assembly qualified name of the NPC's current state enum type.")]
+        [Tooltip("The assembly qualified name of the NPC's current state enum type (can be Active or Basic).")]
         [SerializeField] private string currentStateEnumType;
 
         // --- PHASE 4, SUBSTEP 1: Add Simulation Data Fields ---
@@ -40,7 +44,7 @@ namespace Game.NPC.TI
 
         [Tooltip("A timer used for off-screen simulation of states like waiting, browsing, etc.")]
         [SerializeField] public float simulatedStateTimer; // Made public for direct access by simulation logic
-        [System.NonSerialized] public GameObject NpcGameObject;
+        [System.NonSerialized] public GameObject NpcGameObject; // Runtime reference to the active GameObject
         // --- END PHASE 4 Fields ---
 
 
@@ -78,12 +82,14 @@ namespace Game.NPC.TI
 
                 try
                 {
+                    // Attempt to get the enum type using the stored string
                     Type enumType = Type.GetType(currentStateEnumType);
                     if (enumType == null || !enumType.IsEnum)
                     {
                         // Debug.LogError($"TiNpcData ({id}): Failed to get Enum Type '{currentStateEnumType}' for state '{currentStateEnumKey}'."); // Too noisy if many NPCs
                         return null;
                     }
+                    // Attempt to parse the string key into an enum value
                     return (System.Enum)Enum.Parse(enumType, currentStateEnumKey);
                 }
                 catch (Exception e)
@@ -108,10 +114,10 @@ namespace Game.NPC.TI
             this.currentWorldPosition = homePosition;
             this.currentWorldRotation = homeRotation;
 
-            this.currentStateEnumKey = null; // Set on load/simulation
-            this.currentStateEnumType = null; // Set on load/simulation
+            this.currentStateEnumKey = null; // Set on load/simulation/activation
+            this.currentStateEnumType = null; // Set on load/simulation/activation
 
-            Debug.Log($"DEBUG TiNpcData ({id}): Constructor called (InstanceID: {this.GetHashCode()}). Initializing isActiveGameObject=false, NpcGameObject=null.", NpcGameObject);
+            // Debug.Log($"DEBUG TiNpcData ({id}): Constructor called (InstanceID: {this.GetHashCode()}). Initializing isActiveGameObject=false, NpcGameObject=null.", NpcGameObject); // Too verbose
             this.isActiveGameObject = false; // Starts without a GameObject
             this.NpcGameObject = null;
 
@@ -121,36 +127,40 @@ namespace Game.NPC.TI
         }
 
         /// <summary>
-        /// Helper to set the current state using a System.Enum.
+        /// Helper to set the current state using a System.Enum. Can be an Active State or a Basic State enum.
         /// </summary>
         public void SetCurrentState(System.Enum stateEnum)
         {
             if (stateEnum == null)
             {
-                // --- DEBUG: Log state clear ---
-                Debug.Log($"DEBUG TiNpcData ({id}): Setting CurrentStateEnum to null (InstanceID: {this.GetHashCode()}).", NpcGameObject);
-                // --- END DEBUG ---
+                // Debug.Log($"DEBUG TiNpcData ({id}): Setting CurrentStateEnum to null (InstanceID: {this.GetHashCode()}).", NpcGameObject); // Too verbose
                 currentStateEnumKey = null;
                 currentStateEnumType = null;
                 return;
             }
-
-            Debug.Log($"DEBUG TiNpcData ({id}): Setting CurrentStateEnum to '{stateEnum.GetType().Name}.{stateEnum.ToString()}' (InstanceID: {this.GetHashCode()}).", NpcGameObject);
+            // Debug.Log($"DEBUG TiNpcData ({id}): Setting CurrentStateEnum to '{stateEnum.GetType().Name}.{stateEnum.ToString()}' (InstanceID: {this.GetHashCode()}).", NpcGameObject); // Too verbose
             currentStateEnumKey = stateEnum.ToString();
             currentStateEnumType = stateEnum.GetType().AssemblyQualifiedName; // Use AssemblyQualifiedName for robust loading
         }
 
-        // Optional: Add a method to explicitly link/unlink GameObject for clarity
+        /// <summary>
+        /// Links this TiNpcData instance to an active GameObject.
+        /// Called by TiNpcManager during activation.
+        /// </summary>
         public void LinkGameObject(GameObject go)
         {
-            Debug.Log($"DEBUG TiNpcData ({id}): Linking GameObject '{go?.name ?? "NULL"}' (InstanceID: {this.GetHashCode()}). Setting NpcGameObject and isActiveGameObject=true.", NpcGameObject);
+            // Debug.Log($"DEBUG TiNpcData ({id}): Linking GameObject '{go?.name ?? "NULL"}' (InstanceID: {this.GetHashCode()}). Setting NpcGameObject and isActiveGameObject=true.", NpcGameObject); // Too verbose
             this.NpcGameObject = go;
             this.isActiveGameObject = true;
         }
 
+        /// <summary>
+        /// Unlinks the active GameObject from this TiNpcData instance.
+        /// Called by TiNpcManager when the GameObject is returned to the pool.
+        /// </summary>
         public void UnlinkGameObject()
         {
-            Debug.Log($"DEBUG TiNpcData ({id}): Unlinking GameObject '{this.NpcGameObject?.name ?? "NULL"}' (InstanceID: {this.GetHashCode()}). Setting NpcGameObject=null and isActiveGameObject=false.", this.NpcGameObject);
+            // Debug.Log($"DEBUG TiNpcData ({id}): Unlinking GameObject '{this.NpcGameObject?.name ?? "NULL"}' (InstanceID: {this.GetHashCode()}). Setting NpcGameObject=null and isActiveGameObject=false.", this.NpcGameObject); // Too verbose
             this.NpcGameObject = null;
             this.isActiveGameObject = false;
         }
@@ -172,3 +182,4 @@ namespace Game.NPC.TI
           }
     }
 }
+// --- END OF FILE TiNpcData.cs ---

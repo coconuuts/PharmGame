@@ -9,14 +9,9 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: dd6885aa8a141784a9389170b6685d55, type: 3}
-  m_Name: PatrolState
+  m_Script: {fileID: 11500000, guid: d31b7cf7ce5f4a04bb575fef8d1e2525, type: 3}
+  m_Name: BasicBrowseState
   m_EditorClassIdentifier: 
-  stateID: 
-  isInterruptible: 1
-  checkMovementArrival: 1
-  patrolAreaMin: {x: -5, y: -5}
-  patrolAreaMax: {x: 5, y: 5}
-  minWaitTimeAtPoint: 3
-  maxWaitTimeAtPoint: 5
-  chanceToShop: 0
+  shouldUseTimeout: 1
+  minInactiveTimeout: 10
+  maxInactiveTimeout: 20
