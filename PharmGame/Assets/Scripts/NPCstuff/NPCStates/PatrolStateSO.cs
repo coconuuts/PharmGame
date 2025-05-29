@@ -58,15 +58,20 @@ namespace Game.NPC.States // Assuming this is where your active states are
                 targetPosition = context.Runner.TiData.simulatedTargetPosition.Value;
                 Debug.Log($"{context.NpcObject.name}: PatrolState OnEnter - Using carried-over simulated target from TiData: {targetPosition.Value}.");
                 // Clear the target from TiData now that the active state is handling it
-                context.Runner.TiData.simulatedTargetPosition = null; // <-- CLEAR SAVED TARGET
+                context.Runner.TiData.simulatedTargetPosition = null; // <-- CLEAR SAVED TARGET *AFTER READING IT*
+                context.Runner.TiData.simulatedStateTimer = 0f;
             }
             // --- End Check ---
 
             // If no carried-over target, pick a new one
             if (!targetPosition.HasValue)
             {
-                 targetPosition = GetRandomPointInPatrolArea(context);
-                 Debug.Log($"{context.NpcObject.name}: PatrolState OnEnter - No carried-over target, picking new target: {targetPosition.Value}.");
+                targetPosition = GetRandomPointInPatrolArea(context);
+                Debug.Log($"{context.NpcObject.name}: PatrolState OnEnter - No carried-over target, picking new target: {targetPosition.Value}.");
+                 if (context.Runner.IsTrueIdentityNpc && context.Runner.TiData != null)
+                 {
+                     context.Runner.TiData.simulatedStateTimer = 0f;
+                 }
             }
 
 

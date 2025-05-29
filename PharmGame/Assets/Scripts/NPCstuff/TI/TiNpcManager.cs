@@ -662,70 +662,70 @@ namespace Game.NPC.TI // Keep in the TI namespace
                        Enum startingActiveStateEnum = null; // The active state we will transition to
                        bool handledActivationBySavedState = false; // Flag to know if we used the specific logic below
 
-                       // --- NEW FIX: Handle activation from BasicWaitForCashierState ---
-                       if (savedStateEnum != null && savedStateEnum.Equals(BasicState.BasicWaitForCashier))
-                       {
-                           Debug.Log($"PROXIMITY {tiData.Id}: Saved state is BasicWaitForCashier. Checking live queue/register status.", npcObject);
-                           handledActivationBySavedState = true; // We are handling this specific case
+                         // --- NEW FIX: Handle activation from BasicWaitForCashierState ---
+                         if (savedStateEnum != null && savedStateEnum.Equals(BasicState.BasicWaitForCashier))
+                         {
+                              Debug.Log($"PROXIMITY {tiData.Id}: Saved state is BasicWaitForCashier. Checking live queue/register status.", npcObject);
+                              handledActivationBySavedState = true; // We are handling this specific case
 
-                           // Check register occupancy
-                           if (customerManager.IsRegisterOccupied() == false)
-                           {
-                                // Register is free, go straight there
-                                Debug.Log($"PROXIMITY {tiData.Id}: Register is free. Activating to MovingToRegister state.", npcObject);
-                                startingActiveStateEnum = CustomerState.MovingToRegister;
-                                // Clear simulation data as active state takes over
-                                tiData.simulatedTargetPosition = null;
-                                tiData.simulatedStateTimer = 0f;
-                           }
-                           else
-                           {
-                                // Register is busy, try to join the main queue
-                                Debug.Log($"PROXIMITY {tiData.Id}: Register is busy. Attempting to join main queue.", npcObject);
+                              // Check register occupancy
+                              if (customerManager.IsRegisterOccupied() == false)
+                              {
+                                   // Register is free, go straight there
+                                   Debug.Log($"PROXIMITY {tiData.Id}: Register is free. Activating to MovingToRegister state.", npcObject);
+                                   startingActiveStateEnum = CustomerState.MovingToRegister;
+                                   // Clear simulation data as active state takes over
+                                   tiData.simulatedTargetPosition = null;
+                                   tiData.simulatedStateTimer = 0f;
+                              }
+                              else
+                              {
+                                   // Register is busy, try to join the main queue
+                                   Debug.Log($"PROXIMITY {tiData.Id}: Register is busy. Attempting to join main queue.", npcObject);
 
-                                // Need the Runner's QueueHandler to configure it *before* the state transition
-                                NpcQueueHandler queueHandler = runner.QueueHandler; // Get handler reference
-                                if (queueHandler != null)
-                                {
-                                     Transform assignedSpotTransform;
-                                     int assignedSpotIndex;
+                                   // Need the Runner's QueueHandler to configure it *before* the state transition
+                                   NpcQueueHandler queueHandler = runner.QueueHandler; // Get handler reference
+                                   if (queueHandler != null)
+                                   {
+                                        Transform assignedSpotTransform;
+                                        int assignedSpotIndex;
 
-                                     if (customerManager.TryJoinQueue(runner, out assignedSpotTransform, out assignedSpotIndex))
-                                     {
-                                         // Successfully joined queue, setup the handler and transition to Queue state
-                                         Debug.Log($"PROXIMITY {tiData.Id}: Successfully joined main queue at spot {assignedSpotIndex}. Activating to Queue state.", npcObject);
-                                         // Use the new SetupQueueSpot method to configure the handler and runner target
-                                         queueHandler.SetupQueueSpot(assignedSpotTransform, assignedSpotIndex, QueueType.Main);
-                                         startingActiveStateEnum = CustomerState.Queue;
-                                         // Clear simulation data as active state takes over
-                                         tiData.simulatedTargetPosition = null;
-                                         tiData.simulatedStateTimer = 0f;
+                                        if (customerManager.TryJoinQueue(runner, out assignedSpotTransform, out assignedSpotIndex))
+                                        {
+                                             // Successfully joined queue, setup the handler and transition to Queue state
+                                             Debug.Log($"PROXIMITY {tiData.Id}: Successfully joined main queue at spot {assignedSpotIndex}. Activating to Queue state.", npcObject);
+                                             // Use the new SetupQueueSpot method to configure the handler and runner target
+                                             queueHandler.SetupQueueSpot(assignedSpotTransform, assignedSpotIndex, QueueType.Main);
+                                             startingActiveStateEnum = CustomerState.Queue;
+                                             // Clear simulation data as active state takes over
+                                             tiData.simulatedTargetPosition = null;
+                                             tiData.simulatedStateTimer = 0f;
 
-                                     }
-                                     else
-                                     {
-                                         // Main queue is full, cannot be a customer right now
-                                         Debug.Log($"PROXIMITY {tiData.Id}: Main queue is full. Cannot join. Activating to Exiting state.", npcObject);
-                                         startingActiveStateEnum = CustomerState.Exiting; // Give up on shopping
-                                         // Clear simulation data as active state takes over
-                                         tiData.simulatedTargetPosition = null;
-                                         tiData.simulatedStateTimer = 0f;
-                                     }
-                                }
-                                else
-                                {
-                                     // QueueHandler missing - critical error for queue state
-                                     Debug.LogError($"PROXIMITY {tiData.Id}: Runner is missing NpcQueueHandler component during BasicWaitForCashier activation! Cannot handle queue logic. Activating to Exiting as fallback.", npcObject);
-                                     startingActiveStateEnum = CustomerState.Exiting; // Fallback
-                                     // Clear simulation data
-                                     tiData.simulatedTargetPosition = null;
-                                     tiData.simulatedStateTimer = 0f;
-                                }
-                           }
-                       }
+                                        }
+                                        else
+                                        {
+                                             // Main queue is full, cannot be a customer right now
+                                             Debug.Log($"PROXIMITY {tiData.Id}: Main queue is full. Cannot join. Activating to Exiting state.", npcObject);
+                                             startingActiveStateEnum = CustomerState.Exiting; // Give up on shopping
+                                                                                              // Clear simulation data as active state takes over
+                                             tiData.simulatedTargetPosition = null;
+                                             tiData.simulatedStateTimer = 0f;
+                                        }
+                                   }
+                                   else
+                                   {
+                                        // QueueHandler missing - critical error for queue state
+                                        Debug.LogError($"PROXIMITY {tiData.Id}: Runner is missing NpcQueueHandler component during BasicWaitForCashier activation! Cannot handle queue logic. Activating to Exiting as fallback.", npcObject);
+                                        startingActiveStateEnum = CustomerState.Exiting; // Fallback
+                                                                                         // Clear simulation data
+                                        tiData.simulatedTargetPosition = null;
+                                        tiData.simulatedStateTimer = 0f;
+                                   }
+                              }
+                         }
                          // --- END NEW FIX ---
-                       
-                                             // --- Handle activation from BasicBrowseState (NEW FIX) ---
+
+                         // --- Handle activation from BasicBrowseState ---
                          else if (savedStateEnum != null && savedStateEnum.Equals(BasicState.BasicBrowse))
                          {
                               Debug.Log($"PROXIMITY {tiData.Id}: Saved state is BasicBrowse. Getting a new browse location from CustomerManager.", npcObject);
@@ -758,7 +758,14 @@ namespace Game.NPC.TI // Keep in the TI namespace
                          }
                          // --- END BasicBrowseState handling ---
 
-                       // --- Existing Logic (for states OTHER THAN BasicWaitForCashier) ---
+                         else if (savedStateEnum != null && savedStateEnum.Equals(BasicState.BasicPatrol))
+                         {
+                              Debug.Log($"PROXIMITY {tiData.Id}: Saved state is BasicPatrol. Continuing with PatrolstateSO's destination.", npcObject);
+                              handledActivationBySavedState = true; // We are handling this specific case
+                              startingActiveStateEnum = GetActiveStateFromBasicState(savedStateEnum);
+                         }
+
+                         // --- Existing Logic (for states OTHER THAN BasicWaitForCashier) ---
                          if (!handledActivationBySavedState) // Only run this if the BasicWaitForCashier case was NOT handled
                          {
                               if (savedStateEnum != null && basicNpcStateManager.IsBasicState(savedStateEnum))
@@ -766,11 +773,9 @@ namespace Game.NPC.TI // Keep in the TI namespace
                                    // If the saved state is a BasicState (but NOT BasicWaitForCashier), map it to the corresponding Active State
                                    startingActiveStateEnum = GetActiveStateFromBasicState(savedStateEnum);
                                    Debug.Log($"PROXIMITY {tiData.Id}: Saved state '{savedStateEnum.GetType().Name}.{savedStateEnum.ToString()}' is a Basic State. Mapping to Active State '{startingActiveStateEnum?.GetType().Name}.{startingActiveStateEnum?.ToString() ?? "NULL"}'.", npcObject);
-
                                    // Reset simulation data when transitioning from simulation to active
                                    tiData.simulatedTargetPosition = null; // Clear simulated target
                                    tiData.simulatedStateTimer = 0f; // Reset timer on activation
-
                               }
                               else if (savedStateEnum != null)
                               {
@@ -780,8 +785,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
                                    Debug.Log($"PROXIMITY {tiData.Id}: Saved state '{savedStateEnum.GetType().Name}.{savedStateEnum.ToString()}' is NOT a Basic State. Attempting to use as Active starting state.", npcObject);
                                    // Clear existing simulation data anyway as it's old simulation data.
                                    tiData.simulatedTargetPosition = null;
-                                   tiData.simulatedStateTimer = 0f;
-                              }
+                                   tiData.simulatedStateTimer = 0f;                                   }
                               else
                               {
                                    // If no state was saved, or mapping failed, startingActiveStateEnum remains null.
@@ -792,13 +796,13 @@ namespace Game.NPC.TI // Keep in the TI namespace
                                    tiData.simulatedStateTimer = 0f;
                               }
                          }
-                       // --- END Existing Logic ---
+                         // --- END Existing Logic ---
 
-                       // Call the Runner's Activate method with the determined starting state override
-                       // If startingActiveStateEnum is null, Runner.Activate will use GetPrimaryStartingStateSO().
-                       runner.Activate(tiData, customerManager, startingActiveStateEnum); // <-- Pass determined override state Enum
+                         // Call the Runner's Activate method with the determined starting state override
+                         // If startingActiveStateEnum is null, Runner.Activate will use GetPrimaryStartingStateSO().
+                         runner.Activate(tiData, customerManager, startingActiveStateEnum); // <-- Pass determined override state Enum
 
-                       Debug.Log($"PROXIMITY TiNpcManager: Activation initiated for TI NPC '{tiData.Id}' (GameObject '{npcObject.name}'). Runner.Activate called with override state: {startingActiveStateEnum?.GetType().Name}.{startingActiveStateEnum?.ToString() ?? "NULL"}");
+                         Debug.Log($"PROXIMITY TiNpcManager: Activation initiated for TI NPC '{tiData.Id}' (GameObject '{npcObject.name}'). Runner.Activate called with override state: {startingActiveStateEnum?.GetType().Name}.{startingActiveStateEnum?.ToString() ?? "NULL"}");
 
                    }
                    else
