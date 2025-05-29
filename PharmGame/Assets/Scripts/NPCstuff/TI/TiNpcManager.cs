@@ -1,6 +1,7 @@
+// --- START OF FILE TiNpcManager.cs ---
+
 using UnityEngine;
 using System.Collections.Generic;
-using Game.NPC.TI; // Needed for TiNpcData
 using System.Linq; // Needed for LINQ (Where, FirstOrDefault)
 using Game.NPC; // Needed for NpcStateMachineRunner, GeneralState, CustomerState enums
 using Game.NPC.States; // Needed for State SOs (to check HandledState)
@@ -11,6 +12,8 @@ using System; // Needed for Enum and Type
 using Game.NPC.Types; // Needed for TestState enum (Patrol)
 using CustomerManagement; // Needed for CustomerManager
 using Game.NPC.Handlers;
+using Game.Spatial; // Needed for GridManager
+using Game.Proximity; // Needed for ProximityManager
 
 namespace Game.NPC.TI // Keep in the TI namespace
 {
@@ -18,7 +21,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
     /// Manages the persistent data for True Identity (TI) NPCs.
     /// Handles loading, storing, and tracking TI NPC data independent of their GameObjects.
     /// Implements off-screen simulation logic (delegating to BasicNpcStateManager)
-    /// and proximity-based activation/deactivation.
+    /// and provides methods for ProximityManager to trigger activation/deactivation.
     /// Uses a single collection of data records and filters on the fly.
     /// </summary>
     public class TiNpcManager : MonoBehaviour
@@ -31,29 +34,25 @@ namespace Game.NPC.TI // Keep in the TI namespace
         [SerializeField] private CustomerManagement.CustomerManager customerManager; // Need link for activation (e.g., for TryJoinQueue)
          [Tooltip("Reference to the PoolingManager instance in the scene.")]
         [SerializeField] private PoolingManager poolingManager; // Assign PoolingManager directly
-         [Tooltip("Reference to the Player's Transform for proximity checks.")]
-        [SerializeField] private Transform playerTransform; // Assign Player Transform
+         [Tooltip("Reference to the Player's Transform for simulation logic that might need player position.")] // Updated tooltip
+        [SerializeField] private Transform playerTransform;
         // Reference to BasicNpcStateManager (will be obtained in Awake/Start)
-        private BasicNpcStateManager basicNpcStateManager; // <-- NEW Reference
+        private BasicNpcStateManager basicNpcStateManager;
+        // Reference to GridManager (will be obtained in Awake/Start)
+        private GridManager gridManager;
+        // Reference to ProximityManager (will be obtained in Awake/Start)
+        private ProximityManager proximityManager;
+
 
         [Header("TI NPC Setup")]
         [Tooltip("List of NPC prefabs that this manager can pool and activate for TI NPCs.")]
         [SerializeField] private List<GameObject> tiNpcPrefabs;
 
-        [Header("Simulation Settings (Phase 4)")]
+        [Header("Simulation Settings")] // Renamed header slightly
         [Tooltip("The interval (in seconds) between simulation ticks for inactive NPCs.")]
         [SerializeField] private float simulationTickInterval = 0.1f; // Process a batch every 0.1 seconds (10 Hz)
         [Tooltip("The maximum number of inactive NPCs to simulate per tick.")]
         [SerializeField] private int maxNpcsToSimulatePerTick = 10; // Process 10 NPCs per tick
-
-
-        [Header("Proximity Activation Settings (Phase 4)")]
-        [Tooltip("The radius around the player within which inactive NPCs should be activated.")]
-        [SerializeField] private float activationRadius = 20f; // Distance to activate
-        [Tooltip("The radius around the player outside of which active NPCs should be deactivated.")]
-        [SerializeField] private float deactivationRadius = 25f; // Distance to deactivate (should be > activationRadius)
-        [Tooltip("The interval (in seconds) to check proximity for activation/deactivation.")]
-        [SerializeField] private float proximityCheckInterval = 1.0f; // Check proximity every second
 
 
         [Header("Dummy Data Loading (Phase 1 Test)")]
@@ -83,19 +82,19 @@ namespace Game.NPC.TI // Keep in the TI namespace
 
         // --- Persistent Data Storage ---
         // Use a single dictionary as the source of truth for all TI NPC data
-        private Dictionary<string, TiNpcData> allTiNpcs = new Dictionary<string, TiNpcData>();
+        internal Dictionary<string, TiNpcData> allTiNpcs = new Dictionary<string, TiNpcData>();
 
         // Internal index for round-robin simulation batching
         private int simulationIndex = 0;
 
          // Coroutine references
          private Coroutine simulationCoroutine;
-         private Coroutine proximityCheckCoroutine;
+         // Removed proximityCheckCoroutine - ProximityManager handles this
 
-        // --- State Mapping Dictionaries (NEW) ---
+
+        // --- State Mapping Dictionaries ---
         private Dictionary<Enum, Enum> activeToBaseStateMap;
         private Dictionary<Enum, Enum> basicToActiveStateMap;
-        // --- END NEW ---
 
 
         private void Awake()
@@ -114,7 +113,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
             }
 
             // Setup State Mappings
-            SetupStateMappings(); // <-- Call mapping setup
+            SetupStateMappings();
 
             Debug.Log("TiNpcManager: Awake completed.");
         }
@@ -143,28 +142,38 @@ namespace Game.NPC.TI // Keep in the TI namespace
                   Debug.LogError("TiNpcManager: CustomerManager instance not found or not assigned! TI NPCs cannot activate into customer roles. Assign in Inspector or ensure it's a functioning Singleton.", this);
               }
 
-             // Get reference to BasicNpcStateManager (NEW)
-             basicNpcStateManager = BasicNpcStateManager.Instance; // <-- Get manager instance
+             // Get reference to BasicNpcStateManager
+             basicNpcStateManager = BasicNpcStateManager.Instance;
              if (basicNpcStateManager == null)
              {
                   Debug.LogError("TiNpcManager: BasicNpcStateManager instance not found! Cannot simulate inactive TI NPCs. Ensure BasicNpcStateManager is in the scene.", this);
                   // Do NOT disable manager entirely, just simulation won't work.
              }
 
+             // Get reference to GridManager
+             gridManager = GridManager.Instance;
+             if (gridManager == null)
+             {
+                  Debug.LogError("TiNpcManager: GridManager instance not found! Cannot use spatial partitioning. Ensure GridManager is in the scene.", this);
+                  // Do NOT disable manager entirely, just simulation/proximity will be inefficient/broken.
+             }
 
-             // Validate Player Transform
+             // Get reference to ProximityManager
+             proximityManager = ProximityManager.Instance;
+             if (proximityManager == null)
+             {
+                  Debug.LogError("TiNpcManager: ProximityManager instance not found! Cannot manage NPC activation/deactivation based on proximity. Ensure ProximityManager is in the scene.", this);
+                  // Do NOT disable manager entirely, but NPCs won't activate/deactivate.
+             }
+
+
+             // Validate Player Transform - Still needed for simulation logic that might use player position
              if (playerTransform == null)
              {
                   // Attempt to find Player by tag if not assigned
                   GameObject playerGO = GameObject.FindGameObjectWithTag("Player"); // Assumes Player has "Player" tag
                   if (playerGO != null) playerTransform = playerGO.transform;
-                  else Debug.LogError("TiNpcManager: Player Transform not assigned and GameObject with tag 'Player' not found! Proximity checks will not work.", this);
-             }
-             // Validate activation/deactivation radii
-             if (activationRadius >= deactivationRadius)
-             {
-                 Debug.LogWarning("TiNpcManager: Activation Radius should be smaller than Deactivation Radius for proper hysteresis. Setting deactivationRadius to activationRadius + 1.", this);
-                 deactivationRadius = activationRadius + 1f;
+                  else Debug.LogWarning("TiNpcManager: Player Transform not assigned and GameObject with tag 'Player' not found! Simulation logic that depends on player position may fail.", this); // Changed to Warning
              }
 
 
@@ -183,42 +192,27 @@ namespace Game.NPC.TI // Keep in the TI namespace
 
              Debug.Log($"TiNpcManager: Start completed.");
 
-            // Start the simulation loop if BasicNpcStateManager is available
-             if (basicNpcStateManager != null)
+            // Start the simulation loop if BasicNpcStateManager and GridManager are available
+             if (basicNpcStateManager != null && gridManager != null && playerTransform != null) // Simulation needs player position for query
              {
                 simulationCoroutine = StartCoroutine(SimulateInactiveNpcsRoutine());
                 Debug.Log("TiNpcManager: Simulation coroutine started.");
              } else {
-                  Debug.LogWarning("TiNpcManager: BasicNpcStateManager is null, cannot start simulation coroutine.");
+                  Debug.LogWarning("TiNpcManager: BasicNpcStateManager, GridManager, or Player Transform is null. Cannot start simulation coroutine."); // Updated log
              }
 
-
-            // Start the proximity check coroutine
-             if (playerTransform != null)
-             {
-                proximityCheckCoroutine = StartCoroutine(ProximityCheckRoutine());
-                Debug.Log("TiNpcManager: Proximity check coroutine started.");
-             }
-             else
-             {
-                  Debug.LogWarning("TiNpcManager: Player Transform is null, cannot start proximity checks.");
-             }
+            // Removed starting ProximityCheckRoutine - ProximityManager handles this
         }
 
         private void OnEnable()
         {
-             // Restart simulation coroutine if manager was disabled and re-enabled AND the basic manager exists
-             if (simulationCoroutine == null && allTiNpcs.Count > 0 && basicNpcStateManager != null)
+             // Restart simulation coroutine if manager was disabled and re-enabled AND dependencies exist
+             if (simulationCoroutine == null && allTiNpcs.Count > 0 && basicNpcStateManager != null && gridManager != null && playerTransform != null) // Added dependencies
              {
                   Debug.Log("TiNpcManager: Restarting simulation coroutine on OnEnable.");
                   simulationCoroutine = StartCoroutine(SimulateInactiveNpcsRoutine());
              }
-             // Restart proximity check coroutine if needed
-             if (proximityCheckCoroutine == null && playerTransform != null)
-             {
-                  Debug.Log("TiNpcManager: Restarting proximity check coroutine on OnEnable.");
-                  proximityCheckCoroutine = StartCoroutine(ProximityCheckRoutine());
-             }
+             // Removed restarting proximityCheckCoroutine
         }
 
         private void OnDisable()
@@ -230,13 +224,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
                   StopCoroutine(simulationCoroutine);
                   simulationCoroutine = null;
              }
-             // Stop proximity check coroutine
-             if (proximityCheckCoroutine != null)
-             {
-                  Debug.Log("TiNpcManager: Stopping proximity check coroutine on OnDisable.");
-                  StopCoroutine(proximityCheckCoroutine);
-                  proximityCheckCoroutine = null;
-             }
+             // Removed stopping proximityCheckCoroutine
         }
 
         private void OnDestroy()
@@ -245,8 +233,10 @@ namespace Game.NPC.TI // Keep in the TI namespace
             {
                 // TODO: In a real game, save all TiNpcData here before clearing.
                 allTiNpcs.Clear();
+                // Clear the grid as well
+                gridManager?.ClearGrid();
                 Instance = null;
-                 Debug.Log("TiNpcManager: OnDestroy completed. Data cleared.");
+                 Debug.Log("TiNpcManager: OnDestroy completed. Data and Grid cleared.");
             }
         }
 
@@ -369,7 +359,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
 
 
         /// <summary>
-        /// The low-tick simulation routine. Iterates over all TI NPC data but only simulates inactive ones in batches,
+        /// The low-tick simulation routine. Iterates over inactive NPCs found near the player via the grid,
         /// delegating simulation logic to the BasicNpcStateManager.
         /// </summary>
         private IEnumerator SimulateInactiveNpcsRoutine()
@@ -378,16 +368,39 @@ namespace Game.NPC.TI // Keep in the TI namespace
              {
                   yield return new WaitForSeconds(simulationTickInterval);
 
-                  if (allTiNpcs.Count == 0) // Check total count now
+                  if (basicNpcStateManager == null)
                   {
-                       yield return new WaitForSeconds(simulationTickInterval * 5); // Wait a bit longer if empty
+                       Debug.LogError("SIM TiNpcManager: BasicNpcStateManager is null! Cannot simulate inactive NPCs.", this);
+                       yield return new WaitForSeconds(simulationTickInterval * 5);
                        continue;
                   }
+                   if (gridManager == null)
+                   {
+                       Debug.LogError("SIM TiNpcManager: GridManager is null! Cannot efficiently find inactive NPCs for simulation.", this);
+                       yield return new WaitForSeconds(simulationTickInterval * 5); // Cannot simulate efficiently without grid
+                       continue;
+                   }
+                   if (playerTransform == null)
+                   {
+                       Debug.LogError("SIM TiNpcManager: Player Transform is null! Cannot query grid for simulation batch.", this);
+                       yield return new WaitForSeconds(simulationTickInterval * 5);
+                       continue;
+                   }
 
-                  // Get a list of inactive NPCs to process this tick (efficiently using LINQ)
-                  List<TiNpcData> inactiveBatch = allTiNpcs.Values
-                      .Where(data => !data.IsActiveGameObject) // Filter for inactive ones
-                       .ToList(); // Convert to a list of *all* inactive NPCs
+
+                  // --- Use GridManager to find inactive NPCs near the player ---
+                  // We simulate inactive NPCs that are *not* near enough to be activated,
+                  // but still potentially within a larger simulation radius if needed.
+                  // ProximityManager will define the exact radius for 'Far' NPCs.
+                  // Using ProximityManager's farRadius + cellSize for the query radius.
+                  float simulationQueryRadius = (proximityManager != null ? proximityManager.farRadius : 30f) + (gridManager != null ? gridManager.cellSize : 5f); // Query slightly beyond far radius
+
+                  List<TiNpcData> potentialSimulationBatch = gridManager.QueryItemsInRadius(playerTransform.position, simulationQueryRadius);
+
+                  // Filter for only inactive NPCs from the queried list
+                  List<TiNpcData> inactiveBatch = potentialSimulationBatch.Where(data => !data.IsActiveGameObject).ToList();
+                  // --- END NEW ---
+
 
                    int totalInactiveCount = inactiveBatch.Count;
 
@@ -432,30 +445,9 @@ namespace Game.NPC.TI // Keep in the TI namespace
                            continue; // Skip simulation logic for this NPC
                        }
 
-                       // --- DELEGATE SIMULATION TO BASICNPCSTATEMANAGER (NEW) ---
-                       if (basicNpcStateManager != null)
-                       {
-                            // Ensure the data's current state is a BasicState before simulating.
-                            // This should be set during deactivation, but defensive check/fallback.
-                            if (npcData.CurrentStateEnum == null || !basicNpcStateManager.IsBasicState(npcData.CurrentStateEnum))
-                            {
-                                 Debug.LogWarning($"SIM TiNpcManager: NPC '{npcData.Id}' is inactive but its state '{npcData.CurrentStateEnum?.GetType().Name}.{npcData.CurrentStateEnum?.ToString() ?? "NULL"}' is not a BasicState (or null)! Assuming BasicPatrol and re-initializingsimulation state.", npcData.NpcGameObject);
-                                 // Force a transition to BasicPatrol as a fallback if state is not a BasicState or is null
-                                 basicNpcStateManager.TransitionToBasicState(npcData, BasicState.BasicPatrol);
-                                 // The transition calls OnEnter for the new state. We don't need to call SimulateTick again in this same tick,
-                                 // the next tick will handle it.
-                                 // basicNpcStateManager.SimulateTickForNpc(npcData, simulationTickInterval); // REMOVED - avoids potential double simulation in one tick
-                            } else {
-                                // State is valid BasicState, simulate normally
-                                basicNpcStateManager.SimulateTickForNpc(npcData, simulationTickInterval);
-                            }
-                       }
-                       else
-                       {
-                            Debug.LogError("SIM TiNpcManager: BasicNpcStateManager is null! Cannot simulate inactive NPCs.", this);
-                            // Break out of the foreach loop if manager is null to avoid repeated errors
-                            break;
-                       }
+                       // --- DELEGATE SIMULATION TO BASICNPCSTATEMANAGER ---
+                       // BasicNpcStateManager will handle calling GridManager.UpdateItemPosition after simulation tick
+                       basicNpcStateManager.SimulateTickForNpc(npcData, simulationTickInterval);
                        // --- END DELEGATION ---
 
                        countProcessedThisTick++;
@@ -465,170 +457,29 @@ namespace Game.NPC.TI // Keep in the TI namespace
                   // This must be done *after* iterating the batch.
                   simulationIndex += batchSize;
 
-                  // The simulation index should now wrap based on the total number of *inactive* NPCs,
-                  // NOT the total number of all NPCs. Recalculate total inactive count.
-                   totalInactiveCount = allTiNpcs.Values.Count(data => !data.IsActiveGameObject);
+                  // The simulation index should now wrap based on the total number of *inactive* NPCs found in the query,
+                  // NOT the total number of all NPCs. Recalculate total inactive count from the queried list.
+                   totalInactiveCount = inactiveBatch.Count; // Use the count from the list queried this tick
                   if (totalInactiveCount > 0) // Avoid division by zero or wrapping when list is empty
                   {
                       simulationIndex %= totalInactiveCount;
                   } else {
-                       simulationIndex = 0; // Reset if no inactive NPCs left
+                       simulationIndex = 0; // Reset if no inactive NPCs left in the query area
                   }
 
                   // Log simulation tick summary (Optional, can be noisy)
-                  // Debug.Log($"SIM TiNpcManager: Simulated {countProcessedThisTick} inactive NPCs this tick. Total inactive: {totalInactiveCount}. Next batch starts at index {simulationIndex}.");
+                  // Debug.Log($"SIM TiNpcManager: Simulated {countProcessedThisTick} inactive NPCs this tick. Total inactive in query area: {totalInactiveCount}. Next batch starts at index {simulationIndex}.");
              }
         }
-
-
-        /// <summary>
-        /// Proximity check routine. Iterates over all TI NPC data and triggers activation/deactivation.
-        /// </summary>
-         private IEnumerator ProximityCheckRoutine()
-         {
-              while (true) // Loop indefinitely
-              {
-                   yield return new WaitForSeconds(proximityCheckInterval);
-
-                   if (playerTransform == null)
-                   {
-                        Debug.LogWarning("TiNpcManager: Player Transform is null, skipping proximity checks.");
-                        yield return new WaitForSeconds(proximityCheckInterval * 5); // Wait longer if player is missing
-                        continue; // Skip check logic
-                   }
-
-                   if (basicNpcStateManager == null) // Added check for basic manager
-                   {
-                       Debug.LogError("TiNpcManager: BasicNpcStateManager is null. Cannot perform TI NPC deactivation/activation checks that require state mapping/initialization.", this);
-                       yield return new WaitForSeconds(proximityCheckInterval * 5);
-                       continue; // Cannot proceed without basic manager
-                   }
-
-                   Vector3 playerPosition = playerTransform.position;
-
-                   // Create lists of data to process (avoid modifying collection while iterating)
-                   List<TiNpcData> toActivate = new List<TiNpcData>();
-                   List<TiNpcData> potentiallyToDeactivate = new List<TiNpcData>(); // Collect active NPCs to check
-
-                   // --- Populate lists ---
-                   foreach (var tiData in allTiNpcs.Values)
-                   {
-                       if (!tiData.IsActiveGameObject && tiData.NpcGameObject == null) // Genuinely inactive
-                       {
-                           float distanceSq = (tiData.CurrentWorldPosition - playerPosition).sqrMagnitude; // Use data position for inactive
-                           if (distanceSq <= activationRadius * activationRadius)
-                           {
-                                Debug.Log($"PROXIMITY {tiData.Id}: Inactive NPC within activation radius ({Mathf.Sqrt(distanceSq):F2}m). Adding to activation list.");
-                                toActivate.Add(tiData);
-                           }
-                       }
-                       else if (tiData.IsActiveGameObject && tiData.NpcGameObject != null) // Genuinely active
-                       {
-                            potentiallyToDeactivate.Add(tiData);
-                       } else {
-                           // Inconsistent state (IsActiveGameObject true but NpcGameObject null, or vice versa)
-                           Debug.LogError($"TiNpcManager: Inconsistent state for TI NPC '{tiData.Id}'. IsActiveGameObject={tiData.IsActiveGameObject}, NpcGameObject={(tiData.NpcGameObject != null ? tiData.NpcGameObject.name : "NULL")}. Forcing cleanup.", tiData.NpcGameObject);
-                           // Attempt to force cleanup - unlink data, potentially destroy object if still exists
-                           if (tiData.NpcGameObject != null) Destroy(tiData.NpcGameObject);
-                           tiData.UnlinkGameObject();
-                       }
-                   }
-
-                   // --- Process Activation List ---
-                   if (toActivate.Count > 0)
-                   {
-                       Debug.Log($"PROXIMITY TiNpcManager: Found {toActivate.Count} NPCs to activate this tick. Activating now...");
-                        foreach (var tiData in toActivate)
-                       {
-                            ActivateTiNpc(tiData); // Call the activation method
-                       }
-                   }
-
-                   // --- Process Deactivation List ---
-                   foreach (var tiData in potentiallyToDeactivate) // Iterate over the collected list
-                   {
-                        // Re-check if it's still active and has a GameObject link (defensive)
-                        if (tiData.IsActiveGameObject && tiData.NpcGameObject != null)
-                        {
-                           float distanceSq = (tiData.NpcGameObject.transform.position - playerPosition).sqrMagnitude; // Use GameObject position for active
-                           if (distanceSq >= deactivationRadius * deactivationRadius)
-                           {
-                                NpcStateMachineRunner runner = tiData.NpcGameObject.GetComponent<NpcStateMachineRunner>();
-                                if (runner != null)
-                                {
-                                     NpcStateSO currentStateSO = runner.GetCurrentState();
-                                     // Check if the NPC is in a state that should prevent deactivation (e.g., Combat, Transaction)
-                                     // If the current state is NOT interruptible, we skip deactivation for this tick.
-                                     if (currentStateSO != null && !currentStateSO.IsInterruptible)
-                                     {
-                                          Debug.Log($"PROXIMITY {tiData.Id}: Deactivation check skipped. Current state '{currentStateSO.name}' is not interruptible.");
-                                          continue; // Skip deactivation attempt for this NPC this tick
-                                     }
-
-                                     // --- Determine and Save the Basic State before triggering Pooling ---
-                                     Enum currentActiveState = currentStateSO?.HandledState; // Get the enum key of the current active state
-                                     Enum targetBasicState = GetBasicStateFromActiveState(currentActiveState); // Map to the corresponding basic state
-
-                                     if (targetBasicState != null)
-                                     {
-                                         // Save the determined Basic State to the TiNpcData
-                                          tiData.SetCurrentState(targetBasicState);
-                                          Debug.Log($"PROXIMITY {tiData.Id}: Active state '{currentActiveState?.GetType().Name}.{currentActiveState?.ToString() ?? "NULL"}' maps to Basic State '{targetBasicState.GetType().Name}.{targetBasicState.ToString()}'. Saving this state to TiData.");
-
-                                         // --- NEW FIX: Call OnEnter for the target Basic State to initialize simulation data ---
-                                         BasicNpcStateSO targetBasicStateSO = basicNpcStateManager.GetBasicStateSO(targetBasicState);
-                                         if(targetBasicStateSO != null)
-                                         {
-                                             Debug.Log($"PROXIMITY {tiData.Id}: Calling OnEnter for Basic State '{targetBasicStateSO.name}' to initialize simulation data.");
-                                             targetBasicStateSO.OnEnter(tiData, basicNpcStateManager); // Pass the data and the manager
-                                         } else
-                                         {
-                                             // This shouldn't happen if mapping and GetBasicStateSO work, but defensive
-                                             Debug.LogError($"PROXIMITY {tiData.Id}: Could not get target Basic State SO for '{targetBasicState.GetType().Name}.{targetBasicState.ToString()}' during deactivation. Cannot initialize simulation state data!", tiData.NpcGameObject);
-                                             // Data might be left in a bad state, but proceed with pooling.
-                                         }
-                                         // --- END NEW FIX ---
-
-
-                                         // --- Trigger Deactivation Flow ---
-                                         Debug.Log($"PROXIMITY {tiData.Id}: TI NPC outside deactivation radius ({Mathf.Sqrt(distanceSq):F2}m). State is interruptible or null. Triggering TransitionToState(ReturningToPool).");
-                                         // Transition the Runner to the ReturningToPool state.
-                                         // The Runner.TransitionToState handles calling Runner.Deactivate() *before* entering the state.
-                                         // Runner.Deactivate() will now save the *Basic State* we just set on tiData, and position/rotation.
-                                         // HandleTiNpcReturnToPool will be called later by the pooling event, clearing data link/flag.
-                                         runner.TransitionToState(runner.GetStateSO(GeneralState.ReturningToPool));
-                                         // --- END Trigger ---
-
-                                     }
-                                     else
-                                     {
-                                         // This shouldn't happen if GetBasicStateFromActiveState has a fallback, but defensive.
-                                         Debug.LogError($"PROXIMITY {tiData.Id}: Could not determine a Basic State mapping for active state '{currentActiveState?.GetType().Name}.{currentActiveState?.ToString() ?? "NULL"}'. Cannot save state for simulation! Forcing cleanup.", tiData.NpcGameObject);
-                                          // Fallback: Destroy the GameObject and unlink the data without attempting to save a simulation state
-                                          Destroy(tiData.NpcGameObject);
-                                          tiData.UnlinkGameObject();
-                                     }
-                                }
-                                else
-                                {
-                                     Debug.LogError($"TiNpcManager: Active TI NPC '{tiData.Id}' GameObject '{tiData.NpcGameObject?.name ?? "NULL"}' missing Runner! Inconsistency detected. Forcing cleanup.", tiData.NpcGameObject);
-                                      Destroy(tiData.NpcGameObject); // Destroy the GameObject
-                                      tiData.UnlinkGameObject(); // Use helper to clear data link and flags
-                                }
-                           }
-                        }
-                   }
-              }
-         }
-        // --- END ProximityCheckRoutine ---
 
 
          /// <summary>
          /// Handles the process of activating a single TI NPC.
          /// Gets a pooled GameObject and calls the Runner's Activate method.
+         /// Called by ProximityManager.
          /// </summary>
          /// <param name="tiData">The persistent data of the NPC to activate.</param>
-         private void ActivateTiNpc(TiNpcData tiData)
+         public void RequestActivateTiNpc(TiNpcData tiData) // <-- NEW Public Method
          {
                // Check if it's genuinely inactive before proceeding
               if (tiData == null || tiData.IsActiveGameObject || tiData.NpcGameObject != null)
@@ -637,9 +488,9 @@ namespace Game.NPC.TI // Keep in the TI namespace
                    return; // Already active or invalid
               }
 
-              if (tiNpcPrefabs == null || tiNpcPrefabs.Count == 0 || poolingManager == null || customerManager == null || basicNpcStateManager == null) // Added basicNpcStateManager check
+              if (tiNpcPrefabs == null || tiNpcPrefabs.Count == 0 || poolingManager == null || customerManager == null || basicNpcStateManager == null || gridManager == null) // Added gridManager check
               {
-                   Debug.LogError("TiNpcManager: Cannot activate TI NPC. TI Prefabs list, PoolingManager, CustomerManager, or BasicNpcStateManager is null.", this);
+                   Debug.LogError("TiNpcManager: Cannot activate TI NPC. Required manager (TI Prefabs list, PoolingManager, CustomerManager, BasicNpcStateManager, or GridManager) is null.", this); // Updated log
                    return;
               }
 
@@ -662,7 +513,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
                        Enum startingActiveStateEnum = null; // The active state we will transition to
                        bool handledActivationBySavedState = false; // Flag to know if we used the specific logic below
 
-                         // --- NEW FIX: Handle activation from BasicWaitForCashierState ---
+                         // --- Handle activation from BasicWaitForCashierState ---
                          if (savedStateEnum != null && savedStateEnum.Equals(BasicState.BasicWaitForCashier))
                          {
                               Debug.Log($"PROXIMITY {tiData.Id}: Saved state is BasicWaitForCashier. Checking live queue/register status.", npcObject);
@@ -723,7 +574,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
                                    }
                               }
                          }
-                         // --- END NEW FIX ---
+                         // --- END Handle activation from BasicWaitForCashierState ---
 
                          // --- Handle activation from BasicBrowseState ---
                          else if (savedStateEnum != null && savedStateEnum.Equals(BasicState.BasicBrowse))
@@ -765,14 +616,14 @@ namespace Game.NPC.TI // Keep in the TI namespace
                               startingActiveStateEnum = GetActiveStateFromBasicState(savedStateEnum);
                          }
 
-                         // --- Existing Logic (for states OTHER THAN BasicWaitForCashier) ---
-                         if (!handledActivationBySavedState) // Only run this if the BasicWaitForCashier case was NOT handled
+                         // --- Existing Logic (for states OTHER THAN BasicWaitForCashier and BasicBrowse) ---
+                         if (!handledActivationBySavedState) // Only run this if the specific BasicState cases were NOT handled
                          {
                               if (savedStateEnum != null && basicNpcStateManager.IsBasicState(savedStateEnum))
                               {
-                                   // If the saved state is a BasicState (but NOT BasicWaitForCashier), map it to the corresponding Active State
+                                   // If the saved state is a BasicState (but NOT the special cases), map it to the corresponding Active State
                                    startingActiveStateEnum = GetActiveStateFromBasicState(savedStateEnum);
-                                   Debug.Log($"PROXIMITY {tiData.Id}: Saved state '{savedStateEnum.GetType().Name}.{savedStateEnum.ToString()}' is a Basic State. Mapping to Active State '{startingActiveStateEnum?.GetType().Name}.{startingActiveStateEnum?.ToString() ?? "NULL"}'.", npcObject);
+                                   Debug.Log($"PROXIMITY {tiData.Id}: Saved state '{savedStateEnum.GetType().Name}.{savedStateEnum.ToString()}' is a Basic State (generic mapping). Mapping to Active State '{startingActiveStateEnum?.GetType().Name}.{startingActiveStateEnum?.ToString() ?? "NULL"}'.", npcObject);
                                    // Reset simulation data when transitioning from simulation to active
                                    tiData.simulatedTargetPosition = null; // Clear simulated target
                                    tiData.simulatedStateTimer = 0f; // Reset timer on activation
@@ -819,67 +670,89 @@ namespace Game.NPC.TI // Keep in the TI namespace
               }
          }
 
-
-        private void LoadDummyNpcData()
-        {
-             if (dummyNpcData == null || dummyNpcData.Count == 0)
-             {
-                  Debug.LogWarning("TiNpcManager: No dummy NPC data entries configured to load.", this);
-                  return;
-             }
-
-             allTiNpcs.Clear();
-
-             if (basicNpcStateManager == null)
-             {
-                  Debug.LogError("TiNpcManager: BasicNpcStateManager not found. Cannot initialize dummy TI NPC data with proper basic states or targets for simulation.", this);
-                  return; // Cannot load dummy data correctly
-             }
-
-             foreach (var entry in dummyNpcData)
-             {
-                  if (string.IsNullOrWhiteSpace(entry.id))
-                  {
-                       Debug.LogWarning("TiNpcManager: Skipping dummy NPC entry with empty or whitespace ID.", this);
-                       continue;
-                  }
-
-                  if (allTiNpcs.ContainsKey(entry.id))
-                  {
-                       Debug.LogWarning($"TiNpcManager: Skipping duplicate dummy NPC entry with ID '{entry.id}'.", this);
-                       continue;
-                  }
-
-                  TiNpcData newNpcData = new TiNpcData(entry.id, entry.homePosition, entry.homeRotation);
-
-                  newNpcData.CurrentWorldPosition = newNpcData.HomePosition;
-                  newNpcData.CurrentWorldRotation = newNpcData.HomeRotation;
-
-                  // --- Initialize with the specified Basic State from dummy data (NEW) ---
-                   Enum initialBasicStateEnum = entry.initialBasicState;
-
-                   // Validate the initial state exists as a Basic State SO
-                   BasicNpcStateSO initialStateSO = basicNpcStateManager.GetBasicStateSO(initialBasicStateEnum);
-                   if (initialStateSO == null)
+         /// <summary>
+         /// Handles the process of deactivating a single TI NPC.
+         /// Determines the correct Basic State, saves data, and triggers the pooling flow.
+         /// Called by ProximityManager.
+         /// </summary>
+         /// <param name="tiData">The persistent data of the NPC to deactivate.</param>
+         /// <param name="runner">The active NpcStateMachineRunner for this NPC.</param>
+         public void RequestDeactivateTiNpc(TiNpcData tiData, NpcStateMachineRunner runner) // <-- NEW Public Method
+         {
+              if (tiData == null || runner == null || !tiData.IsActiveGameObject || tiData.NpcGameObject != runner.gameObject)
+              {
+                   Debug.LogWarning($"PROXIMITY TiNpcManager: Skipping deactivation request for '{tiData?.Id ?? "NULL"}'. Reason: tiData is null ({tiData == null}), runner is null ({runner == null}), IsActiveGameObject={tiData?.IsActiveGameObject}, GameObject mismatch.", runner?.gameObject);
+                   // Defensive cleanup: If runner exists but link is broken, try to force unlink/pool
+                   if (runner != null && runner.IsTrueIdentityNpc && runner.TiData == tiData && tiData != null)
                    {
-                        Debug.LogError($"TiNpcManager: Dummy NPC '{entry.id}' configured with initial Basic State '{initialBasicStateEnum}', but no BasicStateSO asset found for this state! Skipping NPC load.", this);
-                        continue; // Skip loading this NPC if its initial state is invalid
+                        Debug.LogError($"PROXIMITY TiNpcManager: Inconsistent state during deactivation request for '{tiData.Id}'. TiData/Runner link seems okay, but IsActiveGameObject or GameObject mismatch. Forcing cleanup.", runner.gameObject);
+                        // Attempt to force the pooling flow without state saving
+                        runner.TransitionToState(runner.GetStateSO(GeneralState.ReturningToPool));
                    }
+                   return; // Cannot proceed with deactivation logic
+              }
 
-                   newNpcData.SetCurrentState(initialBasicStateEnum); // Set the initial Basic State
+              // Check if the NPC is in a state that should prevent deactivation (e.g., Combat, Transaction)
+              // This check is duplicated from the old ProximityCheckRoutine, but belongs here
+              // as it's part of the *decision* to deactivate, which ProximityManager makes.
+              // However, ProximityManager should ideally make this check *before* calling this method.
+              // Let's keep it here defensively for now, but note it's better placed in ProximityManager.
+              NpcStateSO currentStateSO = runner.GetCurrentState();
+              if (currentStateSO != null && !currentStateSO.IsInterruptible)
+              {
+                   Debug.Log($"PROXIMITY {tiData.Id}: Deactivation request skipped. Current state '{currentStateSO.name}' is not interruptible.");
+                   return; // Cannot deactivate right now
+              }
 
-                   // Call the OnEnter for this initial basic state immediately to set up simulation data (timer, target)
-                   // This replicates the OnEnter call that would happen if the NPC transitioned into this state.
-                   initialStateSO.OnEnter(newNpcData, basicNpcStateManager); // Pass the data and the manager
 
-                  // Flags and GameObject link are initialized in the TiNpcData constructor (isActiveGameObject=false, NpcGameObject=null)
+              // --- Determine and Save the Basic State before triggering Pooling ---
+              Enum currentActiveState = currentStateSO?.HandledState; // Get the enum key of the current active state
+              Enum targetBasicState = GetBasicStateFromActiveState(currentActiveState); // Map to the corresponding basic state
 
-                  allTiNpcs.Add(newNpcData.Id, newNpcData);
-                   Debug.Log($"TiNpcManager: Loaded dummy NPC '{newNpcData.Id}' with initial Basic State '{initialBasicStateEnum}'. Simulation timer initialized to {newNpcData.simulatedStateTimer:F2}s, Target: {newNpcData.simulatedTargetPosition?.ToString() ?? "NULL"}.");
-             }
-        }
+              if (targetBasicState != null)
+              {
+                  // Save the determined Basic State to the TiNpcData
+                   tiData.SetCurrentState(targetBasicState);
+                   Debug.Log($"PROXIMITY {tiData.Id}: Active state '{currentActiveState?.GetType().Name}.{currentActiveState?.ToString() ?? "NULL"}' maps to Basic State '{targetBasicState.GetType().Name}.{targetBasicState.ToString()}'. Saving this state to TiData.");
 
-        // --- Public Methods ---
+                  // --- Call OnEnter for the target Basic State to initialize simulation data ---
+                  // This is crucial to set up simulatedTargetPosition, simulatedStateTimer etc. for the *next* simulation tick.
+                  BasicNpcStateSO targetBasicStateSO = basicNpcStateManager?.GetBasicStateSO(targetBasicState);
+                  if(targetBasicStateSO != null)
+                  {
+                      Debug.Log($"PROXIMITY {tiData.Id}: Calling OnEnter for Basic State '{targetBasicStateSO.name}' to initialize simulation data.");
+                      targetBasicStateSO.OnEnter(tiData, basicNpcStateManager); // Pass the data and the manager
+                  } else
+                  {
+                      // This shouldn't happen if mapping and GetBasicStateSO work, but defensive
+                      Debug.LogError($"PROXIMITY {tiData.Id}: Could not get target Basic State SO for '{targetBasicState.GetType().Name}.{targetBasicState.ToString()}' during deactivation request. Cannot initialize simulation state data!", runner.gameObject);
+                      // Data might be left in a bad state, but proceed with pooling.
+                  }
+                  // --- END Call OnEnter ---
+
+
+                  // --- Trigger Deactivation Flow ---
+                  Debug.Log($"PROXIMITY {tiData.Id}: TI NPC ready for deactivation. Triggering TransitionToState(ReturningToPool).");
+                  // Transition the Runner to the ReturningToPool state.
+                  // The Runner.TransitionToState handles calling Runner.Deactivate() *before* entering the state.
+                  // Runner.Deactivate() will now save the *Basic State* we just set on tiData, and position/rotation.
+                  // HandleTiNpcReturnToPool will be called later by the pooling event, clearing data link/flag and updating grid.
+                  runner.TransitionToState(runner.GetStateSO(GeneralState.ReturningToPool));
+                  // --- END Trigger ---
+
+              }
+              else
+              {
+                  // This shouldn't happen if GetBasicStateFromActiveState has a fallback, but defensive.
+                  Debug.LogError($"PROXIMITY {tiData.Id}: Could not determine a Basic State mapping for active state '{currentActiveState?.GetType().Name}.{currentActiveState?.ToString() ?? "NULL"}' during deactivation request. Cannot save state for simulation! Forcing cleanup.", runner.gameObject);
+                   // Fallback: Destroy the GameObject and unlink the data without attempting to save a simulation state
+                   Destroy(runner.gameObject); // Destroy the GameObject
+                   tiData.UnlinkGameObject(); // Use helper to clear data link and flags
+                   // Attempt to remove from grid using last known position
+                   gridManager?.RemoveItem(tiData, tiData.CurrentWorldPosition);
+              }
+         }
+
 
         /// <summary>
         /// Called by CustomerManager when a TI NPC's GameObject is
@@ -916,6 +789,22 @@ namespace Game.NPC.TI // Keep in the TI namespace
                  // --- Clear the data link and flags ---
                  deactivatedTiData.UnlinkGameObject(); // Use helper to set NpcGameObject=null and isActiveGameObject=false
                  // --- END ---
+
+                 // --- Update the NPC's position in the grid with its final position before pooling ---
+                 // The Runner.Deactivate should have already saved the final position to tiData.CurrentWorldPosition
+                 if (gridManager != null)
+                 {
+                      // Use the position saved in TiData by Runner.Deactivate()
+                      // The old position for UpdateItemPosition doesn't strictly matter here
+                      // as we are just ensuring it's in the grid at its final position.
+                      // Using the GameObject's position just before pooling as the 'old' position is fine.
+                      gridManager.UpdateItemPosition(deactivatedTiData, npcObject.transform.position, deactivatedTiData.CurrentWorldPosition);
+                      Debug.Log($"POOL TiNpcManager: Updated grid position for '{deactivatedTiData.Id}' to final position {deactivatedTiData.CurrentWorldPosition}.", npcObject);
+                 } else {
+                      Debug.LogWarning($"POOL TiNpcManager: GridManager is null! Cannot update grid position for '{deactivatedTiData.Id}' on return to pool.", npcObject);
+                 }
+                 // --- END NEW ---
+
              }
              else
              {
@@ -932,6 +821,8 @@ namespace Game.NPC.TI // Keep in the TI namespace
                       {
                            Debug.LogError($"POOL TiNpcManager: Found TiNpcData by ID '{dataById.Id}' ({dataById.GetHashCode()}), but GameObject link was missing! Forcing link cleanup on data object. GameObject was likely pooled incorrectly.", npcObject);
                            dataById.UnlinkGameObject(); // Unlink the data object
+                           // Attempt to remove from grid using the data's last known position
+                           gridManager?.RemoveItem(dataById, dataById.CurrentWorldPosition);
                       } else {
                            Debug.LogError($"POOL TiNpcManager: Runner flagged as TI ({runner.IsTrueIdentityNpc}), but TiData link was lost, and TiData ID '{runner.TiData.Id}' lookup failed! Cannot perform data cleanup.", npcObject);
                       }
@@ -967,6 +858,25 @@ namespace Game.NPC.TI // Keep in the TI namespace
              {
                  Debug.LogError($"TiNpcManager: PoolingManager is null! Cannot return TI NPC GameObject '{npcObject.name}' to pool. Destroying.", this);
                  Destroy(npcObject);
+             }
+        }
+
+
+        /// <summary>
+        /// Called by an active NpcStateMachineRunner when its position changes significantly (e.g., enters a new grid cell).
+        /// Updates the NPC's position in the GridManager.
+        /// </summary>
+        /// <param name="data">The TiNpcData associated with the active NPC.</param>
+        /// <param name="oldPosition">The NPC's position before the change.</param>
+        /// <param name="newPosition">The NPC's new position.</param>
+        public void NotifyActiveNpcPositionChanged(TiNpcData data, Vector3 oldPosition, Vector3 newPosition)
+        {
+             if (gridManager != null)
+             {
+                  gridManager.UpdateItemPosition(data, oldPosition, newPosition);
+                  // Debug.Log($"TiNpcManager: Notified of active NPC '{data.Id}' position change. Updated grid.", data.NpcGameObject); // Too noisy
+             } else {
+                  Debug.LogWarning($"TiNpcManager: GridManager is null! Cannot update grid position for active NPC '{data.Id}'.", data.NpcGameObject);
              }
         }
 
@@ -1025,5 +935,83 @@ namespace Game.NPC.TI // Keep in the TI namespace
              float randomZ = UnityEngine.Random.Range(simulatedPatrolAreaMin.y, simulatedPatrolAreaMax.y); // Note: using y for Z axis in Vector2
              return new Vector3(randomX, 0f, randomZ); // Assume ground is at Y=0 for simulation
         }
+
+        // --- Restored LoadDummyNpcData method ---
+        private void LoadDummyNpcData()
+        {
+             if (dummyNpcData == null || dummyNpcData.Count == 0)
+             {
+                  Debug.LogWarning("TiNpcManager: No dummy NPC data entries configured to load.", this);
+                  return;
+             }
+
+             allTiNpcs.Clear();
+             gridManager?.ClearGrid(); // Clear grid before loading new data
+
+             if (basicNpcStateManager == null)
+             {
+                  Debug.LogError("TiNpcManager: BasicNpcStateManager not found. Cannot initialize dummy TI NPC data with proper basic states or targets for simulation.", this);
+                  return; // Cannot load dummy data correctly
+             }
+             if (gridManager == null)
+             {
+                  Debug.LogError("TiNpcManager: GridManager not found. Cannot add dummy TI NPC data to the grid.", this);
+                  // Continue loading data into allTiNpcs, but grid will be empty. Proximity/Simulation will fail.
+             }
+
+
+             foreach (var entry in dummyNpcData)
+             {
+                  if (string.IsNullOrWhiteSpace(entry.id))
+                  {
+                       Debug.LogWarning("TiNpcManager: Skipping dummy NPC entry with empty or whitespace ID.", this);
+                       continue;
+                  }
+
+                  if (allTiNpcs.ContainsKey(entry.id))
+                  {
+                       Debug.LogWarning($"TiNpcManager: Skipping duplicate dummy NPC entry with ID '{entry.id}'.", this);
+                       continue;
+                  }
+
+                  TiNpcData newNpcData = new TiNpcData(entry.id, entry.homePosition, entry.homeRotation);
+
+                  newNpcData.CurrentWorldPosition = newNpcData.HomePosition;
+                  newNpcData.CurrentWorldRotation = newNpcData.HomeRotation;
+
+                  // --- Initialize with the specified Basic State from dummy data ---
+                   Enum initialBasicStateEnum = entry.initialBasicState;
+
+                   // Validate the initial state exists as a Basic State SO
+                   BasicNpcStateSO initialStateSO = basicNpcStateManager.GetBasicStateSO(initialBasicStateEnum);
+                   if (initialStateSO == null)
+                   {
+                        Debug.LogError($"TiNpcManager: Dummy NPC '{entry.id}' configured with initial Basic State '{initialBasicStateEnum}', but no BasicStateSO asset found for this state! Skipping NPC load.", this);
+                        continue; // Skip loading this NPC if its initial state is invalid
+                   }
+
+                   newNpcData.SetCurrentState(initialBasicStateEnum); // Set the initial Basic State
+
+                   // Call the OnEnter for this initial basic state immediately to set up simulation data (timer, target)
+                   // This replicates the OnEnter call that would happen if the NPC transitioned into this state.
+                   initialStateSO.OnEnter(newNpcData, basicNpcStateManager); // Pass the data and the manager
+
+                  // Flags and GameObject link are initialized in the TiNpcData constructor (isActiveGameObject=false, NpcGameObject=null)
+
+                  allTiNpcs.Add(newNpcData.Id, newNpcData);
+
+                  // --- Add the newly loaded NPC data to the grid ---
+                  if (gridManager != null)
+                  {
+                      gridManager.AddItem(newNpcData, newNpcData.CurrentWorldPosition);
+                      Debug.Log($"TiNpcManager: Loaded dummy NPC '{newNpcData.Id}' with initial Basic State '{initialBasicStateEnum}'. Simulation timer initialized to {newNpcData.simulatedStateTimer:F2}s, Target: {newNpcData.simulatedTargetPosition?.ToString() ?? "NULL"}. Added to grid.", this); // Updated log
+                  } else {
+                       Debug.Log($"TiNpcManager: Loaded dummy NPC '{newNpcData.Id}' with initial Basic State '{initialBasicStateEnum}'. Simulation timer initialized to {newNpcData.simulatedStateTimer:F2}s, Target: {newNpcData.simulatedTargetPosition?.ToString() ?? "NULL"}. GridManager is null, NOT added to grid.", this); // Updated log
+                  }
+             }
+        }
+        // --- End Restored LoadDummyNpcData ---
     }
 }
+
+// --- END OF FILE TiNpcManager.cs ---

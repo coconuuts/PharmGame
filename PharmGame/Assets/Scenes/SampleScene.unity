@@ -7116,6 +7116,8 @@ GameObject:
   - component: {fileID: 763258580}
   - component: {fileID: 763258582}
   - component: {fileID: 763258583}
+  - component: {fileID: 763258585}
+  - component: {fileID: 763258584}
   m_Layer: 0
   m_Name: NPCmanager
   m_TagString: Untagged
@@ -7195,9 +7197,6 @@ MonoBehaviour:
   - {fileID: 4394407753789290286, guid: 06851f3650851534b86dc6528468eb55, type: 3}
   simulationTickInterval: 0.1
   maxNpcsToSimulatePerTick: 10
-  activationRadius: 4
-  deactivationRadius: 5
-  proximityCheckInterval: 0.5
   dummyNpcData:
   - id: TEST1
     homePosition: {x: 3, y: 0, z: 3}
@@ -7225,6 +7224,45 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 597bab764aeaf674aadcd649a9235a7f, type: 2}
   - {fileID: 11400000, guid: 79e0e11f3d6cb6543a0838231c9240af, type: 2}
   - {fileID: 11400000, guid: a5e2d468e5c87554a924f00e44ac6a10, type: 2}
+--- !u!114 &763258584
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 763258579}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ded21e351642804468268fa7110a306c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  playerTransform: {fileID: 1579874845}
+  nearRadius: 3
+  moderateRadius: 5
+  farRadius: 15
+  proximityCheckInterval: 0.5
+  drawZoneGizmos: 1
+  nearGizmoColor: {r: 0, g: 1, b: 0, a: 1}
+  moderateGizmoColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  farGizmoColor: {r: 1, g: 0, b: 0, a: 1}
+  zoneGizmoRadius: 0.5
+--- !u!114 &763258585
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 763258579}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c4ee39d7ca2d830498a4896c25e83c4e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  gridOrigin: {x: -25, y: 0, z: -20}
+  cellSize: 5
+  gridDimensions: {x: 7, y: 3, z: 6}
+  drawGridGizmos: 1
+  gridColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
 --- !u!1 &765084589
 GameObject:
   m_ObjectHideFlags: 0

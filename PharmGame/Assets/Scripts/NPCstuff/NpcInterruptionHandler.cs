@@ -1,5 +1,3 @@
-// --- START OF FILE NpcInterruptionHandler.cs ---
-//yp
 using UnityEngine;
 using System.Collections.Generic; // Needed for Stack
 using System; // Needed for System.Enum
@@ -29,6 +27,10 @@ namespace Game.NPC.Handlers // Placing handlers together
         private Stack<NpcStateSO> stateStack; // The state stack for managing interruptions
         // Making InteractorObject public internal for NpcStateContext access
         public GameObject InteractorObject { get; internal set; }
+
+        // --- NEW: Flag to indicate if currently in an interruption state ---
+        private bool isInterrupted = false;
+        public bool IsInterrupted() => isInterrupted;
         // --- END Moved Data ---
 
 
@@ -53,6 +55,7 @@ namespace Game.NPC.Handlers // Placing handlers together
 
             // Initialize the state stack here
             stateStack = new Stack<NpcStateSO>();
+            isInterrupted = false; // Initialize flag <-- NEW
 
             Debug.Log($"{gameObject.name}: NpcInterruptionHandler Awake completed. Runner reference acquired, state stack initialized.", this); // Updated log
         }
@@ -67,6 +70,7 @@ namespace Game.NPC.Handlers // Placing handlers together
             // Event unsubscriptions are handled by NpcEventHandler.
             // stateStack.Clear(); // Reset is called by Runner.ResetRunnerTransientData
             // InteractorObject = null; // Reset is called by Runner.ResetRunnerTransientData
+            // isInterrupted = false; // Reset is called by Runner.ResetRunnerTransientData <-- NEW
         }
 
          /// <summary>
@@ -77,6 +81,7 @@ namespace Game.NPC.Handlers // Placing handlers together
          {
              stateStack.Clear();
              InteractorObject = null;
+             isInterrupted = false; // Reset flag <-- NEW
              Debug.Log($"{gameObject.name}: NpcInterruptionHandler reset.");
          }
 
@@ -86,21 +91,37 @@ namespace Game.NPC.Handlers // Placing handlers together
          /// </summary>
          /// <param name="interruptStateEnum">The enum key for the desired interruption state (e.g., GeneralState.Combat).</param>
          /// <param name="interactor">The GameObject that caused the interruption (e.g., player).</param>
-         /// <returns>True if the interruption was successfully initiated, false otherwise (e.g., current state is not interruptible).</returns>
-         public bool TryInterrupt(Enum interruptStateEnum, GameObject interactor)
+         /// <returns>True if the interruption was successfully initiated, false otherwise (e.g., current state is not interruptible or already interrupted).</returns>
+         public bool TryInterrupt(Enum interruptStateEnum, GameObject interactor) // <-- MODIFIED
          {
              if (runner == null) { Debug.LogError($"InterruptionHandler on {gameObject.name}: Runner is null during TryInterrupt!", this); return false; }
              NpcStateSO currentStateSO = runner.GetCurrentState();
+
+             // --- NEW: Check if already in an interruption state ---
+             // Prevent pushing onto the stack if already interrupted.
+             // This simplifies logic by only allowing one level of interruption.
+             if (isInterrupted)
+             {
+                  Debug.Log($"{runner.gameObject.name}: Already in an interrupted state. Ignoring new interruption trigger.", runner.gameObject);
+                  return false;
+             }
+             // --- END NEW ---
+
 
              if (currentStateSO != null && currentStateSO.IsInterruptible)
              {
                  Debug.Log($"{runner.gameObject.name}: Current state '{currentStateSO.name}' is interruptible. Pushing to stack and attempting transition to {interruptStateEnum.GetType().Name}.{interruptStateEnum.ToString()}.", runner.gameObject);
                  stateStack.Push(currentStateSO);
                  InteractorObject = interactor; // Store the interactor on this handler
+                 isInterrupted = true; // Set interruption flag <-- NEW
 
                  NpcStateSO interruptStateSO = runner.GetStateSO(interruptStateEnum);
                  if (interruptStateSO != null)
                  {
+                     // --- NEW: Tell the Runner to enter full update mode ---
+                     runner.EnterInterruptionMode();
+                     // --- END NEW ---
+
                      runner.TransitionToState(interruptStateSO); // Transition via the Runner
                      return true;
                  }
@@ -109,6 +130,11 @@ namespace Game.NPC.Handlers // Placing handlers together
                       Debug.LogError($"InterruptionHandler ({runner.gameObject.name}): Interruption state SO not found for enum '{interruptStateEnum.GetType().Name}.{interruptStateEnum.ToString()}'! Cannot transition. State stack inconsistency likely. Clearing stack.", runner.gameObject);
                       stateStack.Clear(); // Clear stack on failure to prevent permanent block
                       InteractorObject = null; // Clear interactor
+                      isInterrupted = false; // Clear interruption flag on failure <-- NEW
+                      // --- NEW: Tell the Runner to exit full update mode ---
+                      runner.ExitInterruptionMode();
+                      // --- END NEW ---
+
                       // Transition to a safe state - use Runner's GetStateSO for Idle/ReturningToPool
                       NpcStateSO fallbackState = runner.GetStateSO(GeneralState.Idle);
                       if (fallbackState == null) fallbackState = runner.GetStateSO(GeneralState.ReturningToPool);
@@ -122,7 +148,7 @@ namespace Game.NPC.Handlers // Placing handlers together
              else
              {
                  Debug.Log($"{runner.gameObject.name}: Current state '{currentStateSO?.name ?? "NULL"}' is NOT interruptible. Ignoring interruption trigger.", runner.gameObject);
-                 InteractorObject = null; // Clear any lingering interactor just in case
+                 // InteractorObject = null; // Don't clear interactor here, it might be relevant to the *current* state. Clear on EndInterruption.
                  return false;
              }
          }
@@ -130,15 +156,20 @@ namespace Game.NPC.Handlers // Placing handlers together
          /// <summary>
          /// Ends the current interruption state and returns to the previous state on the stack,
          /// with conditional logic for queue/register states.
-         /// Called by NpcEventHandler when an interruption completion event is received.
+         /// Called by NpcEventHandler when an interruption completion event is received,
+         /// OR called by an interruption state's OnExit method.
          /// </summary>
-         public void EndInterruption()
+         public void EndInterruption() // <-- MODIFIED
          {
               if (runner == null) { Debug.LogError($"InterruptionHandler on {gameObject.name}: Runner is null during EndInterruption!", this); return; }
               if (runner.Manager == null) { Debug.LogError($"InterruptionHandler on {gameObject.name}: Runner's Manager is null during EndInterruption! Cannot check queue/register status. Transitioning to fallback.", this);
                  InteractorObject = null; // Clear interactor
                  stateStack.Clear(); // Clear stack as we cannot reliably return
-                 // Transition to a safe state
+                 isInterrupted = false; // Clear interruption flag <-- NEW
+                 // --- NEW: Tell the Runner to exit full update mode ---
+                 runner.ExitInterruptionMode();
+                 // --- END NEW ---
+                 // Transition to a safe state - use Runner's GetStateSO for Idle/ReturningToPool
                   NpcStateSO fallbackState = runner.GetStateSO(GeneralState.Idle);
                   if (fallbackState == null) fallbackState = runner.GetStateSO(GeneralState.ReturningToPool);
                   if (fallbackState != null) runner.TransitionToState(fallbackState);
@@ -146,8 +177,24 @@ namespace Game.NPC.Handlers // Placing handlers together
                  return; // Exit
              }
 
+             // --- NEW: Check if we are actually in an interrupted state to end ---
+             if (!isInterrupted)
+             {
+                  Debug.LogWarning($"{runner.gameObject.name}: EndInterruption called but the NPC was not flagged as interrupted! Ignoring return logic, ensuring update mode is normal.", runner.gameObject);
+                  InteractorObject = null; // Clear interactor defensively
+                  // Ensure update mode is restored just in case
+                  runner.ExitInterruptionMode(); // This will restore to normalUpdateInterval
+                  return;
+             }
+             // --- END NEW ---
 
-             InteractorObject = null; // Clear the interactor regardless
+             isInterrupted = false; // Clear the interruption flag BEFORE returning <-- NEW
+
+             // --- NEW: Tell the Runner to exit full update mode and restore normal mode ---
+             runner.ExitInterruptionMode();
+             // --- END NEW ---
+
+             InteractorObject = null; // Clear the interactor
 
               if (stateStack.Count > 0)
               {
@@ -305,7 +352,10 @@ namespace Game.NPC.Handlers // Placing handlers together
               }
               else // State stack is empty - this means EndInterruption was called without a prior TryInterrupt
               {
-                  Debug.LogWarning($"{runner.gameObject.name}: EndInterruption called but state stack is empty! Telling Runner to Transition to Idle/Fallback.", runner.gameObject);
+                  Debug.LogWarning($"{runner.gameObject.name}: EndInterruption called but state stack is empty! Telling Runner to Transition to Idle/Fallback and ensuring update mode is normal.", runner.gameObject);
+                  // Ensure update mode is restored just in case
+                  runner.ExitInterruptionMode(); // This will restore to normalUpdateInterval
+
                   // Transition to a safe state - use Runner's GetStateSO for Idle/ReturningToPool
                   NpcStateSO idleState = runner.GetStateSO(GeneralState.Idle);
                   if (idleState == null) idleState = runner.GetStateSO(GeneralState.ReturningToPool);
@@ -316,5 +366,3 @@ namespace Game.NPC.Handlers // Placing handlers together
          }
     }
 }
-
-// --- END OF FILE NpcInterruptionHandler.cs ---

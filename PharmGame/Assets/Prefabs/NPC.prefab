@@ -631,6 +631,9 @@ GameObject:
   - component: {fileID: 5199676118107109080}
   - component: {fileID: 2413568037832294926}
   - component: {fileID: -5987178433650477}
+  - component: {fileID: 54584857617627132}
+  - component: {fileID: 3525319590883365962}
+  - component: {fileID: 163036449089475493}
   m_Layer: 7
   m_Name: NPC
   m_TagString: NPC
@@ -932,10 +935,48 @@ MonoBehaviour:
   npcTypes:
   - {fileID: 11400000, guid: 7c4f6c2437e7fbe4ba387874f4e23c2b, type: 2}
   - {fileID: 11400000, guid: 3885ff761950e2549a71fc3b0109781b, type: 2}
+  _hasReachedCurrentDestination: 0
   fallbackReturningStateEnumKey: ReturningToPool
   fallbackReturningStateEnumType: Game.NPC.GeneralState
   fallbackIdleStateEnumKey: Idle
   fallbackIdleStateEnumType: Game.NPC.GeneralState
+  moderateUpdateRateHz: 10
+--- !u!114 &54584857617627132
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4394407753789290286}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5e4ee98a976b6074093632d8b2d03fb1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &3525319590883365962
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4394407753789290286}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7d9bca130e3c26e4d9dc13fd496d365b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &163036449089475493
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4394407753789290286}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c3ec740695e74ad49be9db2301c242f3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &4855562079567102611
 GameObject:
   m_ObjectHideFlags: 0

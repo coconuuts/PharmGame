@@ -1,8 +1,8 @@
-// --- Updated NpcStateSO.cs (HandledState returns Enum) ---
 using UnityEngine;
 using System; // Needed for System.Enum
 using System.Collections;
 // Ensure you have Game.NPC namespace accessible for CustomerState and GeneralState if needed in derived SOs
+using Game.Proximity; // <-- NEW: Needed for ProximityZone in derived states if they check it
 
 namespace Game.NPC.States
 {
@@ -58,8 +58,9 @@ namespace Game.NPC.States
 
         /// <summary>
         /// Called every frame while the state machine is in this state. Use for continuous logic.
+        /// Note: This method is affected by the Runner's update throttling, UNLESS the NPC is in an interrupted state.
         /// </summary>
-        public virtual void OnUpdate(NpcStateContext context)
+        public virtual void OnUpdate(NpcStateContext context) // <-- Updated comment
         {
             // Default implementation does nothing
         }

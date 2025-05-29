@@ -1,5 +1,3 @@
-// --- START OF FILE NpcStateMachineRunner.cs ---
-
 using UnityEngine;
 using System.Collections.Generic;
 using System.Collections;
@@ -12,6 +10,8 @@ using System.Linq; // Needed for First()
 using Game.NPC.Types;
 using System;
 using Game.NPC.TI; // Needed for TiNpcData and TiNpcManager
+using Game.Spatial; // Needed for GridManager
+using Game.Proximity; // Needed for ProximityManager.ProximityZone
 
 namespace Game.NPC
 {
@@ -39,7 +39,10 @@ namespace Game.NPC
           // --- Reference to the Queue handler ---
           private NpcQueueHandler queueHandler;
           public NpcQueueHandler QueueHandler { get { return queueHandler; } private set { queueHandler = value; } } // Make public for Context access
-          
+
+          // Reference to the TiNpcManager
+          private TiNpcManager tiNpcManager;
+
           // --- Public methods/properties for external access if needed ---
           public NpcStateSO CurrentStateSO => currentState;
           public NpcStateSO PreviousStateSO => previousState;
@@ -52,7 +55,7 @@ namespace Game.NPC
           // --- State Management ---
           private NpcStateSO currentState;
           private NpcStateSO previousState;
-          private Coroutine activeStateCoroutine; 
+          private Coroutine activeStateCoroutine;
 
           // --- Master Dictionary of all available states for THIS NPC ---
           private Dictionary<Enum, NpcStateSO> availableStates;
@@ -95,6 +98,22 @@ namespace Game.NPC
                get => tiData;
                internal set => tiData = value;
           }
+
+          // --- Update Throttling Fields ---
+          private float timeSinceLastUpdate = 0f;
+          private float currentUpdateInterval = 0f; // 0 means update every frame (Full)
+          private float normalUpdateInterval = 0f; // Stores the interval set by ProximityManager <-- NEW
+          private const float FullUpdateInterval = 0f; // Update every frame
+          [Tooltip("Update rate (in Hz) for NPCs in the Moderate proximity zone.")]
+          [SerializeField] private float moderateUpdateRateHz = 8f; // Example: 8 updates per second
+          private float moderateUpdateInterval => 1.0f / moderateUpdateRateHz;
+
+          // --- Grid Position Tracking for Active NPCs ---
+          private Vector3 lastGridPosition;
+          private GridManager gridManager; // Need GridManager reference to get cell size
+          private float timeSinceLastGridUpdate = 0f; // Separate timer for grid updates
+          private const float GridUpdateCheckInterval = 0.5f; // Check grid position every 0.5 seconds
+
 
           private void Awake()
           {
@@ -142,6 +161,38 @@ namespace Game.NPC
 
                Debug.Log($"{gameObject.name}: NpcStateMachineRunner Awake completed.");
           }
+
+          private void Start() // <-- Use Start for Manager singletons
+          {
+               // Get reference to TiNpcManager
+               tiNpcManager = TiNpcManager.Instance;
+               if (tiNpcManager == null)
+               {
+                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): TiNpcManager instance not found! Cannot notify position changes for TI NPCs.", this);
+               }
+
+               // Get reference to GridManager
+               gridManager = GridManager.Instance;
+               if (gridManager == null)
+               {
+                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): GridManager instance not found! Cannot track grid position for active NPCs.", this);
+               }
+
+               // Initialize lastGridPosition if this is a TI NPC being activated
+               if (IsTrueIdentityNpc && TiData != null && gridManager != null)
+               {
+                   // Use the position loaded from TiData during Activate()
+                   lastGridPosition = transform.position; // Initialize with current position after warp
+                   // Note: The initial AddItem to grid is done by TiNpcManager.LoadDummyNpcData or ActivateTiNpc
+               }
+
+               // Initialize throttling state - ProximityManager will set the actual mode after activation
+               timeSinceLastUpdate = 0f;
+               currentUpdateInterval = FullUpdateInterval; // Default to full update initially
+               normalUpdateInterval = FullUpdateInterval; // Default normal is also full update <-- NEW
+               timeSinceLastGridUpdate = 0f;
+          }
+
 
           private void LoadAvailableStates()
           {
@@ -213,6 +264,28 @@ namespace Game.NPC
 
           private void Update()
           {
+               // --- Handle Update Throttling ---
+               // Check if we should skip the main state update this frame based on the *current* interval
+               if (currentUpdateInterval > FullUpdateInterval) // If throttled (including temporary overrides)
+               {
+                   timeSinceLastUpdate += Time.deltaTime;
+                   if (timeSinceLastUpdate < currentUpdateInterval)
+                   {
+                       // Skip main state update logic this frame
+                       CheckGridPositionUpdate(); // Still check grid position periodically regardless of state throttling
+                       return; // Skip the rest of Update
+                   }
+                   timeSinceLastUpdate -= currentUpdateInterval; // Deduct interval, keep remainder
+               }
+               // If currentUpdateInterval is FullUpdateInterval (0), this block is skipped, and main logic runs every frame.
+               // --- END NEW ---
+
+               // --- Main State Update Logic (Runs if not throttled, or if throttling timer elapsed) ---
+
+               // Check grid position update (always called, but timer inside limits frequency)
+               CheckGridPositionUpdate();
+
+
                if (currentState != null)
                {
                     // Populate context with current data before passing to state methods
@@ -257,8 +330,81 @@ namespace Game.NPC
                     _stateContext.Runner = this;
                     _stateContext.InterruptionHandler = interruptionHandler;
                     _stateContext.QueueHandler = QueueHandler;
-                    currentState.OnUpdate(_stateContext);
+                    currentState.OnUpdate(_stateContext); // <-- This is the main state logic that gets throttled
                }
+          }
+
+          /// <summary>
+          /// Helper method to check and notify GridManager of position changes for active TI NPCs.
+          /// Runs periodically based on GridUpdateCheckInterval.
+          /// </summary>
+          private void CheckGridPositionUpdate()
+          {
+               if (IsTrueIdentityNpc && TiData != null && tiNpcManager != null && gridManager != null)
+               {
+                   timeSinceLastGridUpdate += Time.deltaTime;
+                   if (timeSinceLastGridUpdate >= GridUpdateCheckInterval)
+                   {
+                       timeSinceLastGridUpdate -= GridUpdateCheckInterval;
+
+                       // Only notify if the NPC has moved enough to potentially change grid cells
+                       if ((transform.position - lastGridPosition).sqrMagnitude >= (gridManager.cellSize * gridManager.cellSize))
+                       {
+                           tiNpcManager.NotifyActiveNpcPositionChanged(TiData, lastGridPosition, transform.position);
+                           lastGridPosition = transform.position; // Update last tracked position
+                       }
+                   }
+               }
+          }
+
+
+          /// <summary>
+          /// Called by the ProximityManager to set the standard update mode based on proximity zone.
+          /// This normal mode is temporarily overridden during interruptions.
+          /// </summary>
+          /// <param name="zone">The current proximity zone of the NPC.</param>
+          public void SetUpdateMode(ProximityManager.ProximityZone zone) // <-- MODIFIED
+          {
+              switch(zone)
+              {
+                  case ProximityManager.ProximityZone.Near:
+                      normalUpdateInterval = FullUpdateInterval; // Update every frame
+                      // Debug.Log($"{gameObject.name}: Set Normal Update Mode: Near (Full)"); // Too noisy
+                      break;
+                  case ProximityManager.ProximityZone.Moderate:
+                      normalUpdateInterval = moderateUpdateInterval; // Throttled update
+                      // Debug.Log($"{gameObject.name}: Set Normal Update Mode: Moderate ({moderateUpdateRateHz} Hz)"); // Too noisy
+                      break;
+                  case ProximityManager.ProximityZone.Far:
+                      // GameObject should be inactive, this method shouldn't be called for Far NPCs
+                      // If called, reset to default full update
+                      normalUpdateInterval = FullUpdateInterval;
+                      // Debug.LogWarning($"{gameObject.name}: SetUpdateMode called for Far zone, which should be inactive.", this);
+                      break;
+              }
+          }
+
+          /// <summary>
+          /// Called by the InterruptionHandler when an interruption state begins.
+          /// Forces the Runner to update every frame regardless of proximity.
+          /// </summary>
+          public void EnterInterruptionMode() // <-- NEW
+          {
+               Debug.Log($"{gameObject.name}: Entering Interruption Mode (Force Full Update).");
+               currentUpdateInterval = FullUpdateInterval; // Override to full update
+               timeSinceLastUpdate = 0f; // Reset timer
+          }
+
+          /// <summary>
+          /// Called by the InterruptionHandler when an interruption state ends.
+          /// Restores the update mode to the one dictated by proximity.
+          /// </summary>
+          public void ExitInterruptionMode() // <-- NEW
+          {
+              Debug.Log($"{gameObject.name}: Exiting Interruption Mode. Restoring normal update mode.");
+               // Restore to the normal update interval based on proximity zone
+               currentUpdateInterval = normalUpdateInterval;
+               timeSinceLastUpdate = 0f; // Reset timer
           }
 
 
@@ -278,6 +424,10 @@ namespace Game.NPC
                // Context Manager will be set in Update/TransitionToState before use
 
                ResetRunnerTransientData(); // Resets interruption handler and queue handler
+
+               // Transient NPCs are always Near/Full update mode
+               SetUpdateMode(ProximityManager.ProximityZone.Near); // <-- Set initial mode for transient
+
                queueHandler?.Initialize(this.Manager);
 
                if (MovementHandler != null && MovementHandler.Agent != null)
@@ -342,6 +492,13 @@ namespace Game.NPC
                     {
                          Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Warped to {tiData.CurrentWorldPosition} using MovementHandler from TiData.");
                          transform.rotation = tiData.CurrentWorldRotation;
+                         // --- Initialize lastGridPosition after warp ---
+                         if (gridManager != null)
+                         {
+                              lastGridPosition = transform.position;
+                              // Note: TiNpcManager.ActivateTiNpc should have already updated the grid with this position
+                         }
+                         // --- END NEW ---
                     }
                     else
                     {
@@ -394,6 +551,13 @@ namespace Game.NPC
                // Mark data as active (should be done by the activation trigger logic in TiNpcManager)
                // tiData.IsActiveGameObject = true; // TiNpcManager should manage this when calling Activate
 
+               // Initialize timers here. ProximityManager will set the initial mode via SetUpdateMode
+               timeSinceLastUpdate = 0f;
+               currentUpdateInterval = FullUpdateInterval; // Default to full update until ProximityManager sets mode
+               normalUpdateInterval = FullUpdateInterval; // Default normal is also full update
+               timeSinceLastGridUpdate = 0f;
+
+
                Debug.Log($"NpcStateMachineRunner ({gameObject.name}): TI NPC '{tiData.Id}' Activated.");
           }
 
@@ -416,6 +580,10 @@ namespace Game.NPC
                TiData.CurrentWorldPosition = transform.position;
                TiData.CurrentWorldRotation = transform.rotation;
 
+               // Note: TiData.CurrentStateEnumKey/Type should have already been set by TiNpcManager
+               // *before* calling TransitionToState(ReturningToPool) during deactivation.
+               // This ensures the correct BasicState is saved.
+
                Debug.Log($"NpcStateMachineRunner ({gameObject.name}): State '{TiData.CurrentStateEnumKey}' already set and saved to TiData by TiNpcManager for simulation.");
 
                Debug.Log($"DEBUG Runner Deactivate ({gameObject.name}): IsTrueIdentityNpc={IsTrueIdentityNpc}, TiData is null={ (TiData == null) }");
@@ -435,6 +603,12 @@ namespace Game.NPC
                CurrentDestinationPosition = null; // Clear the last set destination position
                CachedCashRegister = null;
                _hasReachedCurrentDestination = true;
+               lastGridPosition = Vector3.zero; // Reset grid tracking position
+               timeSinceLastUpdate = 0f; // Reset throttling timers
+               currentUpdateInterval = FullUpdateInterval;
+               normalUpdateInterval = FullUpdateInterval; // Reset normal interval too <-- NEW
+               timeSinceLastGridUpdate = 0f;
+
 
                if (!IsTrueIdentityNpc)
                {
@@ -444,7 +618,7 @@ namespace Game.NPC
                interruptionHandler?.Reset();
                queueHandler?.Reset();
 
-               Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Runner transient data reset, including interruption handler and queue handler."); // Updated log
+               Debug.Log($"{gameObject.name}: NpcStateMachineRunner transient data reset, including interruption handler and queue handler."); // Updated log
           }
 
 
@@ -644,7 +818,7 @@ namespace Game.NPC
                                         return returningStateFallback;
                                    } else {
                                         Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Configured Returning fallback enum key '{fallbackReturningStateEnumKey}' is the same as the requested key '{stateEnum.GetType().Name}.{stateEnum.ToString()}'! Recursive fallback configuration.", this);
-                                   }
+                                    }
                               }
                          }
                          else
@@ -801,5 +975,3 @@ namespace Game.NPC
           }
      }
 }
-
-// --- END OF FILE NpcStateMachineRunner.cs ---

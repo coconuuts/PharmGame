@@ -19,4 +19,4 @@ MonoBehaviour:
   patrolAreaMax: {x: 5, y: 5}
   minWaitTimeAtPoint: 3
   maxWaitTimeAtPoint: 5
-  chanceToShop: 0
+  chanceToShop: 0.9

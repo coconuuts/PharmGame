@@ -1,6 +1,3 @@
-// --- START OF FILE NpcStateContext.cs ---
-
-// --- NpcStateContext.cs ---
 using UnityEngine;
 using CustomerManagement; // Needed for CustomerManager
 using Game.NPC.Handlers; // Needed for Handlers
@@ -11,6 +8,7 @@ using System;
 using Game.Events; // Needed for publishing events and event args like NpcEnteredStoreEvent
 using Game.NPC; // Needed for CustomerState and GeneralState enums
 using Game.NPC.States; // Needed for NpcStateSO
+using Game.Proximity; // Needed for ProximityManager.ProximityZone <-- NEW
 
 namespace Game.NPC.States // Context is closely related to states
 {
@@ -60,8 +58,12 @@ namespace Game.NPC.States // Context is closely related to states
         public int AssignedQueueSpotIndex => QueueHandler?.AssignedQueueSpotIndex ?? -1;
         public QueueType CurrentQueueMoveType => QueueHandler != null ? QueueHandler._currentQueueMoveType : QueueType.Main;
         // You might also want properties for _isMovingToQueueSpot and _previousQueueSpotIndex if states need them
-        // public bool IsMovingToQueueSpot => QueueHandler?._isMovingToQueueSpot ?? false;
+        // public bool IsMovingToQueueSpot => QueueHandler?._isMovingToToQueueSpot ?? false;
         // public int PreviousQueueSpotIndex => QueueHandler?._previousQueueSpotIndex ?? -1;
+        // --- END NEW ---
+
+        // --- NEW: Public property to check if NPC is currently interrupted ---
+        public bool IsInterrupted => InterruptionHandler?.IsInterrupted() ?? false;
         // --- END NEW ---
 
 
@@ -201,7 +203,7 @@ namespace Game.NPC.States // Context is closely related to states
             }
             else
             {
-                Debug.LogWarning($"NpcStateContext: Cannot cache register '{register?.name ?? "NULL"}' - Runner is null!", NpcObject);
+                Debug.LogWarning($"Context({NpcObject.name}): Cannot cache register '{register?.name ?? "NULL"}' - Runner is null.", NpcObject);
             }
         }
          // Access to publishing events via EventManager
@@ -231,6 +233,7 @@ namespace Game.NPC.States // Context is closely related to states
          /// <summary>
          /// Ends the current interruption state and returns to the previous state on the stack.
          /// Called from an interruption state's logic when the interruption is over.
+         /// Note: NpcEventHandler also calls this on interruption end events. State logic should usually yield until the event handler triggers this.
          /// </summary>
          public void EndInterruption()
          {
@@ -239,4 +242,3 @@ namespace Game.NPC.States // Context is closely related to states
          // --- END NEW ---
     }
 }
-// --- END OF FILE NpcStateContext.cs ---
