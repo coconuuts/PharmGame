@@ -78,7 +78,7 @@ namespace Game.NPC.States
             base.OnUpdate(context);
 
             // --- Impatience Timer Update and Check (Migration) ---
-            impatientTimer += Time.deltaTime;
+            impatientTimer += context.DeltaTime; // <-- MODIFIED: Use context.DeltaTime
 
             if (impatientTimer >= impatientDuration)
             {
@@ -92,7 +92,6 @@ namespace Game.NPC.States
              // Check IsAtDestination logic is now in the Runner's Update.
              // The Runner calls OnReachedDestination when true.
         }
-
         public override void OnExit(NpcStateContext context)
         {
             base.OnExit(context);

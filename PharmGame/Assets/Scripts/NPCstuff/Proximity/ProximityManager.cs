@@ -1,5 +1,3 @@
-// --- START OF FILE ProximityManager.cs ---
-
 using UnityEngine;
 using System.Collections.Generic;
 using System.Collections; // Needed for Coroutine
@@ -13,10 +11,11 @@ using System.Linq; // Added for Where
 namespace Game.Proximity
 {
     /// <summary>
-    /// Manages proximity checks for TI NPCs relative to the player.
+    /// Singleton manager responsible for managing proximity checks for TI NPCs relative to the player.
     /// Categorizes NPCs into Near, Moderate, or Far zones and orchestrates
     /// activation, deactivation, and update throttling based on zone transitions.
     /// Relies on GridManager for efficient spatial queries.
+    /// Now also manages the ticking of active NPCs in Near and Moderate zones, and handles interrupted NPCs.
     /// </summary>
     public class ProximityManager : MonoBehaviour
     {
@@ -48,8 +47,32 @@ namespace Game.Proximity
         // Internal dictionary to track the current zone of each TI NPC
         private Dictionary<TiNpcData, ProximityZone> npcProximityZones = new Dictionary<TiNpcData, ProximityZone>();
 
+        // --- NEW: Lists to manage active Runners by zone ---
+        private List<NpcStateMachineRunner> activeNearRunners;
+        private List<NpcStateMachineRunner> activeModerateRunners;
+        // --- NEW: List to manage interrupted Runners ---
+        private List<NpcStateMachineRunner> interruptedRunners;
+        // --- END NEW ---
+
+        // --- NEW: Fields for Moderate Zone Ticking ---
+        [Header("Moderate Zone Ticking")]
+        [Tooltip("Update rate (in Hz) for active NPCs in the Moderate proximity zone.")]
+        [SerializeField] private float moderateUpdateRateHz = 8f; // Example: 8 updates per second
+        [Tooltip("The maximum number of Moderate NPCs to tick per frame when their timer elapses.")]
+        [SerializeField] private int moderateBatchSize = 10; // Process 10 Moderate NPCs per tick
+
+        private float fixedModerateDeltaTime; // Calculated from moderateUpdateRateHz
+        private float moderateTickTimer; // Timer to track when to perform a moderate tick
+        private int moderateTickIndex; // Index for round-robin ticking of moderate NPCs
+        // --- END NEW ---
+
+
         // Coroutine reference for the proximity check loop
         private Coroutine proximityCheckCoroutine;
+        // --- NEW: Coroutine reference for the moderate tick loop ---
+        private Coroutine moderateTickCoroutine;
+        // --- END NEW ---
+
 
         private void Awake()
         {
@@ -70,6 +93,29 @@ namespace Game.Proximity
             if (nearRadius <= 0) { Debug.LogError("ProximityManager: Near Radius must be positive! Setting to 1.", this); nearRadius = 1f; }
             if (moderateRadius <= nearRadius) { Debug.LogError("ProximityManager: Moderate Radius must be greater than Near Radius! Setting to Near + 1.", this); moderateRadius = nearRadius + 1f; }
             if (farRadius <= moderateRadius) { Debug.LogError("ProximityManager: Far Radius must be greater than Moderate Radius! Setting to Moderate + 1.", this); farRadius = moderateRadius + 1f; }
+
+            // --- NEW: Initialize active runner lists ---
+            activeNearRunners = new List<NpcStateMachineRunner>();
+            activeModerateRunners = new List<NpcStateMachineRunner>();
+            // --- NEW: Initialize interrupted runner list ---
+            interruptedRunners = new List<NpcStateMachineRunner>();
+            // --- END NEW ---
+
+            // --- NEW: Initialize Moderate Zone Ticking fields ---
+            if (moderateUpdateRateHz <= 0)
+            {
+                 Debug.LogWarning("ProximityManager: Moderate Update Rate Hz must be positive! Setting to 1.", this);
+                 moderateUpdateRateHz = 1f;
+            }
+            fixedModerateDeltaTime = 1.0f / moderateUpdateRateHz;
+            moderateTickTimer = 0f;
+            moderateTickIndex = 0;
+            if (moderateBatchSize <= 0)
+            {
+                 Debug.LogWarning("ProximityManager: Moderate Batch Size must be positive! Setting to 1.", this);
+                 moderateBatchSize = 1;
+            }
+            // --- END NEW ---
 
 
             Debug.Log("ProximityManager: Awake completed.");
@@ -116,6 +162,11 @@ namespace Game.Proximity
             {
                 Debug.LogWarning("ProximityManager: Player Transform is null, cannot start proximity checks on OnEnable.");
             }
+
+            // --- NEW: Start the moderate tick coroutine ---
+            moderateTickCoroutine = StartCoroutine(ModerateTickRoutine());
+            Debug.Log("ProximityManager: Moderate tick coroutine started.");
+            // --- END NEW ---
         }
 
         private void OnDisable()
@@ -127,6 +178,21 @@ namespace Game.Proximity
                 StopCoroutine(proximityCheckCoroutine);
                 proximityCheckCoroutine = null;
             }
+            // --- NEW: Stop the moderate tick coroutine ---
+            if (moderateTickCoroutine != null)
+            {
+                Debug.Log("ProximityManager: Stopping moderate tick coroutine on OnDisable.");
+                StopCoroutine(moderateTickCoroutine);
+                moderateTickCoroutine = null;
+            }
+            // --- END NEW ---
+
+            // --- NEW: Clear active runner lists on disable ---
+            activeNearRunners.Clear();
+            activeModerateRunners.Clear();
+            // --- NEW: Clear interrupted runner list on disable ---
+            interruptedRunners.Clear();
+            // --- END NEW ---
         }
 
         private void OnDestroy()
@@ -135,8 +201,14 @@ namespace Game.Proximity
             {
                 // Clear the zone tracking dictionary
                 npcProximityZones.Clear();
+                // --- NEW: Clear active runner lists on destroy ---
+                activeNearRunners.Clear();
+                activeModerateRunners.Clear();
+                // --- NEW: Clear interrupted runner list on destroy ---
+                interruptedRunners.Clear();
+                // --- END NEW ---
                 Instance = null;
-                Debug.Log("ProximityManager: OnDestroy completed. Zone tracking cleared.");
+                Debug.Log("ProximityManager: OnDestroy completed. Zone tracking and active lists cleared.");
             }
         }
 
@@ -198,6 +270,12 @@ namespace Game.Proximity
                     }
                 }
 
+                // --- NEW: Temporary lists to track runners to add/remove this tick ---
+                List<NpcStateMachineRunner> runnersToAddNear = new List<NpcStateMachineRunner>();
+                List<NpcStateMachineRunner> runnersToAddModerate = new List<NpcStateMachineRunner>();
+                List<NpcStateMachineRunner> runnersToRemove = new List<NpcStateMachineRunner>(); // Runners that are becoming Far or invalid
+                // --- END NEW ---
+
 
                 foreach (var tiData in npcsToProcess) // Iterate over the combined list
                 {
@@ -249,7 +327,7 @@ namespace Game.Proximity
                             Debug.Log($"PROXIMITY {tiData.Id}: Triggering Activation.");
                             tiNpcManager.RequestActivateTiNpc(tiData);
                             // The runner will be available *after* RequestActivateTiNpc returns and the object is pooled.
-                            // We'll set the mode below after the main transition logic.
+                            // We'll add the runner to the list below after the main transition logic.
                         }
                         // Transition from Moderate or Near to Far -> DEACTIVATE
                         else if ((previousZone == ProximityZone.Moderate || previousZone == ProximityZone.Near) && currentZone == ProximityZone.Far)
@@ -273,6 +351,8 @@ namespace Game.Proximity
                                  Debug.Log($"PROXIMITY {tiData.Id}: Triggering Deactivation.");
                                  tiNpcManager.RequestDeactivateTiNpc(tiData, runner);
                                  // The runner GameObject will be pooled shortly after this.
+                                 // Add the runner to the removal list
+                                 runnersToRemove.Add(runner); // Add to list for removal from active lists
                             }
                             else
                             {
@@ -281,6 +361,7 @@ namespace Game.Proximity
                                  // Attempt to force cleanup without proper deactivation flow
                                  tiData.UnlinkGameObject(); // Clear data link and flags
                                  gridManager?.RemoveItem(tiData, tiData.CurrentWorldPosition); // Attempt to remove from grid
+                                 // No runner to add to runnersToRemove list in this case
                             }
                         }
                         // Transitions between Near and Moderate zones -> THROTTLE CHANGE
@@ -292,7 +373,13 @@ namespace Game.Proximity
                              if (runner != null)
                              {
                                   Debug.Log($"PROXIMITY {tiData.Id}: Triggering Throttling Change.");
-                                  runner.SetUpdateMode(currentZone); // Set the new update mode
+                                  // REMOVED: runner.SetUpdateMode(currentZone); // Set the new update mode
+                                  // This logic will be replaced by adding/removing the runner from lists in ProximityManager
+                                  // Add the runner to the appropriate list for this tick's update
+                                  if (currentZone == ProximityZone.Near) runnersToAddNear.Add(runner);
+                                  else if (currentZone == ProximityZone.Moderate) runnersToAddModerate.Add(runner);
+                                  // Also add to removal list from old zone
+                                  runnersToRemove.Add(runner); // Add to list for removal from active lists
                              } else {
                                   Debug.LogError($"PROXIMITY {tiData.Id}: Expected active NPC GameObject/Runner for throttling change, but found none! Cannot set update mode.", tiData.NpcGameObject);
                              }
@@ -303,27 +390,46 @@ namespace Game.Proximity
                     // Update the tracked zone *after* processing transitions (unless deactivation was blocked by state)
                     npcProximityZones[tiData] = currentZone;
 
-                    // --- MODIFIED: Ensure update mode is set for all active NPCs in Near/Moderate zones ---
-                    // This handles initial activation into Near/Moderate AND re-confirms mode periodically
-                    // for NPCs already active in these zones.
-                    if (tiData.IsActiveGameObject && tiData.NpcGameObject != null && (currentZone == ProximityZone.Near || currentZone == ProximityZone.Moderate))
+                    // --- NEW: Add newly activated runners to the lists ---
+                    // This handles the case where Far -> Near/Moderate activation just happened.
+                    // The runner should now exist and be linked.
+                    if (previousZone == ProximityZone.Far && (currentZone == ProximityZone.Moderate || currentZone == ProximityZone.Near))
                     {
-                         NpcStateMachineRunner runner = tiData.NpcGameObject.GetComponent<NpcStateMachineRunner>();
+                         NpcStateMachineRunner runner = tiData.NpcGameObject?.GetComponent<NpcStateMachineRunner>();
                          if (runner != null)
                          {
-                              // Only log if the mode is actually changing or being set for the first time
-                              // (Optional, can be noisy)
-                              // if (runner.currentUpdateInterval != runner.normalUpdateInterval || runner.normalUpdateInterval == 0f) // Check if mode needs setting/changing
-                              // {
-                                  Debug.Log($"PROXIMITY {tiData.Id}: Setting/Confirming update mode to {currentZone}.");
-                              // }
-                              runner.SetUpdateMode(currentZone);
+                              if (currentZone == ProximityZone.Near) runnersToAddNear.Add(runner);
+                              else if (currentZone == ProximityZone.Moderate) runnersToAddModerate.Add(runner);
+                              Debug.Log($"PROXIMITY {tiData.Id}: Activated. Adding runner to {currentZone} list.", runner.gameObject);
                          } else {
-                              Debug.LogError($"PROXIMITY {tiData.Id}: Active NPC is missing Runner! Cannot set update mode.", tiData.NpcGameObject);
+                              Debug.LogError($"PROXIMITY {tiData.Id}: Activated but Runner is null! Cannot add to active lists.", tiData.NpcGameObject);
                          }
                     }
-                    // --- END MODIFIED ---
+                    // --- END NEW ---
                 }
+
+                // --- NEW: Process the lists of runners to add/remove from active lists ---
+
+                // Remove runners from their old lists
+                foreach(var runner in runnersToRemove)
+                {
+                    if (activeNearRunners.Contains(runner)) activeNearRunners.Remove(runner);
+                    if (activeModerateRunners.Contains(runner)) activeModerateRunners.Remove(runner);
+                    // Interrupted list removal is handled by ExitInterruptionMode (Phase 3)
+                }
+
+                // Add runners to their new lists (avoiding duplicates)
+                foreach(var runner in runnersToAddNear)
+                {
+                    if (!activeNearRunners.Contains(runner)) activeNearRunners.Add(runner);
+                }
+                 foreach(var runner in runnersToAddModerate)
+                {
+                    if (!activeModerateRunners.Contains(runner)) activeModerateRunners.Add(runner);
+                }
+
+                // --- END NEW ---
+
 
                 // --- Clean up tracking for NPCs that are now truly outside the far radius and not active ---
                 // If an NPC transitions to Far and is successfully deactivated/pooled,
@@ -352,6 +458,101 @@ namespace Game.Proximity
         }
 
         /// <summary>
+        /// The coroutine that ticks active NPCs in the Moderate zone in a round-robin fashion.
+        /// </summary>
+        private IEnumerator ModerateTickRoutine()
+        {
+            while (true)
+            {
+                // Wait for the fixed delta time before processing the next batch
+                yield return new WaitForSeconds(fixedModerateDeltaTime);
+
+                // --- Process a batch of Moderate Runners ---
+                // Ensure the list is not null and has elements before processing
+                if (activeModerateRunners == null || activeModerateRunners.Count == 0)
+                {
+                    // If the list is empty, reset index and continue waiting
+                    moderateTickIndex = 0;
+                    continue;
+                }
+
+                int totalModerateCount = activeModerateRunners.Count;
+
+                // Wrap the index if it exceeds the total count
+                if (moderateTickIndex >= totalModerateCount)
+                {
+                    moderateTickIndex = 0;
+                }
+
+                // Get the batch of runners to process in this tick
+                // Use Skip and Take, handling the case where the batch wraps around the end of the list
+                List<NpcStateMachineRunner> currentBatch;
+                if (moderateTickIndex + moderateBatchSize <= totalModerateCount)
+                {
+                    // Simple case: batch is entirely within the remaining list
+                    currentBatch = activeModerateRunners.Skip(moderateTickIndex).Take(moderateBatchSize).ToList();
+                }
+                else
+                {
+                    // Batch wraps around: take remaining from current index, then take from the start
+                    int remainingInList = totalModerateCount - moderateTickIndex;
+                    int neededFromStart = moderateBatchSize - remainingInList;
+                    currentBatch = activeModerateRunners.Skip(moderateTickIndex).Take(remainingInList).ToList();
+                    currentBatch.AddRange(activeModerateRunners.Take(neededFromStart));
+                }
+
+
+                // Process the batch
+                foreach (var runner in currentBatch)
+                {
+                    // Double-check runner validity before ticking
+                    if (runner != null && runner.isActiveAndEnabled)
+                    {
+                        // --- Call the Runner's ThrottledTick method ---
+                        runner.ThrottledTick(fixedModerateDeltaTime); // Use the fixed delta time
+                        // --- END Call ---
+                    }
+                    // Note: If a runner is null or inactive here, it means it was likely
+                    // deactivated/pooled since the last ProximityCheckRoutine updated the list.
+                    // The list cleanup will happen in the next ProximityCheckRoutine.
+                }
+
+                // Advance the index by the batch size
+                moderateTickIndex += moderateBatchSize; // Use moderateBatchSize field
+
+                // Wrap the index again based on the current total count (it might have changed)
+                totalModerateCount = activeModerateRunners.Count; // Re-get count
+                if (totalModerateCount > 0)
+                {
+                    moderateTickIndex %= totalModerateCount;
+                }
+                else
+                {
+                    moderateTickIndex = 0; // Reset if list is now empty
+                }
+
+                // Debug.Log($"PROXIMITY: Ticked {currentBatch.Count} Moderate NPCs. Total Moderate: {totalModerateCount}. Next batch starts at index {moderateTickIndex}."); // Too noisy
+                // The coroutine automatically waits for fixedModerateDeltaTime before the next iteration.
+            }
+        }
+
+        /// <summary>
+        /// Removes a runner from the active Near and Moderate lists.
+        /// Called by TiNpcManager when a runner is being returned to the pool.
+        /// </summary>
+        /// <param name="runner">The runner to remove.</param>
+        public void RemoveRunnerFromActiveLists(NpcStateMachineRunner runner)
+        {
+             if (runner == null) return;
+
+             // Remove from both lists (Remove handles if it's not present)
+             activeNearRunners.Remove(runner);
+             activeModerateRunners.Remove(runner);
+             // Interrupted list removal is handled by ExitInterruptionMode (Phase 3)
+        }
+
+
+        /// <summary>
         /// Public method to get the current proximity zone for a specific NPC.
         /// Useful for other systems that might need this information.
         /// Returns ProximityZone.Far if the NPC is not currently tracked.
@@ -366,8 +567,85 @@ namespace Game.Proximity
             return ProximityZone.Far; // Default if NPC is not currently tracked (e.g., just loaded, or outside far radius)
         }
 
+        // --- NEW: Methods for Interruption Handler to notify ProximityManager ---
+        /// <summary>
+        /// Called by NpcInterruptionHandler when an interruption state begins.
+        /// Notifies ProximityManager that this runner needs full updates.
+        /// </summary>
+        public void EnterInterruptionMode(NpcStateMachineRunner runner)
+        {
+             if (runner == null) return;
+
+             Debug.Log($"PROXIMITY {runner.gameObject.name}: Notified of Interruption Start. Moving to Interrupted list.", runner.gameObject);
+
+             // Remove from zone lists if present
+             activeNearRunners.Remove(runner);
+             activeModerateRunners.Remove(runner);
+
+             // Add to interrupted list (Add handles if already present, but shouldn't be)
+             if (!interruptedRunners.Contains(runner))
+             {
+                 interruptedRunners.Add(runner);
+             }
+        }
+
+        /// <summary>
+        /// Called by NpcInterruptionHandler when an interruption state ends.
+        /// Notifies ProximityManager that this runner can return to zone-based updates.
+        /// </summary>
+        public void ExitInterruptionMode(NpcStateMachineRunner runner)
+        {
+             if (runner == null) return;
+
+             Debug.Log($"PROXIMITY {runner.gameObject.name}: Notified of Interruption End. Moving from Interrupted list back to zone list.", runner.gameObject);
+
+             // Remove from interrupted list
+             interruptedRunners.Remove(runner);
+
+             // Determine current zone based on position
+             ProximityZone currentZone = ProximityZone.Far; // Default if position check fails
+             if (playerTransform != null && runner.isActiveAndEnabled) // Need player and active runner
+             {
+                 float distanceToPlayerSq = (runner.transform.position - playerTransform.position).sqrMagnitude;
+                 if (distanceToPlayerSq <= nearRadius * nearRadius)
+                 {
+                     currentZone = ProximityZone.Near;
+                 }
+                 else if (distanceToPlayerSq <= moderateRadius * moderateRadius)
+                 {
+                     currentZone = ProximityZone.Moderate;
+                 }
+                 // If distance > moderateRadius, it's Far, and we don't add it back to active lists.
+             } else if (runner != null)
+             {
+                  Debug.LogWarning($"PROXIMITY {runner.gameObject.name}: Player Transform or Runner not active/enabled during ExitInterruptionMode zone check. Cannot determine zone, not adding back to active lists.", runner.gameObject);
+             }
+
+
+             // Add back to the appropriate zone list if not Far
+             if (currentZone == ProximityZone.Near)
+             {
+                 if (!activeNearRunners.Contains(runner)) activeNearRunners.Add(runner);
+                 Debug.Log($"PROXIMITY {runner.gameObject.name}: Returned to Near zone list.", runner.gameObject);
+             }
+             else if (currentZone == ProximityZone.Moderate)
+             {
+                 if (!activeModerateRunners.Contains(runner)) activeModerateRunners.Add(runner);
+                 Debug.Log($"PROXIMITY {runner.gameObject.name}: Returned to Moderate zone list.", runner.gameObject);
+             }
+             else
+             {
+                  // If currentZone is Far, the NPC should be deactivated/pooled.
+                  // The ProximityCheckRoutine will handle triggering deactivation if needed.
+                  // We just ensure it's removed from interrupted list here.
+                  Debug.Log($"PROXIMITY {runner.gameObject.name}: Interruption ended, but NPC is now in Far zone. Not adding back to active lists.", runner.gameObject);
+             }
+        }
+        // --- END NEW ---
+
+
         // --- DEBUG: Draw gizmos for proximity zones ---
-        [Header("Debug Visualization")]
+        [Header("Debug Visualization (Editor Only)")]
         [Tooltip("Enable drawing gizmos for tracked TI NPCs in the Scene view based on their zone.")]
         [SerializeField] private bool drawZoneGizmos = true;
         [Tooltip("Color for Near zone gizmos.")]
@@ -422,5 +700,3 @@ namespace Game.Proximity
         // --- END DEBUG ---
     }
 }
-
-// --- END OF FILE ProximityManager.cs ---

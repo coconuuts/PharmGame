@@ -55,47 +55,86 @@ namespace Game.NPC.States // Place alongside other active states
                  context.TransitionToState(GeneralState.Idle); // Fallback
                  return;
             }
+            
+               // --- MODIFIED: Check if returning from interruption using temporary flag ---
+               // Note: This check happens *before* checking TiData simulation state.
+               // If wasInterruptedFromPathState is true, it means the NPC was actively
+               // following this path when interrupted. We should resume from where it was.
+               if (context.Runner.wasInterruptedFromPathState)
+               {
+                    Debug.Log($"{context.NpcObject.name}: Returning from PathState interruption. Attempting to restore active path progress.", context.NpcObject);
 
-            // --- NEW: Check if this is a TI NPC and should restore path progress ---
-            if (context.Runner.IsTrueIdentityNpc && context.TiData != null && context.TiData.isFollowingPathBasic)
-            {
-                 // Check if the saved path ID matches the path asset configured for *this* state SO.
-                 // This prevents restoring progress on the wrong path if the TI NPC was deactivated
-                 // while on a different path simulation.
-                 if (context.TiData.simulatedPathID == pathAsset.PathID)
-                 {
-                      Debug.Log($"{context.NpcObject.name}: TI NPC activating into PathState '{name}'. Restoring path progress from data: PathID='{context.TiData.simulatedPathID}', Index={context.TiData.simulatedWaypointIndex}, Reverse={context.TiData.simulatedFollowReverse}.", context.NpcObject);
+                    // Use the temporary path data saved by NpcInterruptionHandler.TryInterrupt
+                    bool restored = context.RestorePathProgress(
+                         WaypointManager.Instance.GetPath(context.Runner.interruptedPathID), // Get path SO using saved ID
+                         context.Runner.interruptedWaypointIndex, // Use the saved index
+                         context.Runner.interruptedFollowReverse // Use the saved direction
+                    );
 
-                      // Call the PathFollowingHandler to restore its state directly.
-                      // This bypasses the NavMesh leg.
-                      bool restored = context.RestorePathProgress(
-                           pathAsset, // Use the path asset configured on this SO
-                           context.TiData.simulatedWaypointIndex, // Use the saved index
-                           context.TiData.simulatedFollowReverse // Use the saved direction
-                      );
+                    // --- Clear the temporary interruption path data AFTER attempting restore ---
+                    context.Runner.interruptedPathID = null;
+                    context.Runner.interruptedWaypointIndex = -1;
+                    context.Runner.interruptedFollowReverse = false;
+                    context.Runner.wasInterruptedFromPathState = false; // Clear the flag
+                    // --- END Clear ---
 
-                      if (restored)
-                      {
-                           // Simulation data is cleared by TiNpcManager.RequestActivateTiNpc
-                           // Path following handler is now active. PathStateSO.OnUpdate will monitor it.
-                           // Return early, skipping the NavMesh logic below.
-                           return;
-                      }
-                      else
-                      {
-                           Debug.LogError($"{context.NpcObject.name}: Failed to restore path progress for TI NPC '{context.TiData.Id}'! PathFollowingHandler.RestorePathProgress failed. Falling back to starting path from beginning via NavMesh.", context.NpcObject);
-                           // Fall through to the standard NavMesh logic below.
-                      }
-                 } else {
-                      Debug.LogWarning($"{context.NpcObject.name}: TI NPC activating into PathState '{name}' (PathID: {pathAsset.PathID}), but saved path data is for a different path ('{context.TiData.simulatedPathID}'). Starting path from beginning via NavMesh.", context.NpcObject);
-                      // Fall through to the standard NavMesh logic below.
-                      // Clear invalid path simulation data on TiData here for safety, though TiNpcManager should have done it.
-                      context.TiData.simulatedPathID = null;
-                      context.TiData.simulatedWaypointIndex = -1;
-                      context.TiData.simulatedFollowReverse = false;
-                      context.TiData.isFollowingPathBasic = false;
-                 }
-            }
+                    if (restored)
+                    {
+                         Debug.Log($"{context.NpcObject.name}: Successfully restored active path progress.", context.NpcObject);
+                         // Path following handler is now active. PathStateSO.OnUpdate will monitor it.
+                         // Return early, skipping the NavMesh logic below.
+                         return;
+                    }
+                    else
+                    {
+                         Debug.LogError($"{context.NpcObject.name}: Failed to restore active path progress after interruption! PathFollowingHandler.RestorePathProgress failed or path asset not found. Falling back to starting path from beginning via NavMesh.", context.NpcObject);
+                         // Fall through to the standard NavMesh logic below.
+                    }
+               }
+               // --- END MODIFIED ---
+
+               // --- NEW: Check if this is a TI NPC and should restore path progress ---
+               else if (context.Runner.IsTrueIdentityNpc && context.TiData != null && context.TiData.isFollowingPathBasic)
+               {
+                    // Check if the saved path ID matches the path asset configured for *this* state SO.
+                    // This prevents restoring progress on the wrong path if the TI NPC was deactivated
+                    // while on a different path simulation.
+                    if (context.TiData.simulatedPathID == pathAsset.PathID)
+                    {
+                         Debug.Log($"{context.NpcObject.name}: TI NPC activating into PathState '{name}'. Restoring path progress from data: PathID='{context.TiData.simulatedPathID}', Index={context.TiData.simulatedWaypointIndex}, Reverse={context.TiData.simulatedFollowReverse}.", context.NpcObject);
+
+                         // Call the PathFollowingHandler to restore its state directly.
+                         // This bypasses the NavMesh leg.
+                         bool restored = context.RestorePathProgress(
+                              pathAsset, // Use the path asset configured on this SO
+                              context.TiData.simulatedWaypointIndex, // Use the saved index
+                              context.TiData.simulatedFollowReverse // Use the saved direction
+                         );
+
+                         if (restored)
+                         {
+                              // Simulation data is cleared by TiNpcManager.RequestActivateTiNpc
+                              // Path following handler is now active. PathStateSO.OnUpdate will monitor it.
+                              // Return early, skipping the NavMesh logic below.
+                              return;
+                         }
+                         else
+                         {
+                              Debug.LogError($"{context.NpcObject.name}: Failed to restore path progress for TI NPC '{context.TiData.Id}'! PathFollowingHandler.RestorePathProgress failed. Falling back to starting path from beginning via NavMesh.", context.NpcObject);
+                              // Fall through to the standard NavMesh logic below.
+                         }
+                    }
+                    else
+                    {
+                         Debug.LogWarning($"{context.NpcObject.name}: TI NPC activating into PathState '{name}' (PathID: {pathAsset.PathID}), but saved path data is for a different path ('{context.TiData.simulatedPathID}'). Starting path from beginning via NavMesh.", context.NpcObject);
+                         // Fall through to the standard NavMesh logic below.
+                         // Clear invalid path simulation data on TiData here for safety, though TiNpcManager should have done it.
+                         context.TiData.simulatedPathID = null;
+                         context.TiData.simulatedWaypointIndex = -1;
+                         context.TiData.simulatedFollowReverse = false;
+                         context.TiData.isFollowingPathBasic = false;
+                    }
+               }
             // --- END NEW ---
 
 

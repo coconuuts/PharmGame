@@ -462,38 +462,38 @@ namespace CustomerManagement
             // --- NEW LOGIC: Differentiate tracking based on NPC type ---
             if (customerRunner.IsTrueIdentityNpc)
             {
-                 // Ensure TiData is available for TI NPCs
-                 if (customerRunner.TiData == null)
-                 {
-                      Debug.LogError($"CustomerManager: Received NpcEnteredStoreEvent for TI NPC '{customerRunner.gameObject.name}' but TiData is null! Cannot track.", eventArgs.NpcObject);
-                      return;
-                 }
+                // Ensure TiData is available for TI NPCs
+                if (customerRunner.TiData == null)
+                {
+                    Debug.LogError($"CustomerManager: Received NpcEnteredStoreEvent for TI NPC '{customerRunner.gameObject.name}' but TiData is null! Cannot track.", eventArgs.NpcObject);
+                    return;
+                }
 
-                 if (tiNpcsInsideStore != null && !tiNpcsInsideStore.Contains(customerRunner.TiData))
-                 {
-                      tiNpcsInsideStore.Add(customerRunner.TiData);
-                      Debug.Log($"CustomerManager: TI NPC '{customerRunner.TiData.Id}' ({customerRunner.gameObject.name}) entered the store (received NpcEnteredStoreEvent). Total active (inside store): {activeCustomers.Count + tiNpcsInsideStore.Count}");
-                 }
-                 else if (tiNpcsInsideStore == null)
-                 {
-                      Debug.LogError($"CustomerManager: tiNpcsInsideStore collection is null! Cannot track TI NPC '{customerRunner.TiData.Id}'.", this);
-                 }
-                 else // Contains(customerRunner.TiData) was true
-                 {
-                      Debug.LogWarning($"CustomerManager: Received NpcEnteredStoreEvent for TI NPC '{customerRunner.TiData.Id}' ({customerRunner.gameObject.name}) but it was already in the tiNpcsInsideStore list. Duplicate event?", eventArgs.NpcObject);
-                 }
+                if (tiNpcsInsideStore != null && !tiNpcsInsideStore.Contains(customerRunner.TiData))
+                {
+                    tiNpcsInsideStore.Add(customerRunner.TiData);
+                    Debug.Log($"CustomerManager: TI NPC '{customerRunner.TiData.Id}' ({customerRunner.gameObject.name}) entered the store (received NpcEnteredStoreEvent). Total active (inside store): {activeCustomers.Count + tiNpcsInsideStore.Count}");
+                }
+                else if (tiNpcsInsideStore == null)
+                {
+                    Debug.LogError($"CustomerManager: tiNpcsInsideStore collection is null! Cannot track TI NPC '{customerRunner.TiData.Id}'.", this);
+                }
+                else // Contains(customerRunner.TiData) was true
+                {
+                    Debug.LogWarning($"CustomerManager: Received NpcEnteredStoreEvent for TI NPC '{customerRunner.TiData.Id}' ({customerRunner.gameObject.name}) but it was already in the tiNpcsInsideStore list. Duplicate event?", eventArgs.NpcObject);
+                }
             }
             else // Transient NPC
             {
-                 if (!activeCustomers.Contains(customerRunner))
-                 {
-                      activeCustomers.Add(customerRunner);
-                      Debug.Log($"CustomerManager: Transient NPC ({customerRunner.gameObject.name}) entered the store (received NpcEnteredStoreEvent). Total active (inside store): {activeCustomers.Count + tiNpcsInsideStore.Count}");
-                 }
-                 else // Contains(customerRunner) was true
-                 {
-                      Debug.LogWarning($"CustomerManager: Received NpcEnteredStoreEvent for Transient NPC '{customerRunner.gameObject.name}' but it was already in the activeCustomers list. Duplicate event?", eventArgs.NpcObject);
-                 }
+                if (!activeCustomers.Contains(customerRunner))
+                {
+                    activeCustomers.Add(customerRunner);
+                    Debug.Log($"CustomerManager: Transient NPC ({customerRunner.gameObject.name}) entered the store (received NpcEnteredStoreEvent). Total active (inside store): {activeCustomers.Count + tiNpcsInsideStore.Count}");
+                }
+                else // Contains(customerRunner) was true
+                {
+                    Debug.LogWarning($"CustomerManager: Received NpcEnteredStoreEvent for Transient NPC '{customerRunner.gameObject.name}' but it was already in the activeCustomers list. Duplicate event?", eventArgs.NpcObject);
+                }
             }
             // --- END NEW LOGIC ---
 
@@ -520,38 +520,38 @@ namespace CustomerManagement
             // --- NEW LOGIC: Differentiate tracking based on NPC type ---
             if (customerRunner.IsTrueIdentityNpc)
             {
-                 // Ensure TiData is available for TI NPCs
-                 if (customerRunner.TiData == null)
-                 {
-                      Debug.LogError($"CustomerManager: Received NpcExitedStoreEvent for TI NPC '{customerRunner.gameObject.name}' but TiData is null! Cannot track.", eventArgs.NpcObject);
-                      return;
-                 }
+                // Ensure TiData is available for TI NPCs
+                if (customerRunner.TiData == null)
+                {
+                    Debug.LogError($"CustomerManager: Received NpcExitedStoreEvent for TI NPC '{customerRunner.gameObject.name}' but TiData is null! Cannot track.", eventArgs.NpcObject);
+                    return;
+                }
 
-                 if (tiNpcsInsideStore != null && tiNpcsInsideStore.Contains(customerRunner.TiData))
-                 {
-                      tiNpcsInsideStore.Remove(customerRunner.TiData);
-                      Debug.Log($"CustomerManager: TI NPC '{customerRunner.TiData.Id}' ({customerRunner.gameObject.name}) exited the store (received NpcExitedStoreEvent). Total active (inside store): {activeCustomers.Count + tiNpcsInsideStore.Count}");
-                 }
-                 else if (tiNpcsInsideStore == null)
-                 {
-                      Debug.LogError($"CustomerManager: tiNpcsInsideStore collection is null! Cannot track TI NPC '{customerRunner.TiData.Id}' exiting.", this);
-                 }
-                 else // !Contains(customerRunner.TiData)
-                 {
-                      Debug.LogWarning($"CustomerManager: Received NpcExitedStoreEvent for TI NPC '{customerRunner.TiData.Id}' ({customerRunner.gameObject.name}) but it was not in the tiNpcsInsideStore list. State inconsistency?", eventArgs.NpcObject);
-                 }
+                if (tiNpcsInsideStore != null && tiNpcsInsideStore.Contains(customerRunner.TiData))
+                {
+                    tiNpcsInsideStore.Remove(customerRunner.TiData);
+                    Debug.Log($"CustomerManager: TI NPC '{customerRunner.TiData.Id}' ({customerRunner.gameObject.name}) exited the store (received NpcExitedStoreEvent). Total active (inside store): {activeCustomers.Count + tiNpcsInsideStore.Count}");
+                }
+                else if (tiNpcsInsideStore == null)
+                {
+                    Debug.LogError($"CustomerManager: tiNpcsInsideStore collection is null! Cannot track TI NPC '{customerRunner.TiData.Id}' exiting.", this);
+                }
+                else // !Contains(customerRunner.TiData)
+                {
+                    Debug.LogWarning($"CustomerManager: Received NpcExitedStoreEvent for TI NPC '{customerRunner.TiData.Id}' ({customerRunner.gameObject.name}) but it was not in the tiNpcsInsideStore list. State inconsistency?", eventArgs.NpcObject);
+                }
             }
             else // Transient NPC
             {
-                 if (activeCustomers.Contains(customerRunner))
-                 {
-                      activeCustomers.Remove(customerRunner);
-                      Debug.Log($"CustomerManager: Transient NPC ({customerRunner.gameObject.name}) exited the store (received NpcExitedStoreEvent). Total active (inside store): {activeCustomers.Count + tiNpcsInsideStore.Count}");
-                 }
-                 else // !Contains(customerRunner)
-                 {
-                      Debug.LogWarning($"CustomerManager: Received NpcExitedStoreEvent for Transient NPC '{eventArgs.NpcObject.name}' but it was not in the activeCustomers list. State inconsistency?", eventArgs.NpcObject);
-                 }
+                if (activeCustomers.Contains(customerRunner))
+                {
+                    activeCustomers.Remove(customerRunner);
+                    Debug.Log($"CustomerManager: Transient NPC ({customerRunner.gameObject.name}) exited the store (received NpcExitedStoreEvent). Total active (inside store): {activeCustomers.Count + tiNpcsInsideStore.Count}");
+                }
+                else // !Contains(customerRunner)
+                {
+                    Debug.LogWarning($"CustomerManager: Received NpcExitedStoreEvent for Transient NPC '{eventArgs.NpcObject.name}' but it was not in the activeCustomers list. State inconsistency?", eventArgs.NpcObject);
+                }
             }
             // --- END NEW LOGIC ---
 
@@ -633,13 +633,14 @@ namespace CustomerManagement
                     if (runnerToMove.QueueHandler != null)
                     {
                         runnerToMove.QueueHandler.MoveToQueueSpot(nextSpotData.spotTransform, nextSpotIndex, type);
-                    } else
+                    }
+                    else
                     {
                         Debug.LogError($"CustomerManager: Runner '{runnerToMove.gameObject.name}' is missing its NpcQueueHandler component! Cannot signal move up.", runnerToMove.gameObject);
-                         // This spot is now incorrectly marked as occupied by runnerToMove, and the previous spot might not be freed.
-                         // It's a significant inconsistency. Forcing the spot to free to unblock the queue,
-                         // but the NPC is likely stuck.
-                         nextSpotData.currentOccupant = null; // Unmark the destination spot
+                        // This spot is now incorrectly marked as occupied by runnerToMove, and the previous spot might not be freed.
+                        // It's a significant inconsistency. Forcing the spot to free to unblock the queue,
+                        // but the NPC is likely stuck.
+                        nextSpotData.currentOccupant = null; // Unmark the destination spot
                     }
                 }
                 else // No occupant found for this spot index
@@ -727,11 +728,12 @@ namespace CustomerManagement
                     Debug.Log($"CustomerManager: Found {runnerAtSpot0.gameObject.name} occupying Main Queue spot 0. Clearing spot 0 and Signalling them to move to register.");
                     if (runnerAtSpot0.QueueHandler != null)
                     {
-                       runnerAtSpot0.QueueHandler.GoToRegisterFromQueue(); // Tell the runner to move
-                    } else
+                        runnerAtSpot0.QueueHandler.GoToRegisterFromQueue(); // Tell the runner to move
+                    }
+                    else
                     {
                         Debug.LogError($"CustomerManager: Runner '{runnerAtSpot0.gameObject.name}' is missing its NpcQueueHandler component! Cannot signal move to register.", runnerAtSpot0.gameObject);
-                         // This NPC is likely stuck.
+                        // This NPC is likely stuck.
                     }
                 }
             }
@@ -1061,6 +1063,13 @@ namespace CustomerManagement
 
             // The secondary queue is considered "full" if the very last spot has an occupant.
             return secondaryQueueSpots[secondaryQueueSpots.Count - 1].IsOccupied;
+        }
+        
+        public bool IsTiNpcInsideStore(TiNpcData tiData)
+        {
+            if (tiData == null) return false;
+            // Use the null-conditional operator for safety if tiNpcsInsideStore is null
+            return tiNpcsInsideStore?.Contains(tiData) ?? false;
         }
     }
 }

@@ -1,9 +1,7 @@
-// --- START OF FILE NpcPathFollowingHandler.cs ---
-
 using UnityEngine;
 using System.Collections.Generic; // Needed for List
 using Game.Navigation; // Needed for PathSO and WaypointManager
-using Game.NPC.Handlers; // Needed for NpcMovementHandler
+using Game.NPC.Handlers; // Needed for NpcMovementHandler, MovementTickResult
 using System.Linq; // Needed for Select, Where, ToList
 
 namespace Game.NPC.Handlers // Place alongside other handlers
@@ -13,6 +11,7 @@ namespace Game.NPC.Handlers // Place alongside other handlers
     /// Disables the NavMeshAgent and uses Rigidbody.MovePosition.
     /// Now includes logic for following paths in reverse and restoring progress after activation.
     /// Includes debug visualization for the path being followed.
+    /// Modified to calculate movement and rotation but return the results for external interpolation.
     /// </summary>
     [RequireComponent(typeof(NpcMovementHandler))]
     [RequireComponent(typeof(Rigidbody))] // Requires a Rigidbody for MovePosition
@@ -73,6 +72,9 @@ namespace Game.NPC.Handlers // Place alongside other handlers
 
             // Configure Rigidbody for kinematic movement when following path
             // We'll toggle isKinematic in Start/StopFollowingPath
+            // NOTE: Rigidbody.MovePosition requires the Rigidbody to be non-kinematic if it's affected by physics.
+            // However, if we are *only* using MovePosition and not relying on physics interactions,
+            // kinematic can be fine. Let's set it to non-kinematic when path following starts.
             rb.isKinematic = true; // Start as kinematic, NavMeshAgent handles non-kinematic physics
 
             Debug.Log($"{gameObject.name}: NpcPathFollowingHandler Awake completed. References acquired.");
@@ -92,15 +94,21 @@ namespace Game.NPC.Handlers // Place alongside other handlers
 
         /// <summary>
         /// Handles movement and waypoint progression when actively following a path.
-        /// Called by the Runner's Update loop, respecting throttling.
+        /// Called by the Runner's ThrottledTick loop, respecting throttling.
+        /// Calculates the next position and rotation but does NOT apply them directly to the transform.
         /// </summary>
         /// <param name="deltaTime">The time elapsed since the last tick (can be throttled).</param>
-        public void TickMovement(float deltaTime)
+        /// <returns>A MovementTickResult containing the calculated next world position and rotation for the NPC.</returns>
+        public MovementTickResult TickMovement(float deltaTime) // <-- MODIFIED: Return MovementTickResult
         {
+            Vector3 currentPosition = transform.position; // Use current visual position as start
+            Quaternion currentRotation = transform.rotation; // Use current visual rotation as start
+
             if (!isFollowingPath || currentPathSO == null || waypointManager == null)
             {
                 // Not following a path, or dependencies missing
-                return;
+                // Return current position and rotation, no movement calculated
+                return new MovementTickResult(currentPosition, currentRotation);
             }
 
             // --- Get Target Waypoint Transform ---
@@ -112,7 +120,7 @@ namespace Game.NPC.Handlers // Place alongside other handlers
                  {
                       Debug.LogError($"NpcPathFollowingHandler on {gameObject.name}: Invalid currentWaypointIndex {currentWaypointIndex} for path '{currentPathSO.PathID}' (WaypointCount: {currentPathSO.WaypointCount})! Stopping path following.", this);
                       StopFollowingPath();
-                      return;
+                      return new MovementTickResult(currentPosition, currentRotation); // Return current state on error
                  }
 
                  string targetWaypointID = currentPathSO.GetWaypointID(currentWaypointIndex);
@@ -120,7 +128,7 @@ namespace Game.NPC.Handlers // Place alongside other handlers
                  {
                       Debug.LogError($"NpcPathFollowingHandler on {gameObject.name}: Current path '{currentPathSO.PathID}' has null/empty waypoint ID at index {currentWaypointIndex}! Stopping path following.", this);
                       StopFollowingPath();
-                      return;
+                      return new MovementTickResult(currentPosition, currentRotation); // Return current state on error
                  }
 
                  currentTargetWaypointTransform = waypointManager.GetWaypointTransform(targetWaypointID);
@@ -129,7 +137,7 @@ namespace Game.NPC.Handlers // Place alongside other handlers
                  {
                       Debug.LogError($"NpcPathFollowingHandler on {gameObject.name}: Waypoint with ID '{targetWaypointID}' (index {currentWaypointIndex} in path '{currentPathSO.PathID}') not found in scene via WaypointManager! Stopping path following.", this);
                       StopFollowingPath();
-                      return;
+                      return new MovementTickResult(currentPosition, currentRotation); // Return current state on error
                  }
                  // Debug.Log($"NpcPathFollowingHandler on {gameObject.name}: Targeting waypoint '{targetWaypointID}' (index {currentWaypointIndex}).", this); // Too noisy
             }
@@ -137,7 +145,6 @@ namespace Game.NPC.Handlers // Place alongside other handlers
 
 
             Vector3 targetPosition = currentTargetWaypointTransform.position;
-            Vector3 currentPosition = transform.position;
 
             // --- Check for Arrival at Current Waypoint ---
             float distanceToTargetSq = (targetPosition - currentPosition).sqrMagnitude;
@@ -157,6 +164,27 @@ namespace Game.NPC.Handlers // Place alongside other handlers
                     currentWaypointIndex = nextIndex;
                     currentTargetWaypointTransform = null; // Clear cached transform to force lookup in next tick
                     // Debug.Log($"NpcPathFollowingHandler on {gameObject.name}: Advancing to next waypoint index {currentWaypointIndex}.", this); // Too noisy
+                    // Recalculate targetPosition for the new waypoint for this tick's movement calculation
+                    if (currentWaypointIndex >= 0 && currentWaypointIndex < currentPathSO.WaypointCount)
+                    {
+                         string nextTargetWaypointID = currentPathSO.GetWaypointID(currentWaypointIndex);
+                         currentTargetWaypointTransform = waypointManager.GetWaypointTransform(nextTargetWaypointID);
+                         if (currentTargetWaypointTransform != null)
+                         {
+                              targetPosition = currentTargetWaypointTransform.position;
+                         } else {
+                             // Fallback if next waypoint lookup fails immediately after advancing index
+                             Debug.LogError($"NpcPathFollowingHandler on {gameObject.name}: Next target waypoint with ID '{nextTargetWaypointID}' (index {currentWaypointIndex}) not found immediately after advancing index! Stopping path following.", this);
+                             StopFollowingPath();
+                             return new MovementTickResult(currentPosition, currentRotation); // Return current state on error
+                         }
+                    } else {
+                         // Should not happen if !reachedEnd check was correct, but defensive
+                         Debug.LogError($"NpcPathFollowingHandler on {gameObject.name}: Advanced to invalid next index {currentWaypointIndex}! Stopping path following.", this);
+                         StopFollowingPath();
+                         return new MovementTickResult(currentPosition, currentRotation); // Return current state on error
+                    }
+
                 }
                 else
                 {
@@ -164,30 +192,49 @@ namespace Game.NPC.Handlers // Place alongside other handlers
                     Debug.Log($"NpcPathFollowingHandler on {gameObject.name}: Reached end of path '{currentPathSO.PathID}'. Stopping path following.", this);
                     StopFollowingPath();
                     HasReachedEndOfPath = true; // Signal completion
-                    return; // Stop processing movement for this tick
+                    return new MovementTickResult(currentPosition, currentRotation); // Return current state as movement is finished
                 }
             }
             // --- End Check for Arrival ---
 
 
-            // --- Move Towards Current Target Waypoint ---
+            // --- Calculate Movement Towards Current Target Waypoint ---
             Vector3 direction = (targetPosition - currentPosition).normalized;
             float moveStep = pathFollowingSpeed * deltaTime;
 
             // Calculate the new position
             Vector3 newPosition = currentPosition + direction * moveStep;
 
-            // Use Rigidbody.MovePosition for physics-safe movement
-            rb.MovePosition(newPosition);
-
-            // Simulate rotation towards the movement direction
+            // --- Calculate Rotation Towards Movement Direction ---
+            Quaternion targetRotation = currentRotation; // Default to current rotation
             if (direction.sqrMagnitude > 0.001f) // Avoid LookRotation with zero vector
             {
-                 Quaternion targetRotation = Quaternion.LookRotation(direction);
-                 // Use Slerp for smooth rotation, scale speed by deltaTime
-                 transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * deltaTime);
+                 Quaternion desiredRotation = Quaternion.LookRotation(direction);
+                 // Use Slerp to calculate the rotation for this tick
+                 // The 't' value for Slerp should be based on rotation speed and delta time
+                 // rotationSpeed is degrees per second, Slerp t is 0-1 over the duration.
+                 // We want to rotate 'rotationSpeed * deltaTime' degrees this tick.
+                 // The fraction of the remaining angle to cover this tick is (rotationSpeed * deltaTime) / remainingAngle.
+                 // However, Slerp(a, b, t) interpolates from a to b over t. A simpler approach is to Slerp towards the desired rotation by a fixed amount per tick.
+                 // Let's use a fixed Slerp factor per tick scaled by deltaTime.
+                 float slerpFactor = rotationSpeed * deltaTime; // Scale rotation speed by deltaTime
+                 targetRotation = Quaternion.Slerp(currentRotation, desiredRotation, slerpFactor);
             }
-            // --- End Move ---
+            // --- End Calculate Rotation ---
+
+
+            // --- MODIFIED: Do NOT use Rigidbody.MovePosition here ---
+            // rb.MovePosition(newPosition); // REMOVED
+            // --- END MODIFIED ---
+
+            // --- MODIFIED: Do NOT apply rotation directly ---
+            // transform.rotation = ... // REMOVED
+            // --- END MODIFIED ---
+
+
+            // --- NEW: Return the calculated new position and rotation ---
+            return new MovementTickResult(newPosition, targetRotation);
+            // --- END NEW ---
         }
 
 
@@ -248,7 +295,9 @@ namespace Game.NPC.Handlers // Place alongside other handlers
             movementHandler.StopMoving(); // Stop any NavMesh movement
             movementHandler.DisableAgent(); // Disable the NavMesh Agent
 
-            rb.isKinematic = true; // Ensure Rigidbody is kinematic for MovePosition
+            // Rigidbody should be non-kinematic for MovePosition to potentially work with physics (though we're not using rb.MovePosition anymore)
+            // Let's keep it non-kinematic if Agent is disabled, as per standard practice.
+            rb.isKinematic = false; // Set Rigidbody to non-kinematic
 
             Debug.Log($"NpcPathFollowingHandler on {gameObject.name}: Started following path '{path.PathID}' from index {startIndex} (targeting index {currentWaypointIndex}), reverse: {reverse}.", this);
 
@@ -307,7 +356,8 @@ namespace Game.NPC.Handlers // Place alongside other handlers
              movementHandler.StopMoving(); // Stop any NavMesh movement (should already be stopped/disabled)
              movementHandler.DisableAgent(); // Disable the NavMesh Agent (should already be disabled)
 
-             rb.isKinematic = true; // Ensure Rigidbody is kinematic for MovePosition
+             // Rigidbody should be non-kinematic if Agent is disabled.
+             rb.isKinematic = false; // Set Rigidbody to non-kinematic
 
              Debug.Log($"NpcPathFollowingHandler on {gameObject.name}: Restored path progress for path '{path.PathID}'. Resuming movement towards index {currentWaypointIndex}, reverse: {reverse}.", this);
 
@@ -329,9 +379,8 @@ namespace Game.NPC.Handlers // Place alongside other handlers
             // --- Restore Components ---
             movementHandler.EnableAgent(); // Re-enable the NavMesh Agent
             // Note: Rigidbody.isKinematic should be managed by the NavMeshAgent itself when enabled.
-            // When Agent.enabled = true, it typically takes control of the Rigidbody.
-            // Setting rb.isKinematic = false here might conflict. Let's rely on the Agent.
-            // rb.isKinematic = false; // Restore Rigidbody to non-kinematic (if needed by Agent)
+            // When Agent.enabled = true, it typically takes control of the Rigidbody and sets isKinematic=false.
+            // We don't need to explicitly set rb.isKinematic = false here.
 
             // --- Reset State ---
             currentPathSO = null;
@@ -429,13 +478,14 @@ namespace Game.NPC.Handlers // Place alongside other handlers
              if (currentTargetWaypointTransform != null)
              {
                  Gizmos.color = Color.green; // Color for the current segment
+                 // Draw line from the *visual* position to the target
                  Gizmos.DrawLine(transform.position, currentTargetWaypointTransform.position);
 
                  // Draw a sphere at the target waypoint
                  Gizmos.DrawSphere(currentTargetWaypointTransform.position, waypointArrivalThreshold * 0.5f);
              }
 
-             // Draw a sphere at the NPC's current position
+             // Draw a sphere at the NPC's current visual position
              Gizmos.color = Color.blue;
              Gizmos.DrawSphere(transform.position, 0.3f);
 
@@ -461,5 +511,3 @@ namespace Game.NPC.Handlers // Place alongside other handlers
          // --- END NEW DEBUG ---
     }
 }
-
-// --- END OF FILE NpcPathFollowingHandler.cs ---

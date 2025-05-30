@@ -6582,7 +6582,7 @@ Transform:
   m_GameObject: {fileID: 671516358}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 1.25, y: 0, z: 2.18}
+  m_LocalPosition: {x: -0.81, y: 0, z: 3.46}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -7118,7 +7118,7 @@ Transform:
   m_GameObject: {fileID: 732892308}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 2.89, y: 0, z: -15.44}
+  m_LocalPosition: {x: -0.64, y: 0, z: -14.92}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -7322,7 +7322,7 @@ MonoBehaviour:
   playerTransform: {fileID: 1579874845}
   tiNpcPrefabs:
   - {fileID: 4394407753789290286, guid: 06851f3650851534b86dc6528468eb55, type: 3}
-  simulationTickInterval: 0.1
+  simulationTickInterval: 0.25
   maxNpcsToSimulatePerTick: 10
   dummyNpcData:
   - id: TEST1
@@ -7370,9 +7370,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   playerTransform: {fileID: 1579874845}
   nearRadius: 3
-  moderateRadius: 5
-  farRadius: 15
+  moderateRadius: 10
+  farRadius: 20
   proximityCheckInterval: 0.5
+  moderateUpdateRateHz: 8
+  moderateBatchSize: 5
   drawZoneGizmos: 1
   nearGizmoColor: {r: 0, g: 1, b: 0, a: 1}
   moderateGizmoColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
@@ -9911,7 +9913,7 @@ Transform:
   m_GameObject: {fileID: 969715659}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 5.43, y: 0, z: -6.17}
+  m_LocalPosition: {x: 5.29, y: 0, z: 5.9}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -21432,7 +21434,7 @@ Transform:
   m_GameObject: {fileID: 2147373146}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -5.1, y: 0, z: 6.3}
+  m_LocalPosition: {x: -9.65, y: 0, z: 6.99}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []

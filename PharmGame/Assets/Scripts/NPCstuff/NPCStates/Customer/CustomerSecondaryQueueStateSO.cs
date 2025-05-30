@@ -71,7 +71,7 @@ namespace Game.NPC.States
             base.OnUpdate(context);
 
             // --- Impatience Timer Update and Check (Migration) ---
-            impatientTimer += Time.deltaTime;
+            impatientTimer += context.DeltaTime; // <-- MODIFIED: Use context.DeltaTime
 
             if (impatientTimer >= impatientDuration)
             {

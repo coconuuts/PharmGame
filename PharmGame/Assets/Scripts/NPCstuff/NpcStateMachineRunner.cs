@@ -108,13 +108,13 @@ namespace Game.NPC
           }
 
           // --- Update Throttling Fields ---
-          private float timeSinceLastUpdate = 0f;
-          private float currentUpdateInterval = 0f; // 0 means update every frame (Full)
-          private float normalUpdateInterval = 0f; // Stores the interval set by ProximityManager
-          private const float FullUpdateInterval = 0f; // Update every frame
+          // REMOVED: private float timeSinceLastUpdate = 0f;
+          // REMOVED: private float currentUpdateInterval = 0f; // 0 means update every frame (Full)
+          // REMOVED: private float normalUpdateInterval = 0f; // Stores the interval set by ProximityManager
+          // REMOVED: private const float FullUpdateInterval = 0f; // Update every frame
           [Tooltip("Update rate (in Hz) for NPCs in the Moderate proximity zone.")]
           [SerializeField] private float moderateUpdateRateHz = 8f; // Example: 8 updates per second
-          private float moderateUpdateInterval => 1.0f / moderateUpdateRateHz;
+          // REMOVED: private float moderateUpdateInterval => 1.0f / moderateUpdateRateHz;
 
           // --- Grid Position Tracking for Active NPCs ---
           private Vector3 lastGridPosition;
@@ -122,6 +122,23 @@ namespace Game.NPC
           private float timeSinceLastGridUpdate = 0f; // Separate timer for grid updates
           private const float GridUpdateCheckInterval = 0.5f; // Check grid position every 0.5 seconds
 
+          // --- NEW: Interpolation Fields for Rigidbody Movement ---
+          private Vector3 visualPositionStart;
+          private Vector3 visualPositionEnd;
+          private Quaternion visualRotationStart;
+          private Quaternion visualRotationEnd;
+          private float interpolationTimer;
+          private float interpolationDuration;
+          private bool isInterpolatingPosition; // Separate flag for position
+          private bool isInterpolatingRotation; // Separate flag for rotation
+          // --- END NEW ---
+          
+          // --- Temporary storage for active path progress when interrupted ---
+          internal string interruptedPathID;
+          internal int interruptedWaypointIndex = -1;
+          internal bool interruptedFollowReverse = false;
+          internal bool wasInterruptedFromPathState = false; // Flag to indicate interruption from PathState
+          // --- END Temporary storage ---
 
           private void Awake()
           {
@@ -169,6 +186,18 @@ namespace Game.NPC
 
                _hasReachedCurrentDestination = true;
 
+               // --- NEW: Initialize interpolation fields ---
+               visualPositionStart = transform.position;
+               visualPositionEnd = transform.position;
+               visualRotationStart = transform.rotation;
+               visualRotationEnd = transform.rotation;
+               interpolationTimer = 0f;
+               interpolationDuration = 0f;
+               isInterpolatingPosition = false;
+               isInterpolatingRotation = false;
+               // --- END NEW ---
+
+
                Debug.Log($"{gameObject.name}: NpcStateMachineRunner Awake completed.");
           }
 
@@ -196,10 +225,10 @@ namespace Game.NPC
                    // Note: The initial AddItem to grid is done by TiNpcManager.LoadDummyNpcData or ActivateTiNpc
                }
 
-               // Initialize throttling state - ProximityManager will set the actual mode after activation
-               timeSinceLastUpdate = 0f;
-               currentUpdateInterval = FullUpdateInterval; // Default to full update initially
-               normalUpdateInterval = FullUpdateInterval; // Default normal is also full update
+               // Initialize timers here. ProximityManager will set the actual mode via SetUpdateMode
+               // REMOVED: timeSinceLastUpdate = 0f;
+               // REMOVED: currentUpdateInterval = FullUpdateInterval; // Default to full update initially
+               // REMOVED: normalUpdateInterval = FullUpdateInterval; // Default normal is also full update
                timeSinceLastGridUpdate = 0f;
           }
 
@@ -259,6 +288,8 @@ namespace Game.NPC
                     _stateContext.QueueHandler = QueueHandler;
                     _stateContext.PathFollowingHandler = PathFollowingHandler; // <-- NEW: Populate PathFollowingHandler
                     _stateContext.TiData = TiData; // <-- NEW: Populate TiData
+                    // Need to populate DeltaTime here too if OnExit logic uses it, but typically it doesn't.
+                    // _stateContext.DeltaTime = Time.deltaTime; // Or some default? Let's assume OnExit doesn't need it.
                     currentState.OnExit(_stateContext);
                }
                else if (currentState != null && IsTrueIdentityNpc)
@@ -276,179 +307,86 @@ namespace Game.NPC
 
           private void Update()
           {
-               // --- Handle Update Throttling ---
-               // Check if we should skip the main state update this frame based on the *current* interval
-               if (currentUpdateInterval > FullUpdateInterval) // If throttled (including temporary overrides)
+               // Check grid position update (always called, but timer inside limits frequency)
+               CheckGridPositionUpdate();
+
+               // Animation speed update should happen every frame for visual smoothness
+               UpdateAnimationSpeed(); // <-- NEW: Call animation update helper
+
+               // --- NEW: Handle Visual Interpolation for Rigidbody Movement ---
+               // This runs every frame regardless of tick frequency
+               if (PathFollowingHandler != null && PathFollowingHandler.IsFollowingPath) // Only interpolate if path following is active
                {
-                   timeSinceLastUpdate += Time.deltaTime;
-                   if (timeSinceLastUpdate < currentUpdateInterval)
+                   if (isInterpolatingPosition)
                    {
-                       // Skip main state update logic this frame
-                       CheckGridPositionUpdate(); // Still check grid position periodically regardless of state throttling
-                       return; // Skip the rest of Update
+                       interpolationTimer += Time.deltaTime;
+                       // Clamp timer to duration to avoid overshooting
+                       float t = Mathf.Clamp01(interpolationTimer / interpolationDuration);
+
+                       // Apply interpolated position
+                       transform.position = Vector3.Lerp(visualPositionStart, visualPositionEnd, t);
+
+                       // Stop position interpolation once duration is reached
+                       if (interpolationTimer >= interpolationDuration)
+                       {
+                           isInterpolatingPosition = false;
+                       }
                    }
-                   // If we are here, it means the throttling timer has elapsed or we are in FullUpdateInterval mode.
-                   // Use the accumulated timeSinceLastUpdate as the deltaTime for the tick.
-                   float tickDeltaTime = timeSinceLastUpdate;
-                   timeSinceLastUpdate = 0f; // Reset timer after using accumulated time
-                   // --- END NEW ---
 
-                   // --- Main State Update Logic (Runs if not throttled, or if throttling timer elapsed) ---
-
-                   // Check grid position update (always called, but timer inside limits frequency)
-                   CheckGridPositionUpdate();
-
-
-                   if (currentState != null)
+                   if (isInterpolatingRotation)
                    {
-                        // Populate context with current data before passing to state methods
-                        _stateContext.Manager = Manager; // Populate Manager
-                        _stateContext.CurrentTargetLocation = CurrentTargetLocation;
-                        _stateContext.Runner = this;
-                        _stateContext.InterruptionHandler = interruptionHandler;
-                        _stateContext.QueueHandler = QueueHandler;
-                        _stateContext.PathFollowingHandler = PathFollowingHandler; // <-- NEW: Populate PathFollowingHandler
-                        _stateContext.TiData = TiData; // <-- NEW: Populate TiData
+                       // Use the same timer for rotation interpolation
+                       float t = Mathf.Clamp01(interpolationTimer / interpolationDuration);
 
-                        // --- NEW: Call PathFollowingHandler TickMovement if following a path ---
-                        if (PathFollowingHandler != null && PathFollowingHandler.IsFollowingPath)
-                        {
-                             // Call the handler's tick method with the potentially throttled deltaTime
-                             PathFollowingHandler.TickMovement(tickDeltaTime); // Use the accumulated deltaTime
-                        }
-                        // --- END NEW ---
+                       // Apply interpolated rotation
+                       transform.rotation = Quaternion.Slerp(visualRotationStart, visualRotationEnd, t);
 
+                       // Stop rotation interpolation once duration is reached
+                       if (interpolationTimer >= interpolationDuration)
+                       {
+                           isInterpolatingRotation = false;
+                       }
+                   }
 
-                        if (MovementHandler != null && MovementHandler.Agent != null && AnimationHandler != null)
-                        {
-                             // Only update animation speed if NavMeshAgent is enabled (standard movement)
-                             // Path following handler will manage animation speed if needed during path movement
-                             if (MovementHandler.IsAgentEnabled) // Use the new helper property
-                             {
-                                  float speed = MovementHandler.Agent.velocity.magnitude;
-                                  AnimationHandler.SetSpeed(speed);
-                             }
-                             // Note: Animation speed during path following needs to be handled by the PathFollowingHandler or the state itself.
-                        }
-
-                        // --- Check for NavMesh Arrival (only if Agent is enabled and not following path) ---
-                        // The Runner's _hasReachedCurrentDestination flag is only relevant for NavMesh movement.
-                        // Path following arrival is handled by the PathFollowingHandler setting HasReachedEndOfPath.
-                        if (MovementHandler != null && MovementHandler.IsAgentEnabled && !PathFollowingHandler.IsFollowingPath &&
-                            !MovementHandler.Agent.pathPending &&
-                            MovementHandler.IsAtDestination() &&
-                            !_hasReachedCurrentDestination)
-                        {
-                             Debug.Log($"{gameObject.name}: Reached destination in state {currentState.name} (detected by Runner). Stopping and calling OnReachedDestination.");
-                             MovementHandler.StopMoving();
-
-                             _hasReachedCurrentDestination = true;
-
-                             // Re-populate context just in case Update loop took time
-                             _stateContext.Manager = Manager; // Populate Manager
-                             _stateContext.CurrentTargetLocation = CurrentTargetLocation;
-                             _stateContext.Runner = this;
-                             _stateContext.InterruptionHandler = interruptionHandler;
-                             _stateContext.QueueHandler = QueueHandler;
-                             _stateContext.PathFollowingHandler = PathFollowingHandler; // <-- NEW: Populate PathFollowingHandler
-                             _stateContext.TiData = TiData; // <-- NEW: Populate TiData
-
-                             currentState.OnReachedDestination(_stateContext);
-                        }
-                        // --- End NavMesh Arrival Check ---
-
-
-                         // Re-populate context just in case Update loop took time
-                        _stateContext.Manager = Manager; // Populate Manager
-                        _stateContext.CurrentTargetLocation = CurrentTargetLocation;
-                        _stateContext.Runner = this;
-                        _stateContext.InterruptionHandler = interruptionHandler;
-                        _stateContext.QueueHandler = QueueHandler;
-                        _stateContext.PathFollowingHandler = PathFollowingHandler; // <-- NEW: Populate PathFollowingHandler
-                        _stateContext.TiData = TiData; // <-- NEW: Populate TiData
-
-                        // --- Call OnUpdate with the potentially throttled deltaTime ---
-                        currentState.OnUpdate(_stateContext); // <-- This is the main state logic that gets throttled
-                        // --- END Call OnUpdate ---
+                   // If both position and rotation interpolation are done, reset the flag
+                   if (!isInterpolatingPosition && !isInterpolatingRotation)
+                   {
+                       // Reset timer and duration here if both are finished
+                       interpolationTimer = 0f;
+                       interpolationDuration = 0f;
                    }
                }
-               else // currentUpdateInterval is FullUpdateInterval (0)
+               // --- END NEW ---
+
+
+               // --- Determine if this Runner should be ticked this frame ---
+               // Query managers to decide how to tick
+               // Only TI NPCs are managed by ProximityManager and InterruptionHandler for ticking
+               if (IsTrueIdentityNpc && TiData != null && ProximityManager.Instance != null && interruptionHandler != null && Manager != null)
                {
-                   // Run every frame, deltaTime is Time.deltaTime
-                   float tickDeltaTime = Time.deltaTime;
-                   timeSinceLastUpdate = 0f; // Reset timer (not strictly needed for 0 interval, but clean)
+                   // Get the current zone from ProximityManager
+                   ProximityManager.ProximityZone currentZone = ProximityManager.Instance.GetNpcProximityZone(TiData);
+                   // Check if currently interrupted
+                   bool isCurrentlyInterrupted = interruptionHandler.IsInterrupted();
+                   // Check if currently active customer
+                   bool isInsideStore = Manager.IsTiNpcInsideStore(TiData);
 
-                   // Check grid position update (always called)
-                   CheckGridPositionUpdate();
-
-                   if (currentState != null)
-                   {
-                        // Populate context with current data before passing to state methods
-                        _stateContext.Manager = Manager; // Populate Manager
-                        _stateContext.CurrentTargetLocation = CurrentTargetLocation;
-                        _stateContext.Runner = this;
-                        _stateContext.InterruptionHandler = interruptionHandler;
-                        _stateContext.QueueHandler = QueueHandler;
-                        _stateContext.PathFollowingHandler = PathFollowingHandler; // <-- NEW: Populate PathFollowingHandler
-                        _stateContext.TiData = TiData; // <-- NEW: Populate TiData
-
-                        // --- NEW: Call PathFollowingHandler TickMovement if following a path ---
-                        if (PathFollowingHandler != null && PathFollowingHandler.IsFollowingPath)
-                        {
-                             // Call the handler's tick method with Time.deltaTime
-                             PathFollowingHandler.TickMovement(tickDeltaTime); // Use Time.deltaTime
-                        }
-                        // --- END NEW ---
-
-                        if (MovementHandler != null && MovementHandler.Agent != null && AnimationHandler != null)
-                        {
-                             // Only update animation speed if NavMeshAgent is enabled (standard movement)
-                             if (MovementHandler.IsAgentEnabled) // Use the new helper property
-                             {
-                                  float speed = MovementHandler.Agent.velocity.magnitude;
-                                  AnimationHandler.SetSpeed(speed);
-                             }
-                        }
-
-                        // --- Check for NavMesh Arrival (only if Agent is enabled and not following path) ---
-                        if (MovementHandler != null && MovementHandler.IsAgentEnabled && !PathFollowingHandler.IsFollowingPath &&
-                            !MovementHandler.Agent.pathPending &&
-                            MovementHandler.IsAtDestination() &&
-                            !_hasReachedCurrentDestination)
-                        {
-                             Debug.Log($"{gameObject.name}: Reached destination in state {currentState.name} (detected by Runner). Stopping and calling OnReachedDestination.");
-                             MovementHandler.StopMoving();
-
-                             _hasReachedCurrentDestination = true;
-
-                             // Re-populate context just in case Update loop took time
-                             _stateContext.Manager = Manager; // Populate Manager
-                             _stateContext.CurrentTargetLocation = CurrentTargetLocation;
-                             _stateContext.Runner = this;
-                             _stateContext.InterruptionHandler = interruptionHandler;
-                             _stateContext.QueueHandler = QueueHandler;
-                             _stateContext.PathFollowingHandler = PathFollowingHandler; // <-- NEW: Populate PathFollowingHandler
-                             _stateContext.TiData = TiData; // <-- NEW: Populate TiData
-
-                             currentState.OnReachedDestination(_stateContext);
-                        }
-                        // --- End NavMesh Arrival Check ---
-
-                         // Re-populate context just in case Update loop took time
-                        _stateContext.Manager = Manager; // Populate Manager
-                        _stateContext.CurrentTargetLocation = CurrentTargetLocation;
-                        _stateContext.Runner = this;
-                        _stateContext.InterruptionHandler = interruptionHandler;
-                        _stateContext.QueueHandler = QueueHandler;
-                        _stateContext.PathFollowingHandler = PathFollowingHandler; // <-- NEW: Populate PathFollowingHandler
-                        _stateContext.TiData = TiData; // <-- NEW: Populate TiData
-
-                        // --- Call OnUpdate with Time.deltaTime ---
-                        currentState.OnUpdate(_stateContext); // <-- This is the main state logic
-                        // --- END Call OnUpdate ---
-                   }
+                   // If Near or Interrupted, tick core logic every frame
+                    if (currentZone == ProximityManager.ProximityZone.Near || isCurrentlyInterrupted || (IsTrueIdentityNpc && isInsideStore))
+                    {
+                         Debug.Log($"DEBUG Runner Update ({gameObject.name}): Ticking every frame (Zone: {currentZone}, Interrupted: {isCurrentlyInterrupted})"); // Too noisy
+                         ThrottledTick(Time.deltaTime); // Call the core logic with frame delta
+                    }
+                   // Moderate NPCs will be ticked by ProximityManager's separate routine.
+                   // Far NPCs are inactive, this Update doesn't run.
                }
-               // --- END Main State Update Logic ---
+               else if (!IsTrueIdentityNpc)
+               {
+                    // Transient NPCs always update every frame
+                    // Debug.Log($"DEBUG Runner Update ({gameObject.name}): Ticking every frame (Transient)"); // Too noisy
+                    ThrottledTick(Time.deltaTime); // Transient NPCs always get full updates
+               }
+               // --- END NEW ---
           }
 
           /// <summary>
@@ -474,60 +412,97 @@ namespace Game.NPC
                }
           }
 
-
           /// <summary>
-          /// Called by the ProximityManager to set the standard update mode based on proximity zone.
-          /// This normal mode is temporarily overridden during interruptions.
+          /// This method is called by external managers (like ProximityManager) or the Runner's Update
+          /// to tick the Runner's core logic.
           /// </summary>
-          /// <param name="zone">The current proximity zone of the NPC.</param>
-          public void SetUpdateMode(ProximityManager.ProximityZone zone)
+          /// <param name="deltaTime">The time slice for this tick.</param>
+          public void ThrottledTick(float deltaTime)
           {
-              switch(zone)
-              {
-                  case ProximityManager.ProximityZone.Near:
-                      normalUpdateInterval = FullUpdateInterval; // Update every frame
-                      // Debug.Log($"{gameObject.name}: Set Normal Update Mode: Near (Full)"); // Too noisy
-                      break;
-                  case ProximityManager.ProximityZone.Moderate:
-                      normalUpdateInterval = moderateUpdateInterval; // Throttled update
-                      // Debug.Log($"{gameObject.name}: Set Normal Update Mode: Moderate ({moderateUpdateRateHz} Hz)"); // Too noisy
-                      break;
-                  case ProximityManager.ProximityZone.Far:
-                      // GameObject should be inactive, this method shouldn't be called for Far NPCs
-                      // If called, reset to default full update
-                      normalUpdateInterval = FullUpdateInterval;
-                      // Debug.LogWarning($"{gameObject.name}: SetUpdateMode called for Far zone, which should be inactive.", this);
-                      break;
-              }
-              // Apply the new normal interval immediately if not interrupted
-              if (!interruptionHandler.IsInterrupted()) // Check interruption handler flag
-              {
-                   currentUpdateInterval = normalUpdateInterval;
-                   timeSinceLastUpdate = 0f; // Reset timer on mode change
-              }
-          }
+               // This method now contains the core state and movement logic
+               // that was previously in the Update method.
 
-          /// <summary>
-          /// Called by the InterruptionHandler when an interruption state begins.
-          /// Forces the Runner to update every frame regardless of proximity.
-          /// </summary>
-          public void EnterInterruptionMode()
-          {
-               Debug.Log($"{gameObject.name}: Entering Interruption Mode (Force Full Update).");
-               currentUpdateInterval = FullUpdateInterval; // Override to full update
-               timeSinceLastUpdate = 0f; // Reset timer
-          }
+               if (currentState != null)
+               {
+                    // Populate context with current data before passing to state methods
+                    _stateContext.Manager = Manager; // Populate Manager
+                    _stateContext.CurrentTargetLocation = CurrentTargetLocation;
+                    _stateContext.Runner = this;
+                    _stateContext.InterruptionHandler = interruptionHandler;
+                    _stateContext.QueueHandler = queueHandler;
+                    _stateContext.PathFollowingHandler = npcPathFollowingHandler; // Populate PathFollowingHandler
+                    _stateContext.TiData = TiData; // Populate TiData
+                    _stateContext.DeltaTime = deltaTime; // <-- NEW: Populate DeltaTime
 
-          /// <summary>
-          /// Called by the InterruptionHandler when an interruption state ends.
-          /// Restores the update mode to the one dictated by proximity.
-          /// </summary>
-          public void ExitInterruptionMode()
-          {
-              Debug.Log($"{gameObject.name}: Exiting Interruption Mode. Restoring normal update mode.");
-               // Restore to the normal update interval based on proximity zone
-               currentUpdateInterval = normalUpdateInterval;
-               timeSinceLastUpdate = 0f; // Reset timer
+
+                    // --- Handle PathFollowingHandler Tick Movement ---
+                    if (PathFollowingHandler != null && PathFollowingHandler.IsFollowingPath)
+                    {
+                         // --- NEW: Get start position/rotation before tick ---
+                         visualPositionStart = transform.position;
+                         visualRotationStart = transform.rotation;
+                         // --- END NEW ---
+
+                         // Call the handler's tick method, which now returns the calculated end position/rotation
+                         MovementTickResult tickResult = PathFollowingHandler.TickMovement(deltaTime); // Use the deltaTime parameter
+
+                         // --- NEW: Store end position/rotation and setup interpolation ---
+                         visualPositionEnd = tickResult.Position;
+                         visualRotationEnd = tickResult.Rotation;
+                         interpolationTimer = 0f; // Reset timer
+                         interpolationDuration = deltaTime; // Duration is the delta time of this tick
+                         isInterpolatingPosition = true; // Flag to start position interpolation
+                         isInterpolatingRotation = true; // Flag to start rotation interpolation
+                    }
+                    else
+                    {
+                         isInterpolatingPosition = false;
+                         isInterpolatingRotation = false;
+                    }
+                    // --- Check for NavMesh Arrival (only if Agent is enabled and not following path) ---
+                    // The Runner's _hasReachedCurrentDestination flag is only relevant for NavMesh movement.
+                    // Path following arrival is handled by the PathFollowingHandler setting HasReachedEndOfPath.
+                    if (MovementHandler != null && MovementHandler.IsAgentEnabled && !PathFollowingHandler.IsFollowingPath &&
+                        !MovementHandler.Agent.pathPending &&
+                        MovementHandler.IsAtDestination() &&
+                        !_hasReachedCurrentDestination)
+                    {
+                         Debug.Log($"{gameObject.name}: Reached destination in state {currentState.name} (detected by Runner). Stopping and calling OnReachedDestination.");
+                         MovementHandler.StopMoving();
+
+                         _hasReachedCurrentDestination = true;
+
+                         // Re-populate context just in case Update loop took time (defensive)
+                         _stateContext.Manager = Manager;
+                         _stateContext.CurrentTargetLocation = CurrentTargetLocation;
+                         _stateContext.Runner = this;
+                         _stateContext.InterruptionHandler = interruptionHandler;
+                         _stateContext.QueueHandler = queueHandler;
+                         _stateContext.PathFollowingHandler = npcPathFollowingHandler;
+                         _stateContext.TiData = TiData;
+                         _stateContext.DeltaTime = deltaTime; // <-- NEW: Populate DeltaTime again (defensive)
+
+
+                         currentState.OnReachedDestination(_stateContext);
+                    }
+                    // --- End NavMesh Arrival Check ---
+
+
+                     // Re-populate context just in case Update loop took time (defensive)
+                    _stateContext.Manager = Manager;
+                    _stateContext.CurrentTargetLocation = CurrentTargetLocation;
+                    _stateContext.Runner = this;
+                    _stateContext.InterruptionHandler = interruptionHandler;
+                    _stateContext.QueueHandler = queueHandler;
+                    _stateContext.PathFollowingHandler = npcPathFollowingHandler;
+                    _stateContext.TiData = TiData;
+                    _stateContext.DeltaTime = deltaTime; // <-- NEW: Populate DeltaTime again (defensive)
+
+
+                    // --- Call OnUpdate with the provided deltaTime ---
+                    currentState.OnUpdate(_stateContext); // <-- This is the main state logic
+                    // --- END Call OnUpdate ---
+               }
           }
 
 
@@ -549,7 +524,7 @@ namespace Game.NPC
                ResetRunnerTransientData(); // Resets handlers
 
                // Transient NPCs are always Near/Full update mode initially
-               SetUpdateMode(ProximityManager.ProximityZone.Near); // Set initial mode for transient
+               // REMOVED: SetUpdateMode(ProximityManager.ProximityZone.Near); // Set initial mode for transient
 
                queueHandler?.Initialize(this.Manager);
                // PathFollowingHandler doesn't need Initialize with Manager currently
@@ -562,6 +537,9 @@ namespace Game.NPC
                     if (MovementHandler.Warp(startPosition))
                     {
                          Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Warped to {startPosition} using MovementHandler.");
+                         // After warp, ensure interpolation is off
+                         isInterpolatingPosition = false; // <-- NEW
+                         isInterpolatingRotation = false; // <-- NEW
                     }
                     else
                     {
@@ -630,6 +608,9 @@ namespace Game.NPC
                               // Note: TiNpcManager.ActivateTiNpc should have already updated the grid with this position
                          }
                          // --- END NEW ---
+                         // After warp, ensure interpolation is off
+                         isInterpolatingPosition = false; // <-- NEW
+                         isInterpolatingRotation = false; // <-- NEW
                     }
                     else
                     {
@@ -685,41 +666,11 @@ namespace Game.NPC
                gameObject.SetActive(true);
                enabled = true;
 
-               // Mark data as active (should be done by the activation trigger logic in TiNpcManager)
-               // tiData.IsActiveGameObject = true; // TiNpcManager should manage this when calling Activate
-
                // Initialize timers here. ProximityManager will set the initial mode via SetUpdateMode
-               timeSinceLastUpdate = 0f;
-               currentUpdateInterval = FullUpdateInterval; // Default to full update until ProximityManager sets mode
-               normalUpdateInterval = FullUpdateInterval; // Default normal is also full update
                timeSinceLastGridUpdate = 0f;
 
 
                Debug.Log($"NpcStateMachineRunner ({gameObject.name}): TI NPC '{tiData.Id}' Activated.");
-
-               // --- REMOVED: The RestorePathProgress call is now handled INSIDE PathStateSO.OnEnter ---
-               // if (startingActiveStateEnum != null && startingActiveStateEnum.Equals(PathState.FollowPath))
-               // {
-               //      // Check if the data indicates they were mid-path simulation
-               //      if (tiData.isFollowingPathBasic && !string.IsNullOrWhiteSpace(tiData.simulatedPathID) && tiData.simulatedWaypointIndex != -1)
-               //      {
-               //           Debug.Log($"PROXIMITY {tiData.Id}: Activating into PathState. Restoring path progress on handler: PathID='{tiData.simulatedPathID}', Index={tiData.simulatedWaypointIndex}, Reverse={tiData.simulatedFollowReverse}.", npcObject);
-               //           // Get the PathSO asset
-               //           PathSO pathSOToRestore = WaypointManager.Instance?.GetPath(tiData.simulatedPathID); // Use WaypointManager.Instance
-               //           if (pathSOToRestore != null)
-               //           {
-               //                // Call a new method on the PathFollowingHandler to restore state (Substep 4.5)
-               //                PathFollowingHandler?.RestorePathProgress(pathSOToRestore, tiData.simulatedWaypointIndex, tiData.simulatedFollowReverse);
-               //           } else {
-               //                Debug.LogError($"PROXIMITY {tiData.Id}: PathSO '{tiData.simulatedPathID}' not found via WaypointManager during PathState activation restore! Cannot restore path progress. NPC will likely start path from beginning.", npcObject);
-               //                // The PathState.OnEnter will handle starting from the beginning (index 0) as a fallback.
-               //           }
-               //      } else {
-               //           // Not mid-path simulation, PathState.OnEnter will handle starting from the beginning (index 0)
-               //           Debug.Log($"PROXIMITY {tiData.Id}: Activating into PathState, but not mid-path simulation. PathState.OnEnter will handle starting from beginning.", npcObject);
-               //      }
-               // }
-               // --- END REMOVED ---
           }
 
           /// <summary>
@@ -765,10 +716,19 @@ namespace Game.NPC
                CachedCashRegister = null;
                _hasReachedCurrentDestination = true;
                lastGridPosition = Vector3.zero; // Reset grid tracking position
-               timeSinceLastUpdate = 0f; // Reset throttling timers
-               currentUpdateInterval = FullUpdateInterval;
-               normalUpdateInterval = FullUpdateInterval; // Reset normal interval too
                timeSinceLastGridUpdate = 0f;
+               visualPositionStart = transform.position; // Reset to current visual position
+               visualPositionEnd = transform.position;
+               visualRotationStart = transform.rotation; // Reset to current visual rotation
+               visualRotationEnd = transform.rotation;
+               interpolationTimer = 0f;
+               interpolationDuration = 0f;
+               isInterpolatingPosition = false;
+               isInterpolatingRotation = false;
+               interruptedPathID = null;
+               interruptedWaypointIndex = -1;
+               interruptedFollowReverse = false;
+               wasInterruptedFromPathState = false;
 
 
                if (!IsTrueIdentityNpc)
@@ -834,13 +794,15 @@ namespace Game.NPC
                     activeStateCoroutine = null;
 
                     // Populate context before calling OnExit
-                    _stateContext.Manager = Manager;
+                    _stateContext.Manager = Manager; // Populate Manager
                     _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                     _stateContext.Runner = this;
                     _stateContext.InterruptionHandler = interruptionHandler;
-                    _stateContext.QueueHandler = QueueHandler;
-                    _stateContext.PathFollowingHandler = PathFollowingHandler; // <-- NEW: Populate PathFollowingHandler
+                    _stateContext.QueueHandler = queueHandler;
+                    _stateContext.PathFollowingHandler = npcPathFollowingHandler; // <-- NEW: Populate PathFollowingHandler
                     _stateContext.TiData = TiData; // <-- NEW: Populate TiData
+                    // DeltaTime is not typically needed in OnExit, but populate defensively if needed
+                    // _stateContext.DeltaTime = Time.deltaTime; // Or some default? Let's assume OnExit doesn't need it.
 
                     currentState.OnExit(_stateContext);
                }
@@ -860,13 +822,26 @@ namespace Game.NPC
                _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                _stateContext.Runner = this;
                _stateContext.InterruptionHandler = interruptionHandler;
-               _stateContext.QueueHandler = QueueHandler;
-               _stateContext.PathFollowingHandler = PathFollowingHandler; // <-- NEW: Populate PathFollowingHandler
-               _stateContext.TiData = TiData; // <-- NEW: Populate TiData
-
+               _stateContext.QueueHandler = queueHandler;
+               _stateContext.PathFollowingHandler = npcPathFollowingHandler;
+               _stateContext.TiData = TiData;
+               // DeltaTime is not typically needed in OnEnter, but populate defensively if needed
+               // _stateContext.DeltaTime = Time.deltaTime; // Or some default?
 
                // Call OnEnter for the new state
                currentState.OnEnter(_stateContext);
+
+               // --- NEW: Reset interpolation state on state transition ---
+               // Any ongoing interpolation should stop when the state changes.
+               visualPositionStart = transform.position; // Snap visual to current actual position
+               visualPositionEnd = transform.position;
+               visualRotationStart = transform.rotation; // Snap visual to current actual rotation
+               visualRotationEnd = transform.rotation;
+               interpolationTimer = 0f;
+               interpolationDuration = 0f;
+               isInterpolatingPosition = false;
+               isInterpolatingRotation = false;
+               // --- END NEW ---
           }
 
           /// <summary>
@@ -949,7 +924,7 @@ namespace Game.NPC
 
           /// <summary>
           /// Gets a state SO by its Enum key. Includes configurable fallbacks.
-          /// Also attempts to load state from TiData if IsTrueIdentityNpc is true.
+          /// Also attempts to load state from TiData first (if not already handled by Activate override).
           /// </summary>
           public NpcStateSO GetStateSO(Enum stateEnum)
           {
@@ -1036,7 +1011,7 @@ namespace Game.NPC
                return null;
           }
 
-          /// <summary>
+                    /// <summary>
           /// Determines the primary starting state for this NPC based on its configured types.
           /// For TI NPCs, attempts to load state from TiData first (if not already handled by Activate override).
           /// </summary>
@@ -1152,5 +1127,25 @@ namespace Game.NPC
                Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): PathFollowingHandler is null! Cannot restore path progress.", this);
                return false;
           }
+
+          // --- NEW: Helper method for animation speed update (moved from Update) ---
+          private void UpdateAnimationSpeed()
+          {
+               if (MovementHandler != null && AnimationHandler != null)
+               {
+                    // Only update animation speed if NavMeshAgent is enabled (standard movement)
+                    if (MovementHandler.IsAgentEnabled) // Use the new helper property
+                    {
+                         float speed = MovementHandler.Agent.velocity.magnitude;
+                         AnimationHandler.SetSpeed(speed);
+                    }
+                    // Add logic here if PathFollowingHandler also needs animation speed control
+                    // else if (PathFollowingHandler != null && PathFollowingHandler.IsFollowingPath)
+                    // {
+                    //     AnimationHandler.SetSpeed(PathFollowingHandler.pathFollowingSpeed); // Assuming speed is accessible
+                    // }
+               }
+          }
+          // --- END NEW ---
      }
 }

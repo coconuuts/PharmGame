@@ -41,6 +41,7 @@ namespace Game.NPC.States // Context is closely related to states
         public CustomerManager Manager;
         // Access the cached register via the Runner property
         public CashRegisterInteractable RegisterCached => Runner?.CachedCashRegister;
+        public float DeltaTime { get; internal set; }
 
 
         // --- NPC-specific Data managed by the Runner/Context ---
@@ -63,18 +64,19 @@ namespace Game.NPC.States // Context is closely related to states
         // --- NEW: Public properties/methods to access Path Following Handler functionality ---
         public bool IsFollowingPath => PathFollowingHandler?.IsFollowingPath ?? false;
         public bool HasReachedEndOfPath => PathFollowingHandler?.HasReachedEndOfPath ?? false;
+        
 
         /// <summary>
         /// Starts the NPC following a specific waypoint path using the PathFollowingHandler.
         /// </summary>
         public bool StartFollowingPath(PathSO path, int startIndex = 0, bool reverse = false)
         {
-             if (PathFollowingHandler != null)
-             {
-                  return PathFollowingHandler.StartFollowingPath(path, startIndex, reverse);
-             }
-             Debug.LogError($"Context({NpcObject.name}): Cannot start path following, PathFollowingHandler is null.", NpcObject);
-             return false;
+            if (PathFollowingHandler != null)
+            {
+                return PathFollowingHandler.StartFollowingPath(path, startIndex, reverse);
+            }
+            Debug.LogError($"Context({NpcObject.name}): Cannot start path following, PathFollowingHandler is null.", NpcObject);
+            return false;
         }
 
 /// <summary>

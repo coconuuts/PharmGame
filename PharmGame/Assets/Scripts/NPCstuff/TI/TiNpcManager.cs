@@ -1,5 +1,3 @@
-// --- START OF FILE TiNpcManager.cs ---
-
 using UnityEngine;
 using System.Collections.Generic;
 using System.Linq; // Needed for LINQ (Where, FirstOrDefault)
@@ -506,7 +504,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
                   // This must be done *after* iterating the batch.
                   simulationIndex += batchSize;
 
-                  // The simulation index should now wrap based on the total number of *inactive* NPCs found in the query,
+                  // Wrap the simulation index should now wrap based on the total number of *inactive* NPCs found in the query,
                   // NOT the total number of all NPCs. Recalculate total inactive count from the queried list.
                    totalInactiveCount = inactiveBatch.Count; // Use the count from the list queried this tick
                   if (totalInactiveCount > 0) // Avoid division by zero or wrapping when list is empty
@@ -878,28 +876,47 @@ namespace Game.NPC.TI // Keep in the TI namespace
                    tiData.SetCurrentState(targetBasicState);
                    Debug.Log($"PROXIMITY {tiData.Id}: Active state '{currentActiveState?.GetType().Name}.{currentActiveState?.ToString() ?? "NULL"}' maps to Basic State '{targetBasicState.GetType().Name}.{targetBasicState.ToString()}'. Saving this state to TiData.");
 
-                  // --- NEW: Save Path Progress if currently following a path ---
-                  if (currentActiveState != null && currentActiveState.Equals(PathState.FollowPath) && runner.PathFollowingHandler != null && runner.PathFollowingHandler.IsFollowingPath)
-                  {
-                       Debug.Log($"PROXIMITY {tiData.Id}: Currently following a path. Saving path progress.", runner.gameObject);
-                       tiData.simulatedPathID = runner.PathFollowingHandler.GetCurrentPathID();
-                       tiData.simulatedWaypointIndex = runner.PathFollowingHandler.GetCurrentTargetWaypointIndex(); // Save the index they were moving *towards*
-                       tiData.simulatedFollowReverse = runner.PathFollowingHandler.GetFollowReverse();
-                       tiData.isFollowingPathBasic = true; // Flag that they were on a path
+                    // --- MODIFIED: Save Path Progress if currently following a path OR was interrupted from path state ---
+                    // We need to save the state as it was *before* any interruption if one is active.
+                    // If not interrupted, save the current state of the PathFollowingHandler if it's active.
+                    if (runner.wasInterruptedFromPathState) // Check the flag set by NpcInterruptionHandler
+                    {
+                         Debug.Log($"PROXIMITY {tiData.Id}: NPC was interrupted from PathState. Saving TEMPORARY path progress data to TiData for simulation.", runner.gameObject);
+                         tiData.simulatedPathID = runner.interruptedPathID;
+                         tiData.simulatedWaypointIndex = runner.interruptedWaypointIndex;
+                         tiData.simulatedFollowReverse = runner.interruptedFollowReverse;
+                         tiData.isFollowingPathBasic = true; // Flag that they were on a path simulation when deactivated
 
-                       // Note: simulatedTargetPosition will be set by the BasicPathStateSO.OnEnter when simulation starts.
-                       // We don't need to save the active target position here.
+                         // Clear the temporary data on the runner now that it's saved to persistent TiData
+                         runner.interruptedPathID = null;
+                         runner.interruptedWaypointIndex = -1;
+                         runner.interruptedFollowReverse = false;
+                         runner.wasInterruptedFromPathState = false;
 
-                       Debug.Log($"PROXIMITY {tiData.Id}: Saved path progress: PathID='{tiData.simulatedPathID}', Index={tiData.simulatedWaypointIndex}, Reverse={tiData.simulatedFollowReverse}.", runner.gameObject);
-                  } else {
-                       // Not following a path, ensure path simulation data is cleared
-                       tiData.simulatedPathID = null;
-                       tiData.simulatedWaypointIndex = -1;
-                       tiData.simulatedFollowReverse = false;
-                       tiData.isFollowingPathBasic = false;
-                       // simulatedTargetPosition and simulatedStateTimer are handled by the target BasicStateSO.OnEnter
-                  }
-                  // --- END NEW ---
+                         Debug.Log($"PROXIMITY {tiData.Id}: Saved TEMPORARY path progress: PathID='{tiData.simulatedPathID}', Index={tiData.simulatedWaypointIndex}, Reverse={tiData.simulatedFollowReverse}.", runner.gameObject);
+                    }
+                    else if (currentActiveState != null && currentActiveState.Equals(PathState.FollowPath) && runner.PathFollowingHandler != null && runner.PathFollowingHandler.IsFollowingPath)
+                    {
+                         // This case should ideally not happen if the NPC is interrupted, as PathState.OnExit stops the handler.
+                         // But it handles cases where the NPC might be deactivated *while* in PathState without interruption logic triggering first.
+                         Debug.Log($"PROXIMITY {tiData.Id}: Currently in PathState and following a path (not interrupted). Saving CURRENT path progress.", runner.gameObject);
+                         tiData.simulatedPathID = runner.PathFollowingHandler.GetCurrentPathID();
+                         tiData.simulatedWaypointIndex = runner.PathFollowingHandler.GetCurrentTargetWaypointIndex(); // Save the index they were moving *towards*
+                         tiData.simulatedFollowReverse = runner.PathFollowingHandler.GetFollowReverse();
+                         tiData.isFollowingPathBasic = true; // Flag that they were on a path simulation when deactivated
+
+                         Debug.Log($"PROXIMITY {tiData.Id}: Saved CURRENT path progress: PathID='{tiData.simulatedPathID}', Index={tiData.simulatedWaypointIndex}, Reverse={tiData.simulatedFollowReverse}.", runner.gameObject);
+                    } else {
+                         // Not following a path or not interrupted from path state, ensure path simulation data is cleared
+                         // This ensures that if they were previously on a path simulation but are now in BasicPatrol simulation,
+                         // the path data is correctly reset.
+                         tiData.simulatedPathID = null;
+                         tiData.simulatedWaypointIndex = -1;
+                         tiData.simulatedFollowReverse = false;
+                         tiData.isFollowingPathBasic = false;
+                         // simulatedTargetPosition and simulatedStateTimer are handled by the target BasicStateSO.OnEnter
+                    }
+                    // --- END MODIFIED ---
 
 
                   // --- Call OnEnter for the target Basic State to initialize simulation data ---
@@ -993,6 +1010,17 @@ namespace Game.NPC.TI // Keep in the TI namespace
                  }
                  // --- END NEW ---
 
+                 // --- NEW: Remove the runner from ProximityManager's active lists ---
+                 if (proximityManager != null)
+                 {
+                      Debug.Log($"POOL TiNpcManager: Removing runner '{runner.gameObject.name}' from ProximityManager active lists.", runner.gameObject);
+                      proximityManager.RemoveRunnerFromActiveLists(runner); // Call the new method in ProximityManager
+                 } else {
+                      Debug.LogWarning($"POOL TiNpcManager: ProximityManager is null! Cannot remove runner '{runner.gameObject.name}' from active lists.", runner.gameObject);
+                 }
+                 // --- END NEW ---
+
+
              }
              else
              {
@@ -1022,6 +1050,15 @@ namespace Game.NPC.TI // Keep in the TI namespace
                  // If runner is not flagged as TI, the CustomerManager should have handled it.
                  // If we somehow get a non-TI here, it's a flow error, but pool it anyway.
 
+                 // --- NEW: Attempt to remove the runner from ProximityManager's active lists even if data link is broken ---
+                 if (proximityManager != null)
+                 {
+                      Debug.LogWarning($"POOL TiNpcManager: Attempting to remove runner '{runner.gameObject.name}' from ProximityManager active lists despite data link issue.", runner.gameObject);
+                      proximityManager.RemoveRunnerFromActiveLists(runner); // Call the new method in ProximityManager
+                 } else {
+                      Debug.LogWarning($"POOL TiNpcManager: ProximityManager is null! Cannot remove runner '{runner.gameObject.name}' from active lists.", runner.gameObject);
+                 }
+                 // --- END NEW ---
              }
 
 
@@ -1283,5 +1320,3 @@ namespace Game.NPC.TI // Keep in the TI namespace
         // --- End Restored LoadDummyNpcData ---
     }
 }
-
-// --- END OF FILE TiNpcManager.cs ---

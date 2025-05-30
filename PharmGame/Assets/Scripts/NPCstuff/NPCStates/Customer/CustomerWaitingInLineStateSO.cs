@@ -60,7 +60,7 @@ namespace Game.NPC.States
         public override void OnUpdate(NpcStateContext context)
         {
             // Only update impatience timer
-            impatientTimer += Time.deltaTime;
+            impatientTimer += context.DeltaTime; // <-- MODIFIED: Use context.DeltaTime
 
             if (impatientTimer >= impatientDuration)
             {

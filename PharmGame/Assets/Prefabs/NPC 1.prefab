@@ -1020,9 +1020,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ad62c44fac1ee794f8cdaf5e2f988300, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  pathFollowingSpeed: 4.5
+  pathFollowingSpeed: 2.5
   waypointArrivalThreshold: 0.5
-  rotationSpeed: 4
+  rotationSpeed: 1
 --- !u!1 &4855562079567102611
 GameObject:
   m_ObjectHideFlags: 0
