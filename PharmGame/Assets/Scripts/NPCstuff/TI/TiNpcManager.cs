@@ -3,9 +3,9 @@
 using UnityEngine;
 using System.Collections.Generic;
 using System.Linq; // Needed for LINQ (Where, FirstOrDefault)
-using Game.NPC; // Needed for NpcStateMachineRunner, GeneralState, CustomerState enums
+using Game.NPC; // Needed for NpcStateMachineRunner, GeneralState, CustomerState enums, PathState enum
 using Game.NPC.States; // Needed for State SOs (to check HandledState)
-using Game.NPC.BasicStates; // Needed for BasicState enum, BasicNpcStateManager, BasicNpcStateSO
+using Game.NPC.BasicStates; // Needed for BasicState enum, BasicPathState enum, BasicNpcStateManager, BasicNpcStateSO
 using Utils.Pooling; // Needed for PoolingManager
 using System.Collections; // Needed for Coroutine
 using System; // Needed for Enum and Type
@@ -14,6 +14,7 @@ using CustomerManagement; // Needed for CustomerManager
 using Game.NPC.Handlers;
 using Game.Spatial; // Needed for GridManager
 using Game.Proximity; // Needed for ProximityManager
+using Game.Navigation; // Needed for WaypointManager (needed by BasicPathStateSO)
 
 namespace Game.NPC.TI // Keep in the TI namespace
 {
@@ -23,6 +24,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
     /// Implements off-screen simulation logic (delegating to BasicNpcStateManager)
     /// and provides methods for ProximityManager to trigger activation/deactivation.
     /// Uses a single collection of data records and filters on the fly.
+    /// Now includes mappings for path following states.
     /// </summary>
     public class TiNpcManager : MonoBehaviour
     {
@@ -42,6 +44,8 @@ namespace Game.NPC.TI // Keep in the TI namespace
         private GridManager gridManager;
         // Reference to ProximityManager (will be obtained in Awake/Start)
         private ProximityManager proximityManager;
+        // Reference to WaypointManager (will be obtained in Awake/Start)
+        private WaypointManager waypointManager; // <-- NEW: Reference to WaypointManager
 
 
         [Header("TI NPC Setup")]
@@ -77,7 +81,17 @@ namespace Game.NPC.TI // Keep in the TI namespace
             public Vector3 homePosition;
             public Quaternion homeRotation = Quaternion.identity; // Default rotation
             [Tooltip("Initial Basic State for this dummy NPC.")]
-            [SerializeField] public BasicState initialBasicState = BasicState.BasicPatrol; // <-- NEW: Initial Basic State
+            [SerializeField] public BasicState initialBasicState = BasicState.BasicPatrol; // Initial Basic State
+            // --- NEW: Optional initial path data for dummy NPCs ---
+            [Tooltip("Optional: Initial Basic Path State for this dummy NPC.")]
+            [SerializeField] public BasicPathState initialBasicPathState = BasicPathState.None; // Use None as default
+            [Tooltip("Optional: Path ID if starting in a Basic Path State.")]
+            [SerializeField] public string initialPathID;
+            [Tooltip("Optional: Start Index if starting in a Basic Path State.")]
+            [SerializeField] public int initialStartIndex = 0;
+            [Tooltip("Optional: Follow Reverse if starting in a Basic Path State.")]
+            [SerializeField] public bool initialFollowReverse = false;
+            // --- END NEW ---
         }
 
         // --- Persistent Data Storage ---
@@ -165,6 +179,15 @@ namespace Game.NPC.TI // Keep in the TI namespace
                   Debug.LogError("TiNpcManager: ProximityManager instance not found! Cannot manage NPC activation/deactivation based on proximity. Ensure ProximityManager is in the scene.", this);
                   // Do NOT disable manager entirely, but NPCs won't activate/deactivate.
              }
+
+             // --- NEW: Get reference to WaypointManager ---
+             waypointManager = WaypointManager.Instance;
+             if (waypointManager == null)
+             {
+                  Debug.LogError("TiNpcManager: WaypointManager instance not found! Cannot handle path following for TI NPCs. Ensure WaypointManager is in the scene.", this);
+                  // Do NOT disable manager entirely, just path following won't work.
+             }
+             // --- END NEW ---
 
 
              // Validate Player Transform - Still needed for simulation logic that might use player position
@@ -260,6 +283,16 @@ namespace Game.NPC.TI // Keep in the TI namespace
                      Gizmos.DrawSphere(tiData.CurrentWorldPosition, inactiveGizmoRadius);
                      // Optional: Draw the ID as text for easier identification (Requires UnityEditor and Handles)
                      // try { UnityEditor.Handles.Label(tiData.CurrentWorldPosition + Vector3.up * (inactiveGizmoRadius + 0.1f), tiData.Id); } catch {}
+
+                     // --- NEW DEBUG: Draw line to simulated target position if it exists ---
+                     if (tiData.simulatedTargetPosition.HasValue)
+                     {
+                          Gizmos.color = Color.magenta; // Different color for target line
+                          Gizmos.DrawLine(tiData.CurrentWorldPosition, tiData.simulatedTargetPosition.Value);
+                          Gizmos.DrawSphere(tiData.simulatedTargetPosition.Value, inactiveGizmoRadius * 0.5f); // Draw a smaller sphere at the target
+                          Gizmos.color = inactiveGizmoColor; // Restore color
+                     }
+                     // --- END NEW DEBUG ---
                  }
              }
         }
@@ -297,6 +330,10 @@ namespace Game.NPC.TI // Keep in the TI namespace
              activeToBaseStateMap[CustomerState.Exiting] = BasicState.BasicExitingStore;
               // CustomerState.Inactive and CustomerState.TransactionActive are not mapped
 
+             // --- NEW: Path State Mapping ---
+             activeToBaseStateMap[PathState.FollowPath] = BasicPathState.BasicFollowPath;
+             // --- END NEW ---
+
 
              // Basic -> Active mappings
              basicToActiveStateMap[BasicState.BasicPatrol] = TestState.Patrol;
@@ -306,6 +343,10 @@ namespace Game.NPC.TI // Keep in the TI namespace
              basicToActiveStateMap[BasicState.BasicWaitForCashier] = CustomerState.Queue; // This is the DEFAULT mapping, can be overridden during activation for specific logic.
              basicToActiveStateMap[BasicState.BasicExitingStore] = CustomerState.Exiting;
              // BasicState.None is not mapped back to an active state, handled by activation logic.
+
+             // --- NEW: Basic Path State Mapping ---
+             basicToActiveStateMap[BasicPathState.BasicFollowPath] = PathState.FollowPath;
+             // --- END NEW ---
 
 
              Debug.Log($"TiNpcManager: State mappings setup. Active->Basic: {activeToBaseStateMap.Count}, Basic->Active: {basicToActiveStateMap.Count}");
@@ -386,6 +427,14 @@ namespace Game.NPC.TI // Keep in the TI namespace
                        yield return new WaitForSeconds(simulationTickInterval * 5);
                        continue;
                    }
+                    // --- NEW: Check for WaypointManager dependency for path simulation ---
+                    if (waypointManager == null)
+                    {
+                         Debug.LogError("SIM TiNpcManager: WaypointManager is null! Cannot simulate path following for inactive NPCs.", this);
+                         // Continue simulation for non-path states, but path states will fallback.
+                         // No need to yield longer here, just log the specific issue.
+                    }
+                    // --- END NEW ---
 
 
                   // --- Use GridManager to find inactive NPCs near the player ---
@@ -488,9 +537,9 @@ namespace Game.NPC.TI // Keep in the TI namespace
                    return; // Already active or invalid
               }
 
-              if (tiNpcPrefabs == null || tiNpcPrefabs.Count == 0 || poolingManager == null || customerManager == null || basicNpcStateManager == null || gridManager == null) // Added gridManager check
+              if (tiNpcPrefabs == null || tiNpcPrefabs.Count == 0 || poolingManager == null || customerManager == null || basicNpcStateManager == null || gridManager == null || waypointManager == null) // Added waypointManager check
               {
-                   Debug.LogError("TiNpcManager: Cannot activate TI NPC. Required manager (TI Prefabs list, PoolingManager, CustomerManager, BasicNpcStateManager, or GridManager) is null.", this); // Updated log
+                   Debug.LogError("TiNpcManager: Cannot activate TI NPC. Required manager (TI Prefabs list, PoolingManager, CustomerManager, BasicNpcStateManager, GridManager, or WaypointManager) is null.", this); // Updated log
                    return;
               }
 
@@ -528,6 +577,11 @@ namespace Game.NPC.TI // Keep in the TI namespace
                                    // Clear simulation data as active state takes over
                                    tiData.simulatedTargetPosition = null;
                                    tiData.simulatedStateTimer = 0f;
+                                   // Clear path simulation data
+                                   tiData.simulatedPathID = null;
+                                   tiData.simulatedWaypointIndex = -1;
+                                   tiData.simulatedFollowReverse = false;
+                                   tiData.isFollowingPathBasic = false;
                               }
                               else
                               {
@@ -551,6 +605,11 @@ namespace Game.NPC.TI // Keep in the TI namespace
                                              // Clear simulation data as active state takes over
                                              tiData.simulatedTargetPosition = null;
                                              tiData.simulatedStateTimer = 0f;
+                                             // Clear path simulation data
+                                             tiData.simulatedPathID = null;
+                                             tiData.simulatedWaypointIndex = -1;
+                                             tiData.simulatedFollowReverse = false;
+                                             tiData.isFollowingPathBasic = false;
 
                                         }
                                         else
@@ -561,6 +620,11 @@ namespace Game.NPC.TI // Keep in the TI namespace
                                                                                               // Clear simulation data as active state takes over
                                              tiData.simulatedTargetPosition = null;
                                              tiData.simulatedStateTimer = 0f;
+                                             // Clear path simulation data
+                                             tiData.simulatedPathID = null;
+                                             tiData.simulatedWaypointIndex = -1;
+                                             tiData.simulatedFollowReverse = false;
+                                             tiData.isFollowingPathBasic = false;
                                         }
                                    }
                                    else
@@ -571,6 +635,11 @@ namespace Game.NPC.TI // Keep in the TI namespace
                                                                                          // Clear simulation data
                                         tiData.simulatedTargetPosition = null;
                                         tiData.simulatedStateTimer = 0f;
+                                        // Clear path simulation data
+                                        tiData.simulatedPathID = null;
+                                        tiData.simulatedWaypointIndex = -1;
+                                        tiData.simulatedFollowReverse = false;
+                                        tiData.isFollowingPathBasic = false;
                                    }
                               }
                          }
@@ -597,6 +666,11 @@ namespace Game.NPC.TI // Keep in the TI namespace
                                    // Clear simulation data as active state takes over
                                    tiData.simulatedTargetPosition = null; // Clear simulated target
                                    tiData.simulatedStateTimer = 0f; // Reset timer
+                                   // Clear path simulation data
+                                   tiData.simulatedPathID = null;
+                                   tiData.simulatedWaypointIndex = -1;
+                                   tiData.simulatedFollowReverse = false;
+                                   tiData.isFollowingPathBasic = false;
                               }
                               else
                               {
@@ -605,18 +679,63 @@ namespace Game.NPC.TI // Keep in the TI namespace
                                    // Clear simulation data
                                    tiData.simulatedTargetPosition = null;
                                    tiData.simulatedStateTimer = 0f;
+                                   // Clear path simulation data
+                                   tiData.simulatedPathID = null;
+                                   tiData.simulatedWaypointIndex = -1;
+                                   tiData.simulatedFollowReverse = false;
+                                   tiData.isFollowingPathBasic = false;
                               }
                          }
                          // --- END BasicBrowseState handling ---
 
-                         else if (savedStateEnum != null && savedStateEnum.Equals(BasicState.BasicPatrol))
+                         // --- NEW: Handle activation from BasicPathState ---
+                         else if (savedStateEnum != null && savedStateEnum.Equals(BasicPathState.BasicFollowPath))
                          {
-                              Debug.Log($"PROXIMITY {tiData.Id}: Saved state is BasicPatrol. Continuing with PatrolstateSO's destination.", npcObject);
+                              Debug.Log($"PROXIMITY {tiData.Id}: Saved state is BasicFollowPath. Restoring path progress.", npcObject);
                               handledActivationBySavedState = true; // We are handling this specific case
-                              startingActiveStateEnum = GetActiveStateFromBasicState(savedStateEnum);
-                         }
 
-                         // --- Existing Logic (for states OTHER THAN BasicWaitForCashier and BasicBrowse) ---
+                              // Get the corresponding active path state enum
+                              startingActiveStateEnum = GetActiveStateFromBasicState(savedStateEnum); // Should map to PathState.FollowPath
+
+                              // Check if path data is valid
+                              if (string.IsNullOrWhiteSpace(tiData.simulatedPathID) || tiData.simulatedWaypointIndex < 0 || waypointManager == null)
+                              {
+                                   Debug.LogError($"PROXIMITY {tiData.Id}: Invalid path simulation data found during BasicPathState activation! PathID: '{tiData.simulatedPathID}', Index: {tiData.simulatedWaypointIndex}. Transitioning to BasicPatrol fallback.", npcObject);
+                                   // Fallback to a safe state if path data is bad
+                                   startingActiveStateEnum = GetActiveStateFromBasicState(BasicState.BasicPatrol); // Map BasicPatrol to its active counterpart
+                                   // Clear path simulation data as it's invalid
+                                   tiData.simulatedPathID = null;
+                                   tiData.simulatedWaypointIndex = -1;
+                                   tiData.simulatedFollowReverse = false;
+                                   tiData.isFollowingPathBasic = false;
+                                   tiData.simulatedTargetPosition = null; // Clear simulated target
+                                   tiData.simulatedStateTimer = 0f; // Reset timer
+                              }
+                              else
+                              {
+                                   // Path data seems valid, restore it on the active handler *after* Runner.Activate
+                                   // The Runner.Activate call will transition to the PathState.FollowPath.
+                                   // The PathState.OnEnter will handle the initial NavMesh leg if needed,
+                                   // or the PathFollowingHandler.RestorePathProgress (Substep 4.5) will be called
+                                   // to skip the NavMesh leg if they were mid-path.
+
+                                   // We need to pass the path data to the Runner/PathFollowingHandler.
+                                   // The Runner.Activate method needs to be updated to accept this data,
+                                   // or the PathFollowingHandler needs a public method to restore state.
+                                   // Let's add a public method to PathFollowingHandler (Substep 4.5)
+                                   // and call it *after* runner.Activate returns.
+
+                                   // Clear simulation data as active state takes over
+                                   tiData.simulatedTargetPosition = null; // Clear simulated target
+                                   tiData.simulatedStateTimer = 0f; // Reset timer
+                                   // Note: We do NOT clear simulatedPathID, simulatedWaypointIndex, simulatedFollowReverse, isFollowingPathBasic here.
+                                   // These are needed by the PathFollowingHandler.RestorePathProgress method (Substep 4.5).
+                                   // They will be cleared by the PathFollowingHandler itself when it stops following the path.
+                              }
+                         }
+                         // --- END NEW ---
+
+                         // --- Existing Logic (for states OTHER THAN BasicWaitForCashier, BasicBrowse, BasicPathState) ---
                          if (!handledActivationBySavedState) // Only run this if the specific BasicState cases were NOT handled
                          {
                               if (savedStateEnum != null && basicNpcStateManager.IsBasicState(savedStateEnum))
@@ -627,6 +746,11 @@ namespace Game.NPC.TI // Keep in the TI namespace
                                    // Reset simulation data when transitioning from simulation to active
                                    tiData.simulatedTargetPosition = null; // Clear simulated target
                                    tiData.simulatedStateTimer = 0f; // Reset timer on activation
+                                   // Clear path simulation data
+                                   tiData.simulatedPathID = null;
+                                   tiData.simulatedWaypointIndex = -1;
+                                   tiData.simulatedFollowReverse = false;
+                                   tiData.isFollowingPathBasic = false;
                               }
                               else if (savedStateEnum != null)
                               {
@@ -636,7 +760,13 @@ namespace Game.NPC.TI // Keep in the TI namespace
                                    Debug.Log($"PROXIMITY {tiData.Id}: Saved state '{savedStateEnum.GetType().Name}.{savedStateEnum.ToString()}' is NOT a Basic State. Attempting to use as Active starting state.", npcObject);
                                    // Clear existing simulation data anyway as it's old simulation data.
                                    tiData.simulatedTargetPosition = null;
-                                   tiData.simulatedStateTimer = 0f;                                   }
+                                   tiData.simulatedStateTimer = 0f;
+                                   // Clear path simulation data
+                                   tiData.simulatedPathID = null;
+                                   tiData.simulatedWaypointIndex = -1;
+                                   tiData.simulatedFollowReverse = false;
+                                   tiData.isFollowingPathBasic = false;
+                                }
                               else
                               {
                                    // If no state was saved, or mapping failed, startingActiveStateEnum remains null.
@@ -645,6 +775,11 @@ namespace Game.NPC.TI // Keep in the TI namespace
                                    // Ensure simulation data is clean if no saved state existed
                                    tiData.simulatedTargetPosition = null;
                                    tiData.simulatedStateTimer = 0f;
+                                   // Clear path simulation data
+                                   tiData.simulatedPathID = null;
+                                   tiData.simulatedWaypointIndex = -1;
+                                   tiData.simulatedFollowReverse = false;
+                                   tiData.isFollowingPathBasic = false;
                               }
                          }
                          // --- END Existing Logic ---
@@ -654,6 +789,34 @@ namespace Game.NPC.TI // Keep in the TI namespace
                          runner.Activate(tiData, customerManager, startingActiveStateEnum); // <-- Pass determined override state Enum
 
                          Debug.Log($"PROXIMITY TiNpcManager: Activation initiated for TI NPC '{tiData.Id}' (GameObject '{npcObject.name}'). Runner.Activate called with override state: {startingActiveStateEnum?.GetType().Name}.{startingActiveStateEnum?.ToString() ?? "NULL"}");
+
+                         // --- NEW: If activating into a PathState, restore path progress on the handler ---
+                         // This happens *after* Runner.Activate has set up the runner and transitioned to the state.
+                         // The PathState.OnEnter will run, but if the NPC was mid-path, we need to tell the handler
+                         // to skip the NavMesh leg and resume path following from the saved index.
+                         if (startingActiveStateEnum != null && startingActiveStateEnum.Equals(PathState.FollowPath))
+                         {
+                              // Check if the data indicates they were mid-path simulation
+                              if (tiData.isFollowingPathBasic && !string.IsNullOrWhiteSpace(tiData.simulatedPathID) && tiData.simulatedWaypointIndex != -1)
+                              {
+                                   Debug.Log($"PROXIMITY {tiData.Id}: Activating into PathState. Restoring path progress on handler: PathID='{tiData.simulatedPathID}', Index={tiData.simulatedWaypointIndex}, Reverse={tiData.simulatedFollowReverse}.", npcObject);
+                                   // Get the PathSO asset
+                                   PathSO pathSOToRestore = waypointManager?.GetPath(tiData.simulatedPathID);
+                                   if (pathSOToRestore != null)
+                                   {
+                                        // Call a new method on the PathFollowingHandler to restore state (Substep 4.5)
+                                        runner.PathFollowingHandler?.RestorePathProgress(pathSOToRestore, tiData.simulatedWaypointIndex, tiData.simulatedFollowReverse);
+                                   } else {
+                                        Debug.LogError($"PROXIMITY {tiData.Id}: PathSO '{tiData.simulatedPathID}' not found via WaypointManager during PathState activation restore! Cannot restore path progress. NPC will likely start path from beginning.", npcObject);
+                                        // The PathState.OnEnter will handle starting from the beginning (index 0) as a fallback.
+                                   }
+                              } else {
+                                   // Not mid-path simulation, PathState.OnEnter will handle starting from the beginning (index 0)
+                                   Debug.Log($"PROXIMITY {tiData.Id}: Activating into PathState, but not mid-path simulation. PathState.OnEnter will handle starting from beginning.", npcObject);
+                              }
+                         }
+                         // --- END NEW ---
+
 
                    }
                    else
@@ -715,12 +878,37 @@ namespace Game.NPC.TI // Keep in the TI namespace
                    tiData.SetCurrentState(targetBasicState);
                    Debug.Log($"PROXIMITY {tiData.Id}: Active state '{currentActiveState?.GetType().Name}.{currentActiveState?.ToString() ?? "NULL"}' maps to Basic State '{targetBasicState.GetType().Name}.{targetBasicState.ToString()}'. Saving this state to TiData.");
 
+                  // --- NEW: Save Path Progress if currently following a path ---
+                  if (currentActiveState != null && currentActiveState.Equals(PathState.FollowPath) && runner.PathFollowingHandler != null && runner.PathFollowingHandler.IsFollowingPath)
+                  {
+                       Debug.Log($"PROXIMITY {tiData.Id}: Currently following a path. Saving path progress.", runner.gameObject);
+                       tiData.simulatedPathID = runner.PathFollowingHandler.GetCurrentPathID();
+                       tiData.simulatedWaypointIndex = runner.PathFollowingHandler.GetCurrentTargetWaypointIndex(); // Save the index they were moving *towards*
+                       tiData.simulatedFollowReverse = runner.PathFollowingHandler.GetFollowReverse();
+                       tiData.isFollowingPathBasic = true; // Flag that they were on a path
+
+                       // Note: simulatedTargetPosition will be set by the BasicPathStateSO.OnEnter when simulation starts.
+                       // We don't need to save the active target position here.
+
+                       Debug.Log($"PROXIMITY {tiData.Id}: Saved path progress: PathID='{tiData.simulatedPathID}', Index={tiData.simulatedWaypointIndex}, Reverse={tiData.simulatedFollowReverse}.", runner.gameObject);
+                  } else {
+                       // Not following a path, ensure path simulation data is cleared
+                       tiData.simulatedPathID = null;
+                       tiData.simulatedWaypointIndex = -1;
+                       tiData.simulatedFollowReverse = false;
+                       tiData.isFollowingPathBasic = false;
+                       // simulatedTargetPosition and simulatedStateTimer are handled by the target BasicStateSO.OnEnter
+                  }
+                  // --- END NEW ---
+
+
                   // --- Call OnEnter for the target Basic State to initialize simulation data ---
                   // This is crucial to set up simulatedTargetPosition, simulatedStateTimer etc. for the *next* simulation tick.
+                  // This call happens *after* saving path progress, so the BasicPathStateSO.OnEnter can read the saved data.
                   BasicNpcStateSO targetBasicStateSO = basicNpcStateManager?.GetBasicStateSO(targetBasicState);
                   if(targetBasicStateSO != null)
                   {
-                      Debug.Log($"PROXIMITY {tiData.Id}: Calling OnEnter for Basic State '{targetBasicStateSO.name}' to initialize simulation data.");
+                      Debug.Log($"PROXIMITY {tiData.Id}: Calling OnEnter for Basic State '{targetBasicStateSO.name}' to initialize simulation data.", runner.gameObject);
                       targetBasicStateSO.OnEnter(tiData, basicNpcStateManager); // Pass the data and the manager
                   } else
                   {
@@ -732,7 +920,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
 
 
                   // --- Trigger Deactivation Flow ---
-                  Debug.Log($"PROXIMITY {tiData.Id}: TI NPC ready for deactivation. Triggering TransitionToState(ReturningToPool).");
+                  Debug.Log($"PROXIMITY {tiData.Id}: TI NPC ready for deactivation. Triggering TransitionToState(ReturningToPool).", runner.gameObject);
                   // Transition the Runner to the ReturningToPool state.
                   // The Runner.TransitionToState handles calling Runner.Deactivate() *before* entering the state.
                   // Runner.Deactivate() will now save the *Basic State* we just set on tiData, and position/rotation.
@@ -958,6 +1146,13 @@ namespace Game.NPC.TI // Keep in the TI namespace
                   Debug.LogError("TiNpcManager: GridManager not found. Cannot add dummy TI NPC data to the grid.", this);
                   // Continue loading data into allTiNpcs, but grid will be empty. Proximity/Simulation will fail.
              }
+             // --- NEW: Check WaypointManager for dummy path data initialization ---
+             if (waypointManager == null)
+             {
+                  Debug.LogWarning("TiNpcManager: WaypointManager not found. Dummy NPCs configured with BasicPathState will not have their path data initialized correctly.", this);
+                  // Continue loading, but path data will be invalid.
+             }
+             // --- END NEW ---
 
 
              foreach (var entry in dummyNpcData)
@@ -980,13 +1175,87 @@ namespace Game.NPC.TI // Keep in the TI namespace
                   newNpcData.CurrentWorldRotation = newNpcData.HomeRotation;
 
                   // --- Initialize with the specified Basic State from dummy data ---
-                   Enum initialBasicStateEnum = entry.initialBasicState;
+                   Enum initialBasicStateEnum = entry.initialBasicState; // Default to BasicState enum
 
-                   // Validate the initial state exists as a Basic State SO
+                   // --- NEW: Check if a BasicPathState is configured instead ---
+                   if (entry.initialBasicPathState != BasicPathState.None)
+                   {
+                       initialBasicStateEnum = entry.initialBasicPathState; // Use the BasicPathState if specified
+                       Debug.Log($"TiNpcManager: Dummy NPC '{entry.id}' configured with initial Basic Path State '{initialBasicStateEnum}'.");
+
+                       // --- Initialize path simulation data if starting in a BasicPathState ---
+                       if (waypointManager != null && !string.IsNullOrWhiteSpace(entry.initialPathID))
+                       {
+                           PathSO initialPathSO = waypointManager.GetPath(entry.initialPathID);
+                           if (initialPathSO != null && entry.initialStartIndex >= 0 && entry.initialStartIndex < initialPathSO.WaypointCount)
+                           {
+                                newNpcData.simulatedPathID = entry.initialPathID;
+                                newNpcData.simulatedWaypointIndex = entry.initialStartIndex; // Start *at* this index
+                                newNpcData.simulatedFollowReverse = entry.initialFollowReverse;
+                                newNpcData.isFollowingPathBasic = true; // Flag as following a path
+
+                                // Set initial position to the start waypoint's position
+                                string startWaypointID = initialPathSO.GetWaypointID(entry.initialStartIndex);
+                                Transform startWaypointTransform = waypointManager.GetWaypointTransform(startWaypointID);
+                                if (startWaypointTransform != null)
+                                {
+                                     newNpcData.CurrentWorldPosition = startWaypointTransform.position;
+                                     // Simulate initial rotation towards the next waypoint
+                                     // Need to get the BasicPathStateSO to call its rotation helper or duplicate logic
+                                     // Let's duplicate the rotation logic here for initialization simplicity
+                                     int nextTargetIndex = newNpcData.simulatedFollowReverse ? newNpcData.simulatedWaypointIndex - 1 : newNpcData.simulatedWaypointIndex + 1;
+                                     bool hasNextWaypoint = newNpcData.simulatedFollowReverse ? (nextTargetIndex >= 0) : (nextTargetIndex < initialPathSO.WaypointCount);
+                                     if (hasNextWaypoint)
+                                     {
+                                          string nextTargetWaypointID = initialPathSO.GetWaypointID(nextTargetIndex);
+                                          Transform nextTargetTransform = waypointManager.GetWaypointTransform(nextTargetWaypointID);
+                                          if (nextTargetTransform != null)
+                                          {
+                                               Vector3 direction = (nextTargetTransform.position - newNpcData.CurrentWorldPosition).normalized;
+                                               if (direction.sqrMagnitude > 0.001f)
+                                               {
+                                                    newNpcData.CurrentWorldRotation = Quaternion.LookRotation(direction);
+                                               }
+                                          }
+                                     }
+                                }
+                                else
+                                {
+                                     Debug.LogError($"TiNpcManager: Dummy NPC '{entry.id}' configured with initial path '{entry.initialPathID}' (index {entry.initialStartIndex}), but start waypoint '{startWaypointID}' not found! Cannot initialize position. Falling back to BasicPatrol.", this);
+                                     initialBasicStateEnum = BasicState.BasicPatrol; // Fallback state
+                                     // Clear invalid path data
+                                     newNpcData.simulatedPathID = null;
+                                     newNpcData.simulatedWaypointIndex = -1;
+                                     newNpcData.simulatedFollowReverse = false;
+                                     newNpcData.isFollowingPathBasic = false;
+                                     newNpcData.CurrentWorldPosition = newNpcData.HomePosition; // Reset position
+                                     newNpcData.CurrentWorldRotation = newNpcData.HomeRotation; // Reset rotation
+                                }
+
+                           } else {
+                                Debug.LogError($"TiNpcManager: Dummy NPC '{entry.id}' configured with initial path '{entry.initialPathID}' (index {entry.initialStartIndex}), but PathSO not found or index invalid! Cannot initialize path data. Falling back to BasicPatrol.", this);
+                                initialBasicStateEnum = BasicState.BasicPatrol; // Fallback state
+                                // Clear invalid path data
+                                newNpcData.simulatedPathID = null;
+                                newNpcData.simulatedWaypointIndex = -1;
+                                newNpcData.simulatedFollowReverse = false;
+                                newNpcData.isFollowingPathBasic = false;
+                           }
+                       } else if (entry.initialBasicPathState != BasicPathState.None)
+                       {
+                            Debug.LogWarning($"TiNpcManager: Dummy NPC '{entry.id}' configured with BasicPathState '{initialBasicStateEnum}', but no initial Path ID provided or WaypointManager is null. Cannot initialize path data. Falling back to BasicPatrol.", this);
+                            initialBasicStateEnum = BasicState.BasicPatrol; // Fallback state
+                       }
+                       // Note: If falling back to BasicPatrol, the BasicPatrolStateSO.OnEnter will handle its own initialization.
+                   }
+                   // --- END NEW ---
+
+
+                   // Validate the determined initial state exists as a Basic State SO
                    BasicNpcStateSO initialStateSO = basicNpcStateManager.GetBasicStateSO(initialBasicStateEnum);
                    if (initialStateSO == null)
                    {
-                        Debug.LogError($"TiNpcManager: Dummy NPC '{entry.id}' configured with initial Basic State '{initialBasicStateEnum}', but no BasicStateSO asset found for this state! Skipping NPC load.", this);
+                        Debug.LogError($"TiNpcManager: Dummy NPC '{entry.id}' determined initial Basic State '{initialBasicStateEnum}', but no BasicStateSO asset found for this state! Skipping NPC load.", this);
                         continue; // Skip loading this NPC if its initial state is invalid
                    }
 
@@ -994,6 +1263,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
 
                    // Call the OnEnter for this initial basic state immediately to set up simulation data (timer, target)
                    // This replicates the OnEnter call that would happen if the NPC transitioned into this state.
+                   // Note: BasicPathStateSO.OnEnter handles its own initialization based on isFollowingPathBasic flag.
                    initialStateSO.OnEnter(newNpcData, basicNpcStateManager); // Pass the data and the manager
 
                   // Flags and GameObject link are initialized in the TiNpcData constructor (isActiveGameObject=false, NpcGameObject=null)
@@ -1004,9 +1274,9 @@ namespace Game.NPC.TI // Keep in the TI namespace
                   if (gridManager != null)
                   {
                       gridManager.AddItem(newNpcData, newNpcData.CurrentWorldPosition);
-                      Debug.Log($"TiNpcManager: Loaded dummy NPC '{newNpcData.Id}' with initial Basic State '{initialBasicStateEnum}'. Simulation timer initialized to {newNpcData.simulatedStateTimer:F2}s, Target: {newNpcData.simulatedTargetPosition?.ToString() ?? "NULL"}. Added to grid.", this); // Updated log
+                      Debug.Log($"TiNpcManager: Loaded dummy NPC '{newNpcData.Id}' with initial Basic State '{initialBasicStateEnum}'. Simulation timer initialized to {newNpcData.simulatedStateTimer:F2}s, Target: {newNpcData.simulatedTargetPosition?.ToString() ?? "NULL"}. Path Data: Following={newNpcData.isFollowingPathBasic}, ID='{newNpcData.simulatedPathID}', Index={newNpcData.simulatedWaypointIndex}, Reverse={newNpcData.simulatedFollowReverse}. Added to grid.", this); // Updated log
                   } else {
-                       Debug.Log($"TiNpcManager: Loaded dummy NPC '{newNpcData.Id}' with initial Basic State '{initialBasicStateEnum}'. Simulation timer initialized to {newNpcData.simulatedStateTimer:F2}s, Target: {newNpcData.simulatedTargetPosition?.ToString() ?? "NULL"}. GridManager is null, NOT added to grid.", this); // Updated log
+                       Debug.Log($"TiNpcManager: Loaded dummy NPC '{newNpcData.Id}' with initial Basic State '{initialBasicStateEnum}'. Simulation timer initialized to {newNpcData.simulatedStateTimer:F2}s, Target: {newNpcData.simulatedTargetPosition?.ToString() ?? "NULL"}. Path Data: Following={newNpcData.isFollowingPathBasic}, ID='{newNpcData.simulatedPathID}', Index={newNpcData.simulatedWaypointIndex}, Reverse={newNpcData.simulatedFollowReverse}. GridManager is null, NOT added to grid.", this); // Updated log
                   }
              }
         }

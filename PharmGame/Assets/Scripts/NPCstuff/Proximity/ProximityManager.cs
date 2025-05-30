@@ -8,6 +8,7 @@ using Game.Spatial; // Needed for GridManager
 using System; // Needed for Enum
 using Game.NPC; // Needed for NpcStateMachineRunner
 using Game.NPC.States; // Needed for NpcStateSO
+using System.Linq; // Added for Where
 
 namespace Game.Proximity
 {
@@ -248,12 +249,6 @@ namespace Game.Proximity
                             Debug.Log($"PROXIMITY {tiData.Id}: Triggering Activation.");
                             tiNpcManager.RequestActivateTiNpc(tiData);
                             // The runner will be available *after* RequestActivateTiNpc returns and the object is pooled.
-                            // We need to wait a frame or handle this after activation is complete.
-                            // A simple approach for now is to set the mode on the runner *immediately* after activation,
-                            // assuming RequestActivateTiNpc completes synchronously enough to link the GameObject.
-                            // A more robust approach might involve an event or callback from TiNpcManager.
-                            // Let's try setting it immediately after the request for now.
-                            // The runner will be linked to tiData.NpcGameObject by RequestActivateTiNpc.
                             // We'll set the mode below after the main transition logic.
                         }
                         // Transition from Moderate or Near to Far -> DEACTIVATE
@@ -308,21 +303,26 @@ namespace Game.Proximity
                     // Update the tracked zone *after* processing transitions (unless deactivation was blocked by state)
                     npcProximityZones[tiData] = currentZone;
 
-                    // --- NEW: Set initial update mode upon activation (Far -> Near/Moderate) ---
-                    // This needs to happen *after* the NPC is activated and the runner is available.
-                    // We check if the NPC just became active AND is in the Near or Moderate zone.
-                    if (tiData.IsActiveGameObject && tiData.NpcGameObject != null && (currentZone == ProximityZone.Near || currentZone == ProximityZone.Moderate) && previousZone == ProximityZone.Far)
+                    // --- MODIFIED: Ensure update mode is set for all active NPCs in Near/Moderate zones ---
+                    // This handles initial activation into Near/Moderate AND re-confirms mode periodically
+                    // for NPCs already active in these zones.
+                    if (tiData.IsActiveGameObject && tiData.NpcGameObject != null && (currentZone == ProximityZone.Near || currentZone == ProximityZone.Moderate))
                     {
                          NpcStateMachineRunner runner = tiData.NpcGameObject.GetComponent<NpcStateMachineRunner>();
                          if (runner != null)
                          {
-                              Debug.Log($"PROXIMITY {tiData.Id}: Setting initial update mode to {currentZone} after activation.");
+                              // Only log if the mode is actually changing or being set for the first time
+                              // (Optional, can be noisy)
+                              // if (runner.currentUpdateInterval != runner.normalUpdateInterval || runner.normalUpdateInterval == 0f) // Check if mode needs setting/changing
+                              // {
+                                  Debug.Log($"PROXIMITY {tiData.Id}: Setting/Confirming update mode to {currentZone}.");
+                              // }
                               runner.SetUpdateMode(currentZone);
                          } else {
-                              Debug.LogError($"PROXIMITY {tiData.Id}: Activated NPC is missing Runner! Cannot set initial update mode.", tiData.NpcGameObject);
+                              Debug.LogError($"PROXIMITY {tiData.Id}: Active NPC is missing Runner! Cannot set update mode.", tiData.NpcGameObject);
                          }
                     }
-                    // --- END NEW ---
+                    // --- END MODIFIED ---
                 }
 
                 // --- Clean up tracking for NPCs that are now truly outside the far radius and not active ---
@@ -341,7 +341,7 @@ namespace Game.Proximity
                      float distanceToPlayerSq = (npcPosition - playerPosition).sqrMagnitude;
 
                     // If the NPC is currently tracked as Far AND is inactive AND is outside the far radius...
-                    if (npcProximityZones[tiData] == ProximityZone.Far && !tiData.IsActiveGameObject && distanceToPlayerSq > farRadius * farRadius)
+                    if (npcProximityZones.TryGetValue(tiData, out ProximityZone trackedZone) && trackedZone == ProximityZone.Far && !tiData.IsActiveGameObject && distanceToPlayerSq > farRadius * farRadius)
                     {
                          // Debug.Log($"ProximityManager: Removing inactive Far NPC '{tiData.Id}' from tracking dictionary."); // Too noisy
                          npcProximityZones.Remove(tiData);

@@ -634,6 +634,8 @@ GameObject:
   - component: {fileID: 54584857617627132}
   - component: {fileID: 3525319590883365962}
   - component: {fileID: 163036449089475493}
+  - component: {fileID: -1778349930730536278}
+  - component: {fileID: -8843586099993494372}
   m_Layer: 7
   m_Name: NPC 1
   m_TagString: NPC
@@ -934,14 +936,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   npcTypes:
   - {fileID: 11400000, guid: 7c4f6c2437e7fbe4ba387874f4e23c2b, type: 2}
-  - {fileID: 11400000, guid: 87681276777e0d445bfa8a766781bb75, type: 2}
+  - {fileID: 11400000, guid: 575d34a51653a6243b83978384f524fa, type: 2}
   - {fileID: 11400000, guid: 3885ff761950e2549a71fc3b0109781b, type: 2}
+  - {fileID: 11400000, guid: 87681276777e0d445bfa8a766781bb75, type: 2}
   _hasReachedCurrentDestination: 0
   fallbackReturningStateEnumKey: ReturningToPool
   fallbackReturningStateEnumType: Game.NPC.GeneralState
   fallbackIdleStateEnumKey: Idle
   fallbackIdleStateEnumType: Game.NPC.GeneralState
-  moderateUpdateRateHz: 10
+  moderateUpdateRateHz: 20
 --- !u!114 &54584857617627132
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -978,6 +981,48 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c3ec740695e74ad49be9db2301c242f3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!54 &-1778349930730536278
+Rigidbody:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4394407753789290286}
+  serializedVersion: 4
+  m_Mass: 1
+  m_Drag: 5
+  m_AngularDrag: 15
+  m_CenterOfMass: {x: 0, y: 0, z: 0}
+  m_InertiaTensor: {x: 1, y: 1, z: 1}
+  m_InertiaRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ImplicitCom: 1
+  m_ImplicitTensor: 1
+  m_UseGravity: 1
+  m_IsKinematic: 0
+  m_Interpolate: 0
+  m_Constraints: 0
+  m_CollisionDetection: 0
+--- !u!114 &-8843586099993494372
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4394407753789290286}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ad62c44fac1ee794f8cdaf5e2f988300, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  pathFollowingSpeed: 4.5
+  waypointArrivalThreshold: 0.5
+  rotationSpeed: 4
 --- !u!1 &4855562079567102611
 GameObject:
   m_ObjectHideFlags: 0

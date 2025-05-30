@@ -5,13 +5,13 @@ using System;
 using Game.NPC.States;
 using Systems.Inventory;
 using Game.NPC.Types;
-using Game.NPC.BasicStates; // Needed for BasicState enum
+using Game.NPC.BasicStates; // Needed for BasicState enum, BasicPathState enum
 
 namespace Game.NPC.TI
 {
     /// <summary>
     /// Represents the persistent data for a True Identity NPC, independent of their GameObject.
-    /// Includes fields needed for off-screen simulation.
+    /// Includes fields needed for off-screen simulation, including path following.
     /// </summary>
     [System.Serializable]
     public class TiNpcData
@@ -31,7 +31,7 @@ namespace Game.NPC.TI
         [SerializeField] private Quaternion currentWorldRotation;
 
         // Storing state using strings to allow serialization across different enum types
-        // This will store EITHER an active state enum (like CustomerState, TestState) OR a BasicState enum
+        // This will store EITHER an active state enum (like CustomerState, TestState, PathState) OR a BasicState/BasicPathState enum
         [Tooltip("The string name of the NPC's current state enum value (can be Active or Basic).")]
         [SerializeField] private string currentStateEnumKey;
         [Tooltip("The assembly qualified name of the NPC's current state enum type (can be Active or Basic).")]
@@ -39,11 +39,24 @@ namespace Game.NPC.TI
 
         // --- PHASE 4, SUBSTEP 1: Add Simulation Data Fields ---
         [Header("Simulation Data (Managed Off-screen)")]
-        [Tooltip("The target position for off-screen movement simulation (e.g., patrol point, exit). Null if no target.")]
+        [Tooltip("The target position for off-screen movement simulation (e.g., patrol point, exit, waypoint). Null if no target.")]
         [SerializeField] public Vector3? simulatedTargetPosition; // Made public for direct access by simulation logic
 
         [Tooltip("A timer used for off-screen simulation of states like waiting, browsing, etc.")]
         [SerializeField] public float simulatedStateTimer; // Made public for direct access by simulation logic
+
+        // --- NEW: Path Following Simulation Data (Phase 3) ---
+        [Tooltip("The ID of the path currently being followed in simulation.")]
+        [SerializeField] public string simulatedPathID; // Public for direct access by simulation logic
+        [Tooltip("The index of the waypoint the NPC is currently moving *towards* in simulation.")]
+        [SerializeField] public int simulatedWaypointIndex; // Public for direct access by simulation logic
+        [Tooltip("If true, the NPC is following the path in reverse in simulation.")]
+        [SerializeField] public bool simulatedFollowReverse; // Public for direct access by simulation logic
+        [Tooltip("True if the NPC is currently following a path in simulation.")]
+        [SerializeField] public bool isFollowingPathBasic; // Public flag for simulation logic
+        // --- END NEW ---
+
+
         [System.NonSerialized] public GameObject NpcGameObject; // Runtime reference to the active GameObject
         // --- END PHASE 4 Fields ---
 
@@ -124,6 +137,12 @@ namespace Game.NPC.TI
             // Initialize simulation fields
             this.simulatedTargetPosition = null;
             this.simulatedStateTimer = 0f;
+
+            // Initialize path following simulation fields
+            this.simulatedPathID = null;
+            this.simulatedWaypointIndex = -1;
+            this.simulatedFollowReverse = false;
+            this.isFollowingPathBasic = false;
         }
 
         /// <summary>

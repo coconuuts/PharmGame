@@ -21,4 +21,4 @@ MonoBehaviour:
   simulatedArrivalThreshold: 0.3
   simulatedMinWaitTimeAtPoint: 2
   simulatedMaxWaitTimeAtPoint: 4
-  simulatedChanceToShop: 0.9
+  simulatedChanceToShop: 0

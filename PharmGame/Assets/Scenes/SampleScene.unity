@@ -6286,6 +6286,41 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!1 &652145979
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 652145980}
+  m_Layer: 0
+  m_Name: Waypoints
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &652145980
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 652145979}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 732892309}
+  - {fileID: 969715660}
+  - {fileID: 671516359}
+  - {fileID: 2147373147}
+  m_Father: {fileID: 763258581}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &653167264 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 3657326947955661114, guid: 8202459e60c16e64a96afbd191a02aa8, type: 3}
@@ -6521,6 +6556,51 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   rowIndex: 1
   columnIndex: 4
+--- !u!1 &671516358
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 671516359}
+  - component: {fileID: 671516360}
+  m_Layer: 0
+  m_Name: GP2
+  m_TagString: Waypoint
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &671516359
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 671516358}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 1.25, y: 0, z: 2.18}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 652145980}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &671516360
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 671516358}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d6c2e8012a351664e9fa6721903ae4f6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  id: GP2
 --- !u!1 &673708008
 GameObject:
   m_ObjectHideFlags: 0
@@ -7012,6 +7092,51 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   rowIndex: 0
   columnIndex: 7
+--- !u!1 &732892308
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 732892309}
+  - component: {fileID: 732892310}
+  m_Layer: 0
+  m_Name: Gym
+  m_TagString: Waypoint
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &732892309
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 732892308}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 2.89, y: 0, z: -15.44}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 652145980}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &732892310
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 732892308}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d6c2e8012a351664e9fa6721903ae4f6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  id: Gym
 --- !u!1 &750020505
 GameObject:
   m_ObjectHideFlags: 0
@@ -7118,6 +7243,7 @@ GameObject:
   - component: {fileID: 763258583}
   - component: {fileID: 763258585}
   - component: {fileID: 763258584}
+  - component: {fileID: 763258586}
   m_Layer: 0
   m_Name: NPCmanager
   m_TagString: Untagged
@@ -7176,6 +7302,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1263039298}
+  - {fileID: 652145980}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &763258582
@@ -7202,6 +7329,10 @@ MonoBehaviour:
     homePosition: {x: 3, y: 0, z: 3}
     homeRotation: {x: 0, y: 0, z: 0, w: 0}
     initialBasicState: 1
+    initialBasicPathState: 1
+    initialPathID: GymToPharmacy
+    initialStartIndex: 0
+    initialFollowReverse: 0
   drawInactiveNpcsGizmos: 1
   inactiveGizmoColor: {r: 0.3254717, g: 1, b: 0.5974937, a: 1}
   inactiveGizmoRadius: 0.3
@@ -7224,6 +7355,7 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 597bab764aeaf674aadcd649a9235a7f, type: 2}
   - {fileID: 11400000, guid: 79e0e11f3d6cb6543a0838231c9240af, type: 2}
   - {fileID: 11400000, guid: a5e2d468e5c87554a924f00e44ac6a10, type: 2}
+  - {fileID: 11400000, guid: f90a6eec035d44945a3068a963db0bff, type: 2}
 --- !u!114 &763258584
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7263,6 +7395,21 @@ MonoBehaviour:
   gridDimensions: {x: 7, y: 3, z: 6}
   drawGridGizmos: 1
   gridColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+--- !u!114 &763258586
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 763258579}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 84d7d8ccd46a8fa4b81dcb0806a0516c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  pathAssets:
+  - {fileID: 11400000, guid: eb4044d295a495c4d9e4becc20f0a80c, type: 2}
+  waypointTag: Waypoint
 --- !u!1 &765084589
 GameObject:
   m_ObjectHideFlags: 0
@@ -9738,6 +9885,51 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   rowIndex: 0
   columnIndex: 1
+--- !u!1 &969715659
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 969715660}
+  - component: {fileID: 969715661}
+  m_Layer: 0
+  m_Name: GP 1
+  m_TagString: Waypoint
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &969715660
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 969715659}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 5.43, y: 0, z: -6.17}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 652145980}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &969715661
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 969715659}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d6c2e8012a351664e9fa6721903ae4f6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  id: GP1
 --- !u!1 &973827980
 GameObject:
   m_ObjectHideFlags: 0
@@ -21214,6 +21406,51 @@ Transform:
   m_Children: []
   m_Father: {fileID: 2118038638}
   m_LocalEulerAnglesHint: {x: 0, y: 90, z: 0}
+--- !u!1 &2147373146
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2147373147}
+  - component: {fileID: 2147373148}
+  m_Layer: 0
+  m_Name: Pharmacy
+  m_TagString: Waypoint
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &2147373147
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2147373146}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -5.1, y: 0, z: 6.3}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 652145980}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2147373148
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2147373146}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d6c2e8012a351664e9fa6721903ae4f6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  id: Pharmacy
 --- !u!1 &5664292431428108
 GameObject:
   m_ObjectHideFlags: 0
@@ -23110,7 +23347,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 438501964579209876, guid: 8202459e60c16e64a96afbd191a02aa8, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -5.96
+      value: -6.9
       objectReference: {fileID: 0}
     - target: {fileID: 438501964579209876, guid: 8202459e60c16e64a96afbd191a02aa8, type: 3}
       propertyPath: m_LocalPosition.y
@@ -23118,7 +23355,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 438501964579209876, guid: 8202459e60c16e64a96afbd191a02aa8, type: 3}
       propertyPath: m_LocalPosition.z
-      value: -7.5
+      value: 1.75
       objectReference: {fileID: 0}
     - target: {fileID: 438501964579209876, guid: 8202459e60c16e64a96afbd191a02aa8, type: 3}
       propertyPath: m_LocalRotation.w

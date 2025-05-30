@@ -13,6 +13,7 @@ namespace Game.NPC
         Emoting,            // Performing an emote animation
         Idle,               // Standing still, not actively pursuing a task
         Death,               // NPC is dead
+        
         // Add other general states here as needed
     }
 }

@@ -1,14 +1,13 @@
-// --- Updated NpcMovementHandler.cs ---
-// (Content is largely the same as Substep 2's version, but confirming it has the logic)
 using UnityEngine;
 using UnityEngine.AI;
-using System.Collections; // Added for Coroutine
-using Game.Events; // Needed if you decide to publish events from here
+using System.Collections;
+using Game.Events;
 
 namespace Game.NPC.Handlers
 {
     /// <summary>
     /// Handles the movement and rotation of an NPC using a NavMeshAgent.
+    /// Now includes explicit methods to enable/disable the agent.
     /// </summary>
     [RequireComponent(typeof(NavMeshAgent))]
     public class NpcMovementHandler : MonoBehaviour
@@ -16,9 +15,14 @@ namespace Game.NPC.Handlers
         public NavMeshAgent Agent { get; private set; }
 
         [SerializeField] private float destinationReachedThreshold = 0.5f;
-        [SerializeField] private float rotationSpeed = 5f; // Keep this here
+        [SerializeField] private float rotationSpeed = 5f;
 
         private Coroutine currentRotationCoroutine;
+
+        // --- NEW: Public property to check if agent is enabled ---
+        public bool IsAgentEnabled => Agent != null && Agent.enabled;
+        // --- END NEW ---
+
 
         private void Awake()
         {
@@ -29,7 +33,7 @@ namespace Game.NPC.Handlers
                 enabled = false;
             }
 
-            if (Agent != null) Agent.enabled = false; // Still managed externally
+            if (Agent != null) Agent.enabled = false; // Still managed externally, initially off
         }
 
         private void OnEnable()
@@ -42,57 +46,85 @@ namespace Game.NPC.Handlers
              // Future: Unsubscriptions
              StopMoving();
              StopRotation();
+             // --- NEW: Ensure agent is disabled on disable ---
+             DisableAgent(); // This calls the modified DisableAgent
+             // --- END NEW ---
         }
 
         private void Update()
         {
             // --- ADD PATH DEBUGGING ---
-    if (Agent != null && Agent.isActiveAndEnabled && Agent.hasPath)
-    {
-        Debug.DrawLine(transform.position, Agent.steeringTarget, Color.red); // Draw line to immediate steering target
-        Color pathColor = Color.cyan;
-        Vector3 lastCorner = transform.position;
-        foreach (var corner in Agent.path.corners)
-        {
-            Debug.DrawLine(lastCorner, corner, pathColor); // Draw segments of the path
-            lastCorner = corner;
+            if (Agent != null && Agent.isActiveAndEnabled && Agent.hasPath)
+            {
+                Debug.DrawLine(transform.position, Agent.steeringTarget, Color.red); // Draw line to immediate steering target
+                Color pathColor = Color.cyan;
+                Vector3 lastCorner = transform.position;
+                foreach (var corner in Agent.path.corners)
+                {
+                    Debug.DrawLine(lastCorner, corner, pathColor); // Draw segments of the path
+                    lastCorner = corner;
+                }
+            }
+            if (Agent != null && Agent.isActiveAndEnabled && !Agent.pathPending && !Agent.hasPath && Agent.remainingDistance > Agent.stoppingDistance)
+            {
+                 // Agent is active, not waiting for a path, has no path, and isn't already at the destination.
+                 // This state often indicates a pathfinding failure after SetDestination was called.
+                 // Debug.LogWarning($"NpcMovementHandler on {gameObject.name}: Agent has no path! Path Status: {Agent.pathStatus}", this); // Too noisy
+            }
+            // --- END ADD ---
         }
-    }
-    if (Agent != null && Agent.isActiveAndEnabled && !Agent.pathPending && !Agent.hasPath && Agent.remainingDistance > Agent.stoppingDistance)
-    {
-         // Agent is active, not waiting for a path, has no path, and isn't already at the destination.
-         // This state often indicates a pathfinding failure after SetDestination was called.
-         Debug.LogWarning($"NpcMovementHandler on {gameObject.name}: Agent has no path! Path Status: {Agent.pathStatus}", this);
-    }
-    // --- END ADD ---
 
+        // --- NEW: Public methods to control Agent enabled state ---
+        /// <summary>
+        /// Explicitly enables the NavMeshAgent.
+        /// </summary>
+        public void EnableAgent()
+        {
+            if (Agent != null && !Agent.enabled)
+            {
+                Agent.enabled = true;
+                // Debug.Log($"NpcMovementHandler on {gameObject.name}: NavMeshAgent enabled.", this); // Too noisy
+            }
         }
+
+        /// <summary>
+        /// Explicitly disables the NavMeshAgent and resets its current path.
+        /// </summary>
+        public void DisableAgent()
+        {
+            if (Agent != null && Agent.enabled)
+            {
+                Agent.enabled = false;
+                // --- REMOVED: Agent.ResetPath() call here ---
+                // Agent.ResetPath(); // Clear any active path when disabling - REMOVED
+                // Debug.Log($"NpcMovementHandler on {gameObject.name}: NavMeshAgent disabled and path reset.", this); // Too noisy
+            }
+        }
+        // --- END NEW ---
+
 
         // Public API for Movement
         public bool SetDestination(Vector3 position)
         {
-            // ... (Implementation from Substep 2 remains) ...
-             if (Agent != null && Agent.enabled)
+             if (Agent != null && Agent.enabled) // Ensure agent is enabled before setting destination
             {
                 StopRotation(); // Stop any ongoing rotation before moving
                 Agent.isStopped = false;
                 Agent.destination = position; // Use .destination directly
-                Debug.Log($"NpcMovementHandler on {gameObject.name}: Set destination to {position}. Agent enabled: {Agent.enabled}", this);
-                return true; // Assume setting destination always 'succeeds' unless agent is null/disabled
+                // Debug.Log($"NpcMovementHandler on {gameObject.name}: Set destination to {position}. Agent enabled: {Agent.enabled}", this); // Too noisy
+                return true;
             }
-             Debug.LogWarning($"NpcMovementHandler on {gameObject.name}: Cannot set destination to {position} - NavMeshAgent is null ({Agent == null}) or disabled ({Agent?.enabled == false}).", this); 
+             Debug.LogWarning($"NpcMovementHandler on {gameObject.name}: Cannot set destination to {position} - NavMeshAgent is null ({Agent == null}) or disabled ({Agent?.enabled == false}).", this);
             return false;
         }
 
         public void StopMoving()
         {
-             // ... (Implementation from Substep 2 remains) ...
              if (Agent != null && Agent.isActiveAndEnabled)
              {
-                  // Agent is active and on NavMesh, safe to stop and reset path
                   Agent.isStopped = true;
-                  Agent.ResetPath();
-                  // Debug.Log($"NpcMovementHandler on {gameObject.name}: Movement stopped.");
+                  Agent.ResetPath(); // Keep ResetPath here, as it's called on an *active* agent
+                  // Debug.Log($"NpcMovementHandler on {gameObject.name}: Movement stopped."); // Too noisy
              }
         }
 
@@ -112,7 +144,7 @@ namespace Game.NPC.Handlers
                  {
                       Debug.Log($"NpcMovementHandler on {gameObject.name}: Successfully Warped to {position}. Performing post-warp cleanup.", this);
                       // --- ONLY perform cleanup if Warp succeeded ---
-                      Agent.ResetPath();
+                      Agent.ResetPath(); // Keep ResetPath here, as it's called on an *active* agent
                       Agent.isStopped = true;
                       // --------------------------------------------
                  }
@@ -192,7 +224,6 @@ namespace Game.NPC.Handlers
         // Public API for Rotation
         public void StartRotatingTowards(Quaternion targetRotation)
         {
-             // ... (Implementation from Substep 2 remains) ...
              StopRotation();
              // Ensure the rotation routine receives a reference to this handler
              currentRotationCoroutine = StartCoroutine(RotateTowardsRoutine(targetRotation));
@@ -200,7 +231,6 @@ namespace Game.NPC.Handlers
 
         public void StopRotation()
         {
-             // ... (Implementation from Substep 2 remains) ...
              if (currentRotationCoroutine != null)
              {
                  StopCoroutine(currentRotationCoroutine);
@@ -212,39 +242,55 @@ namespace Game.NPC.Handlers
         private IEnumerator RotateTowardsRoutine(Quaternion targetRotation)
         {
              // Add isActiveAndEnabled check at the start of the coroutine for robustness
-             if (Agent == null || !Agent.isActiveAndEnabled)
+             // Rotation can happen even if Agent is disabled (e.g., during path following)
+             // So, check MonoBehaviour.isActiveAndEnabled instead of Agent.isActiveAndEnabled
+             if (!isActiveAndEnabled) // Check MonoBehaviour state
              {
-                  Debug.LogWarning($"NpcMovementHandler on {gameObject.name}: Agent not active/enabled at start of rotation routine.", this);
-                  yield break; // Cannot rotate if agent is not active
+                  // Debug.LogWarning($"NpcMovementHandler on {gameObject.name}: Handler not active/enabled at start of rotation routine.", this); // Too noisy
+                  yield break; // Cannot rotate if handler is not active
              }
 
-             bool wasAgentStopped = Agent.isStopped;
-             if (!wasAgentStopped)
+             // Rotation should ideally happen regardless of Agent.enabled state,
+             // but the coroutine is started by the MovementHandler.
+             // If rotation is needed while Agent is disabled (e.g., during path following),
+             // the path following handler will need its own rotation logic or call this.
+             // For now, keep it tied to the MovementHandler's activity.
+
+             // Only stop the agent if it's enabled and not already stopped
+             bool wasAgentStopped = true;
+             if (Agent != null && Agent.isActiveAndEnabled)
              {
-                 Agent.isStopped = true;
+                 wasAgentStopped = Agent.isStopped;
+                 if (!wasAgentStopped)
+                 {
+                     Agent.isStopped = true; // Stop movement while rotating
+                 }
              }
+
 
              Quaternion startRotation = transform.rotation;
              float angleDifference = Quaternion.Angle(startRotation, targetRotation);
 
              if (angleDifference < 0.1f)
              {
-                  if (!wasAgentStopped)
+                  // Only restore agent state if it was active and not stopped initially
+                  if (Agent != null && Agent.isActiveAndEnabled && !wasAgentStopped)
                   {
                        Agent.isStopped = false;
                   }
                   yield break;
              }
 
-             float duration = angleDifference / (rotationSpeed * 100f);
-             if (duration < 0.1f) duration = 0.1f;
+             // Adjust duration calculation for potentially faster rotation
+             float duration = angleDifference / (rotationSpeed * 90f); // Rotate 90 degrees in ~1 second at speed 5
+             if (duration < 0.05f) duration = 0.05f; // Minimum duration
 
              float timeElapsed = 0f;
 
              while (timeElapsed < duration)
              {
-                  // Add isActiveAndEnabled check inside loop, although stopping coroutine on disable is better
-                  if (Agent == null || !Agent.isActiveAndEnabled) yield break;
+                  // Add isActiveAndEnabled check inside loop
+                  if (!isActiveAndEnabled) yield break; // Check MonoBehaviour state
 
                   transform.rotation = Quaternion.Slerp(startRotation, targetRotation, timeElapsed / duration);
                   timeElapsed += Time.deltaTime;
@@ -253,7 +299,8 @@ namespace Game.NPC.Handlers
 
              transform.rotation = targetRotation;
 
-             if (!wasAgentStopped)
+             // Only restore agent state if it was active and not stopped initially
+             if (Agent != null && Agent.isActiveAndEnabled && !wasAgentStopped)
              {
                   Agent.isStopped = false;
              }

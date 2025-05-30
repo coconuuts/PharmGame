@@ -1,6 +1,6 @@
 // --- START OF FILE CustomerManager.cs ---
 
-// --- Updated CustomerManager.cs (Phase 2, Substep 2) ---
+// --- Updated CustomerManager.cs (Phase 1, Substeps 1.2 & 1.3) ---
 
 using UnityEngine;
 using System.Collections.Generic;
@@ -11,7 +11,7 @@ using Systems.Inventory; // Required for Inventory reference
 using Random = UnityEngine.Random; // Specify UnityEngine.Random
 using Game.Events;
 using Game.NPC.States;
-using Game.NPC.TI; // Needed for TiNpcManager (to pass the TI NPC to it)
+using Game.NPC.TI; // Needed for TiNpcManager (to pass the TI NPC to it), TiNpcData
 
 namespace CustomerManagement
 {
@@ -28,7 +28,7 @@ namespace CustomerManagement
         [Tooltip("List of NPC prefabs that this manager can spawn.")]
         [SerializeField] private List<GameObject> npcPrefabs;
         [Tooltip("Maximum number of customers allowed in the store at any given time.")]
-        [SerializeField] private int maxCustomersInStore = 5; // This limit now applies to activeCustomers.Count
+        [SerializeField] private int maxCustomersInStore = 5; // This limit now applies to activeCustomers.Count + tiNpcsInsideStore.Count
         [Tooltip("Minimum time between customer spawns.")]
         [SerializeField] private float minSpawnInterval = 5f;
         [Tooltip("Maximum time between customer spawns.")]
@@ -58,8 +58,12 @@ namespace CustomerManagement
 
         // --- Internal State ---
         private PoolingManager poolingManager;
-        // The activeCustomers list will now represent customers *inside the store*.
-        private List<Game.NPC.NpcStateMachineRunner> activeCustomers = new List<Game.NPC.NpcStateMachineRunner>(); // Track customers *inside the store*
+        // The activeCustomers list will now represent *Transient* customers inside the store.
+        private List<Game.NPC.NpcStateMachineRunner> activeCustomers = new List<Game.NPC.NpcStateMachineRunner>(); // Track Transient customers *inside the store*
+
+        // --- NEW: Track TI NPCs inside the store by their persistent data ---
+        private HashSet<TiNpcData> tiNpcsInsideStore; // Track TI customers *inside the store* by data
+        // --- END NEW ---
 
         private List<QueueSpot> mainQueueSpots;
         private List<QueueSpot> secondaryQueueSpots;
@@ -147,6 +151,10 @@ namespace CustomerManagement
                 Debug.Log($"CustomerManager: Initialized secondary queue with {secondaryQueueSpots.Count} spots.");
             }
 
+            // --- NEW: Initialize the new collection ---
+            tiNpcsInsideStore = new HashSet<TiNpcData>();
+            // --- END NEW ---
+
 
             Debug.Log("CustomerManager: Awake completed.");
         }
@@ -201,6 +209,8 @@ namespace CustomerManagement
                 Instance = null;
                 // Clean up any remaining active customers if necessary
                 StopAllCoroutines(); // Stop spawning and check coroutines
+                // Clear the new collection as well
+                tiNpcsInsideStore?.Clear();
             }
             Debug.Log("CustomerManager: OnDestroy completed.");
         }
@@ -339,6 +349,10 @@ namespace CustomerManagement
                 // Regardless of TiNpcManager outcome, we are done with this event in CustomerManager
                 // for this specific NPC type. Do NOT proceed with the transient pooling logic below.
                 // Also ensure it's removed from activeCustomers list if it somehow remained (should be removed by Exited state).
+                // NOTE: TI NPCs are NOT added to activeCustomers in the new logic (Phase 1, Substep 1.2),
+                // so this defensive check for activeCustomers.Contains(runner) for TI NPCs is no longer strictly necessary
+                // but doesn't hurt. The check for tiNpcsInsideStore is also not needed here, as removal from that
+                // happens via NpcExitedStoreEvent.
                 if (activeCustomers.Contains(runner))
                 {
                     Debug.LogWarning($"CustomerManager: TI NPC '{runner.TiData?.Id ?? "Unknown TI NPC"}' was still in activeCustomers list! Removing defensively.", this);
@@ -382,6 +396,7 @@ namespace CustomerManagement
             Debug.Log($"CustomerManager: Handling NpcReturningToPoolEvent for Transient NPC '{npcObject.name}'. Returning to pool.", npcObject);
 
             // Remove from active list (should be removed by NpcExitedStoreEvent, but defensive)
+            // NOTE: This list now ONLY contains Transient NPCs (Phase 1, Substep 1.2)
             if (activeCustomers.Contains(runner))
             {
                 Debug.LogWarning($"CustomerManager: Transient NPC '{npcObject.name}' was still in activeCustomers list! Removing defensively.", this);
@@ -438,25 +453,54 @@ namespace CustomerManagement
         private void HandleNpcEnteredStore(NpcEnteredStoreEvent eventArgs)
         {
             Game.NPC.NpcStateMachineRunner customerRunner = eventArgs.NpcObject.GetComponent<Game.NPC.NpcStateMachineRunner>();
-            if (customerRunner != null && !activeCustomers.Contains(customerRunner))
-            {
-                activeCustomers.Add(customerRunner);
-                // Determine if it's a transient or TI NPC for logging clarity
-                string npcType = customerRunner.IsTrueIdentityNpc ? $"TI NPC '{customerRunner.TiData?.Id ?? "Unknown"}'" : "Transient NPC";
-                Debug.Log($"CustomerManager: {npcType} ({customerRunner.gameObject.name}) entered the store (received NpcEnteredStoreEvent). Total active (inside store): {activeCustomers.Count}");
-
-                // Now that a customer has successfully entered the store (decrementing external queue pressure),
-                // check if we can release someone from the secondary queue if capacity allows.
-                CheckStoreCapacityAndReleaseSecondaryCustomer(); // Check on entry into store
-            }
-            else if (customerRunner == null)
+            if (customerRunner == null)
             {
                 Debug.LogWarning($"CustomerManager: Received NpcEnteredStoreEvent for GameObject '{eventArgs.NpcObject.name}' without an NpcStateMachineRunner component.", eventArgs.NpcObject);
+                return;
             }
-            else // Contains(customerRunner) was true
+
+            // --- NEW LOGIC: Differentiate tracking based on NPC type ---
+            if (customerRunner.IsTrueIdentityNpc)
             {
-                Debug.LogWarning($"CustomerManager: Received NpcEnteredStoreEvent for '{customerRunner.gameObject.name}' but it was already in the activeCustomers list. Duplicate event?", eventArgs.NpcObject);
+                 // Ensure TiData is available for TI NPCs
+                 if (customerRunner.TiData == null)
+                 {
+                      Debug.LogError($"CustomerManager: Received NpcEnteredStoreEvent for TI NPC '{customerRunner.gameObject.name}' but TiData is null! Cannot track.", eventArgs.NpcObject);
+                      return;
+                 }
+
+                 if (tiNpcsInsideStore != null && !tiNpcsInsideStore.Contains(customerRunner.TiData))
+                 {
+                      tiNpcsInsideStore.Add(customerRunner.TiData);
+                      Debug.Log($"CustomerManager: TI NPC '{customerRunner.TiData.Id}' ({customerRunner.gameObject.name}) entered the store (received NpcEnteredStoreEvent). Total active (inside store): {activeCustomers.Count + tiNpcsInsideStore.Count}");
+                 }
+                 else if (tiNpcsInsideStore == null)
+                 {
+                      Debug.LogError($"CustomerManager: tiNpcsInsideStore collection is null! Cannot track TI NPC '{customerRunner.TiData.Id}'.", this);
+                 }
+                 else // Contains(customerRunner.TiData) was true
+                 {
+                      Debug.LogWarning($"CustomerManager: Received NpcEnteredStoreEvent for TI NPC '{customerRunner.TiData.Id}' ({customerRunner.gameObject.name}) but it was already in the tiNpcsInsideStore list. Duplicate event?", eventArgs.NpcObject);
+                 }
             }
+            else // Transient NPC
+            {
+                 if (!activeCustomers.Contains(customerRunner))
+                 {
+                      activeCustomers.Add(customerRunner);
+                      Debug.Log($"CustomerManager: Transient NPC ({customerRunner.gameObject.name}) entered the store (received NpcEnteredStoreEvent). Total active (inside store): {activeCustomers.Count + tiNpcsInsideStore.Count}");
+                 }
+                 else // Contains(customerRunner) was true
+                 {
+                      Debug.LogWarning($"CustomerManager: Received NpcEnteredStoreEvent for Transient NPC '{customerRunner.gameObject.name}' but it was already in the activeCustomers list. Duplicate event?", eventArgs.NpcObject);
+                 }
+            }
+            // --- END NEW LOGIC ---
+
+
+            // Now that a customer has successfully entered the store (decrementing external queue pressure),
+            // check if we can release someone from the secondary queue if capacity allows.
+            CheckStoreCapacityAndReleaseSecondaryCustomer(); // Check on entry into store
         }
 
         /// <summary>
@@ -467,26 +511,54 @@ namespace CustomerManagement
         private void HandleNpcExitedStore(NpcExitedStoreEvent eventArgs)
         {
             Game.NPC.NpcStateMachineRunner customerRunner = eventArgs.NpcObject.GetComponent<Game.NPC.NpcStateMachineRunner>();
-            if (customerRunner != null && activeCustomers.Contains(customerRunner))
-            {
-                activeCustomers.Remove(customerRunner);
-                // Determine if it's a transient or TI NPC for logging clarity
-                string npcType = customerRunner.IsTrueIdentityNpc ? $"TI NPC '{customerRunner.TiData?.Id ?? "Unknown"}'" : "Transient NPC";
-                Debug.Log($"CustomerManager: {npcType} ({customerRunner.gameObject.name}) exited the store (received NpcExitedStoreEvent). Total active (inside store): {activeCustomers.Count}");
-
-
-                // Now that a customer has successfully exited the store (increasing external queue pressure),
-                // check if we can release someone from the secondary queue if capacity allows.
-                CheckStoreCapacityAndReleaseSecondaryCustomer(); // Check on exit from store
-            }
-            else if (customerRunner == null)
+            if (customerRunner == null)
             {
                 Debug.LogWarning($"CustomerManager: Received NpcExitedStoreEvent for GameObject '{eventArgs.NpcObject.name}' without an NpcStateMachineRunner component.", eventArgs.NpcObject);
+                return;
             }
-            else // !Contains(customerRunner)
+
+            // --- NEW LOGIC: Differentiate tracking based on NPC type ---
+            if (customerRunner.IsTrueIdentityNpc)
             {
-                Debug.LogWarning($"CustomerManager: Received NpcExitedStoreEvent for '{eventArgs.NpcObject.name}' but it was not in the activeCustomers list. State inconsistency?", eventArgs.NpcObject);
+                 // Ensure TiData is available for TI NPCs
+                 if (customerRunner.TiData == null)
+                 {
+                      Debug.LogError($"CustomerManager: Received NpcExitedStoreEvent for TI NPC '{customerRunner.gameObject.name}' but TiData is null! Cannot track.", eventArgs.NpcObject);
+                      return;
+                 }
+
+                 if (tiNpcsInsideStore != null && tiNpcsInsideStore.Contains(customerRunner.TiData))
+                 {
+                      tiNpcsInsideStore.Remove(customerRunner.TiData);
+                      Debug.Log($"CustomerManager: TI NPC '{customerRunner.TiData.Id}' ({customerRunner.gameObject.name}) exited the store (received NpcExitedStoreEvent). Total active (inside store): {activeCustomers.Count + tiNpcsInsideStore.Count}");
+                 }
+                 else if (tiNpcsInsideStore == null)
+                 {
+                      Debug.LogError($"CustomerManager: tiNpcsInsideStore collection is null! Cannot track TI NPC '{customerRunner.TiData.Id}' exiting.", this);
+                 }
+                 else // !Contains(customerRunner.TiData)
+                 {
+                      Debug.LogWarning($"CustomerManager: Received NpcExitedStoreEvent for TI NPC '{customerRunner.TiData.Id}' ({customerRunner.gameObject.name}) but it was not in the tiNpcsInsideStore list. State inconsistency?", eventArgs.NpcObject);
+                 }
             }
+            else // Transient NPC
+            {
+                 if (activeCustomers.Contains(customerRunner))
+                 {
+                      activeCustomers.Remove(customerRunner);
+                      Debug.Log($"CustomerManager: Transient NPC ({customerRunner.gameObject.name}) exited the store (received NpcExitedStoreEvent). Total active (inside store): {activeCustomers.Count + tiNpcsInsideStore.Count}");
+                 }
+                 else // !Contains(customerRunner)
+                 {
+                      Debug.LogWarning($"CustomerManager: Received NpcExitedStoreEvent for Transient NPC '{eventArgs.NpcObject.name}' but it was not in the activeCustomers list. State inconsistency?", eventArgs.NpcObject);
+                 }
+            }
+            // --- END NEW LOGIC ---
+
+
+            // Now that a customer has successfully exited the store (increasing external queue pressure),
+            // check if we can release someone from the secondary queue if capacity allows.
+            CheckStoreCapacityAndReleaseSecondaryCustomer(); // Check on exit from store
         }
 
 
@@ -684,14 +756,18 @@ namespace CustomerManagement
         /// </summary>
         private void CheckStoreCapacityAndReleaseSecondaryCustomer()
         {
+            // --- NEW: Use the combined count for store capacity ---
+            int currentCustomersInside = activeCustomers.Count + (tiNpcsInsideStore?.Count ?? 0);
+            // --- END NEW ---
+
             // Release condition: Total active customers inside the store must be less than maxCustomersInStore.
-            if (activeCustomers.Count >= maxCustomersInStore)
+            if (currentCustomersInside >= maxCustomersInStore)
             {
-                Debug.Log($"CustomerManager: Cannot release from secondary queue. Store capacity ({activeCustomers.Count}/{maxCustomersInStore}) is full.");
+                Debug.Log($"CustomerManager: Cannot release from secondary queue. Store capacity ({currentCustomersInside}/{maxCustomersInStore}) is full.");
                 return;
             }
 
-            Debug.Log($"CustomerManager: Store capacity ({activeCustomers.Count}/{maxCustomersInStore}) allows release from secondary queue. Attempting to release next secondary customer (Runner).");
+            Debug.Log($"CustomerManager: Store capacity ({currentCustomersInside}/{maxCustomersInStore}) allows release from secondary queue. Attempting to release next secondary customer (Runner).");
 
             // Find the customer currently at the first occupied Secondary Queue spot (lowest index)
             QueueSpot firstOccupiedSpot = null;
@@ -896,7 +972,8 @@ namespace CustomerManagement
         /// </summary>
         public bool IsRegisterOccupied()
         {
-            foreach (var activeRunner in activeCustomers) // Check only customers currently 'inside' the store
+            // --- NEW: Only check the activeCustomers list (which now only contains Transient or currently active TI) ---
+            foreach (var activeRunner in activeCustomers) // Check only customers currently 'inside' the store AND have an active GameObject
             {
                 if (activeRunner != null && activeRunner.GetCurrentState() != null)
                 {
@@ -907,6 +984,7 @@ namespace CustomerManagement
                     }
                 }
             }
+            // --- END NEW ---
             return false;
         }
 
@@ -976,7 +1054,7 @@ namespace CustomerManagement
 
             return mainQueueSpots[mainQueueSpots.Count - 1].IsOccupied;
         }
-     
+
         public bool IsSecondaryQueueFull() // <-- NEW METHOD
         {
             if (secondaryQueueSpots == null || secondaryQueueSpots.Count == 0) return false;

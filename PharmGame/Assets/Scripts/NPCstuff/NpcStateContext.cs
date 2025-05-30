@@ -1,3 +1,5 @@
+// --- START OF FILE NpcStateContext.cs ---
+
 using UnityEngine;
 using CustomerManagement; // Needed for CustomerManager
 using Game.NPC.Handlers; // Needed for Handlers
@@ -8,7 +10,9 @@ using System;
 using Game.Events; // Needed for publishing events and event args like NpcEnteredStoreEvent
 using Game.NPC; // Needed for CustomerState and GeneralState enums
 using Game.NPC.States; // Needed for NpcStateSO
-using Game.Proximity; // Needed for ProximityManager.ProximityZone <-- NEW
+using Game.Proximity; // Needed for ProximityManager.ProximityZone
+using Game.Navigation; // Needed for PathSO
+using Game.NPC.TI;
 
 namespace Game.NPC.States // Context is closely related to states
 {
@@ -25,9 +29,12 @@ namespace Game.NPC.States // Context is closely related to states
         public CustomerShopper Shopper;
         // Reference to the interruption handler
         public NpcInterruptionHandler InterruptionHandler;
-        // --- NEW: Reference to the Queue handler ---
+        // Reference to the Queue handler
         public NpcQueueHandler QueueHandler;
+        // --- NEW: Reference to the Path Following handler ---
+        public NpcPathFollowingHandler PathFollowingHandler;
         // --- END NEW ---
+         public TiNpcData TiData;
 
 
         // --- External References ---
@@ -42,28 +49,78 @@ namespace Game.NPC.States // Context is closely related to states
 
         // Other NPC data fields (managed by Runner, accessed via Context)
         public BrowseLocation? CurrentTargetLocation;
-        // AssignedQueueSpotIndex is MOVED to NpcQueueHandler, accessed via QueueHandler property
-        // public int AssignedQueueSpotIndex; // MOVED
-        // InteractorObject is now managed by NpcInterruptionHandler
-        // public GameObject InteractorObject { get; internal set; } // REMOVED
 
         // Access the InteractorObject via the InterruptionHandler
         public GameObject InteractorObject => InterruptionHandler?.InteractorObject;
 
-        // _currentQueueMoveType is MOVED to NpcQueueHandler, access via QueueHandler property
-        // This is the field the Runner sets in the struct instances passed to states.
-        // public QueueType _currentQueueMoveType; // MOVED
-
-        // --- NEW: Public properties to access queue data via QueueHandler ---
+        // Public properties to access queue data via QueueHandler
         public int AssignedQueueSpotIndex => QueueHandler?.AssignedQueueSpotIndex ?? -1;
         public QueueType CurrentQueueMoveType => QueueHandler != null ? QueueHandler._currentQueueMoveType : QueueType.Main;
-        // You might also want properties for _isMovingToQueueSpot and _previousQueueSpotIndex if states need them
-        // public bool IsMovingToQueueSpot => QueueHandler?._isMovingToToQueueSpot ?? false;
-        // public int PreviousQueueSpotIndex => QueueHandler?._previousQueueSpotIndex ?? -1;
-        // --- END NEW ---
 
-        // --- NEW: Public property to check if NPC is currently interrupted ---
+        // Public property to check if NPC is currently interrupted
         public bool IsInterrupted => InterruptionHandler?.IsInterrupted() ?? false;
+
+        // --- NEW: Public properties/methods to access Path Following Handler functionality ---
+        public bool IsFollowingPath => PathFollowingHandler?.IsFollowingPath ?? false;
+        public bool HasReachedEndOfPath => PathFollowingHandler?.HasReachedEndOfPath ?? false;
+
+        /// <summary>
+        /// Starts the NPC following a specific waypoint path using the PathFollowingHandler.
+        /// </summary>
+        public bool StartFollowingPath(PathSO path, int startIndex = 0, bool reverse = false)
+        {
+             if (PathFollowingHandler != null)
+             {
+                  return PathFollowingHandler.StartFollowingPath(path, startIndex, reverse);
+             }
+             Debug.LogError($"Context({NpcObject.name}): Cannot start path following, PathFollowingHandler is null.", NpcObject);
+             return false;
+        }
+
+/// <summary>
+         /// Requests the PathFollowingHandler to restore path following progress.
+         /// Bypasses the initial NavMesh leg.
+         /// </summary>
+         /// <returns>True if path following was successfully restored.</returns>
+         public bool RestorePathProgress(PathSO path, int waypointIndex, bool reverse)
+         {
+             if (PathFollowingHandler != null && PathFollowingHandler.RestorePathProgress(path, waypointIndex, reverse))
+             {
+                 // PathFollowingHandler handles disabling the NavMeshAgent
+                 // Runner will tick PathFollowingHandler.TickMovement in Update
+                 return true;
+             }
+             return false;
+         }
+
+        /// <summary>
+        /// Stops the NPC from following the current path using the PathFollowingHandler.
+        /// </summary>
+        public void StopFollowingPath()
+        {
+            PathFollowingHandler?.StopFollowingPath();
+        }
+
+        /// <summary>
+        /// Gets the ID of the path currently being followed via the PathFollowingHandler.
+        /// </summary>
+        public string GetCurrentPathID() => PathFollowingHandler?.GetCurrentPathID();
+
+        /// <summary>
+        /// Gets the ID of the waypoint the NPC is currently moving towards via the PathFollowingHandler.
+        /// </summary>
+        public string GetCurrentTargetWaypointID() => PathFollowingHandler?.GetCurrentTargetWaypointID();
+
+         /// <summary>
+         /// Gets the index of the waypoint the NPC is currently moving towards via the PathFollowingHandler.
+         /// </summary>
+         public int GetCurrentTargetWaypointIndex() => PathFollowingHandler?.GetCurrentTargetWaypointIndex() ?? -1;
+
+         /// <summary>
+         /// Gets the followReverse flag for the current path via the PathFollowingHandler.
+         /// </summary>
+         public bool GetFollowReverse() => PathFollowingHandler?.GetFollowReverse() ?? false;
+
         // --- END NEW ---
 
 
@@ -75,6 +132,9 @@ namespace Game.NPC.States // Context is closely related to states
         {
             if (Runner != null && Runner.MovementHandler != null)
             {
+                // Ensure NavMeshAgent is enabled before setting destination
+                Runner.MovementHandler.EnableAgent(); // <-- Ensure Agent is enabled
+
                 bool success = Runner.MovementHandler.SetDestination(position); // Call handler method
                 if (success)
                 {
@@ -119,6 +179,14 @@ namespace Game.NPC.States // Context is closely related to states
               TransitionToState(nextState); // Calls the NpcStateSO overload
          }
 
+        /// <summary>
+         /// Helper for state SOs to trigger state transition via the Runner using string key and type.
+         /// Useful when the target state enum type is not known at compile time in the SO.
+         /// </summary>
+         public void TransitionToState(string stateEnumKey, string stateEnumType)
+         {
+             Runner?.TransitionToState(stateEnumKey, stateEnumType); // Delegate to the Runner's method
+         }
 
         /// <summary>
         /// Helper for state SOs to start a coroutine managed by the Runner.
@@ -214,11 +282,11 @@ namespace Game.NPC.States // Context is closely related to states
          /// <param name="eventArgs">The event arguments instance.</param>
          public void PublishEvent<T>(T eventArgs) where T : struct // Constrain to struct as per EventManager
          {
-            Debug.Log($"DEBUG Context ({NpcObject.name}): Publishing Event: {typeof(T).Name}", NpcObject);
+            // Debug.Log($"DEBUG Context ({NpcObject.name}): Publishing Event: {typeof(T).Name}", NpcObject); // Too noisy
             EventManager.Publish(eventArgs);
          }
 
-         // --- NEW: Helper methods for Interruption Handling via the InterruptionHandler ---
+         // --- Helper methods for Interruption Handling via the InterruptionHandler ---
          /// <summary>
          /// Attempts to interrupt the current state and transition to an interruption state.
          /// </summary>
@@ -242,3 +310,4 @@ namespace Game.NPC.States // Context is closely related to states
          // --- END NEW ---
     }
 }
+// --- END OF FILE NpcStateContext.cs ---

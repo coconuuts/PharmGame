@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fca6f9049d56b964aacd2da2b44efd5d, type: 3}
+  m_Name: PathTypeDefinition
+  m_EditorClassIdentifier: 
+  baseType: {fileID: 11400000, guid: 7c4f6c2437e7fbe4ba387874f4e23c2b, type: 2}
+  stateCollection:
+    entries:
+    - stateEnumName: FollowPath
+      stateEnumType: Game.NPC.PathState
+      stateSO: {fileID: 11400000, guid: e9fce9c44113c9248997e8805349b720, type: 2}
+  primaryStartingStateEnumKey: FollowPath
+  primaryStartingStateEnumType: Game.NPC.PathState

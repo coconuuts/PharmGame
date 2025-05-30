@@ -82,45 +82,45 @@ namespace Game.Spatial
         }
 
         // --- Debug Gizmos ---
-        private void OnDrawGizmos()
-        {
-            if (!drawGridGizmos || !isActiveAndEnabled) return;
+        // private void OnDrawGizmos()
+        // {
+        //     if (!drawGridGizmos || !isActiveAndEnabled) return;
 
-            Gizmos.color = gridColor;
+        //     Gizmos.color = gridColor;
 
-            // Draw the bounds of the grid
-            Vector3 gridSize = new Vector3(gridDimensions.x * cellSize, gridDimensions.y * cellSize, gridDimensions.z * cellSize);
-            Gizmos.DrawWireCube(gridOrigin + gridSize * 0.5f, gridSize);
+        //     // Draw the bounds of the grid
+        //     Vector3 gridSize = new Vector3(gridDimensions.x * cellSize, gridDimensions.y * cellSize, gridDimensions.z * cellSize);
+        //     Gizmos.DrawWireCube(gridOrigin + gridSize * 0.5f, gridSize);
 
-            // Draw grid lines (simplified - drawing all lines can be expensive)
-            // Drawing lines on the bottom plane (Y=gridOrigin.y)
-             for (int x = 0; x <= gridDimensions.x; x++)
-             {
-                 Vector3 start = gridOrigin + new Vector3(x * cellSize, 0, 0);
-                 Vector3 end = gridOrigin + new Vector3(x * cellSize, 0, gridDimensions.z * cellSize);
-                 Gizmos.DrawLine(start, end);
-             }
-             for (int z = 0; z <= gridDimensions.z; z++)
-             {
-                 Vector3 start = gridOrigin + new Vector3(0, 0, z * cellSize);
-                 Vector3 end = gridOrigin + new Vector3(gridDimensions.x * cellSize, 0, z * cellSize);
-                 Gizmos.DrawLine(start, end);
-             }
+        //     // Draw grid lines (simplified - drawing all lines can be expensive)
+        //     // Drawing lines on the bottom plane (Y=gridOrigin.y)
+        //      for (int x = 0; x <= gridDimensions.x; x++)
+        //      {
+        //          Vector3 start = gridOrigin + new Vector3(x * cellSize, 0, 0);
+        //          Vector3 end = gridOrigin + new Vector3(x * cellSize, 0, gridDimensions.z * cellSize);
+        //          Gizmos.DrawLine(start, end);
+        //      }
+        //      for (int z = 0; z <= gridDimensions.z; z++)
+        //      {
+        //          Vector3 start = gridOrigin + new Vector3(0, 0, z * cellSize);
+        //          Vector3 end = gridOrigin + new Vector3(gridDimensions.x * cellSize, 0, z * cellSize);
+        //          Gizmos.DrawLine(start, end);
+        //      }
 
-             // Draw vertical lines at corners (simplified)
-             for (int x = 0; x <= gridDimensions.x; x+=gridDimensions.x) // Only corners
-             {
-                 for (int z = 0; z <= gridDimensions.z; z+=gridDimensions.z) // Only corners
-                 {
-                      Vector3 start = gridOrigin + new Vector3(x * cellSize, 0, z * cellSize);
-                      Vector3 end = gridOrigin + new Vector3(x * cellSize, gridDimensions.y * cellSize, z * cellSize);
-                      Gizmos.DrawLine(start, end);
-                 }
-             }
+        //      // Draw vertical lines at corners (simplified)
+        //      for (int x = 0; x <= gridDimensions.x; x+=gridDimensions.x) // Only corners
+        //      {
+        //          for (int z = 0; z <= gridDimensions.z; z+=gridDimensions.z) // Only corners
+        //          {
+        //               Vector3 start = gridOrigin + new Vector3(x * cellSize, 0, z * cellSize);
+        //               Vector3 end = gridOrigin + new Vector3(x * cellSize, gridDimensions.y * cellSize, z * cellSize);
+        //               Gizmos.DrawLine(start, end);
+        //          }
+        //      }
 
-             // Drawing internal lines for large grids is very slow.
-             // Consider drawing a slice near the player in a future iteration if needed.
-        }
+        //      // Drawing internal lines for large grids is very slow.
+        //      // Consider drawing a slice near the player in a future iteration if needed.
+        // }
 
 
         // --- Core Grid Methods ---

@@ -19,4 +19,4 @@ namespace Game.NPC.BasicStates
         // Add other basic states as needed in the future
     }
 }
-// --- END OF FILE BasicState.cs ---
+// --- END OF FILE BasicState.cs ---s
