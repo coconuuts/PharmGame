@@ -374,7 +374,6 @@ namespace Game.NPC
                    // If Near or Interrupted, tick core logic every frame
                     if (currentZone == ProximityManager.ProximityZone.Near || isCurrentlyInterrupted || (IsTrueIdentityNpc && isInsideStore))
                     {
-                         Debug.Log($"DEBUG Runner Update ({gameObject.name}): Ticking every frame (Zone: {currentZone}, Interrupted: {isCurrentlyInterrupted})"); // Too noisy
                          ThrottledTick(Time.deltaTime); // Call the core logic with frame delta
                     }
                    // Moderate NPCs will be ticked by ProximityManager's separate routine.
