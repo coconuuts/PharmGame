@@ -1,6 +1,6 @@
 // --- START OF FILE CustomerExitingStateSO.cs ---
 
-// --- Updated CustomerExitingStateSO.cs (Phase 3, Substep 3) ---
+// --- Updated CustomerExitingStateSO.cs (Phase 1, Substep 5) ---
 
 using UnityEngine;
 using System.Collections;
@@ -9,6 +9,7 @@ using CustomerManagement; // Ensure this is present
 using Game.NPC; // Ensure this is present for CustomerState and GeneralState
 using Game.Events; // Needed for NpcExitedStoreEvent
 using Game.NPC.States; // Ensure this is present
+using Game.NPC.TI; // Needed for TiNpcData // <-- NEW: Added using directive
 
 namespace Game.NPC.States
 {
@@ -107,20 +108,30 @@ namespace Game.NPC.States
             // Ensure movement is stopped before transitioning (Runner does this before calling OnReachedDestination, but defensive)
             context.MovementHandler?.StopMoving();
 
-            // --- PHASE 3, SUBSTEP 3: Differentiate TI NPCs ---
+            // --- PHASE 1, SUBSTEP 5: Differentiate TI NPCs and check endDay flag ---
              if (context.Runner != null && context.Runner.IsTrueIdentityNpc)
              {
-                  Debug.Log($"{context.NpcObject.name}: This is a TI NPC. Transitioning to Patrol.", context.NpcObject);
-                  // Transition to the Patrol state using the context helper
-                  context.TransitionToState(TestState.Patrol);
+                  // Check if the NPC is currently in their endDay schedule
+                  if (context.TiData != null && context.TiData.isEndingDay) // Check the flag on TiData
+                  {
+                      Debug.Log($"{context.NpcObject.name}: TI NPC reached exit and is in endDay schedule. Transitioning to ReturningToPool.", context.NpcObject);
+                      // Transition to the ReturningToPool state
+                      context.TransitionToState(GeneralState.ReturningToPool);
+                  }
+                  else
+                  {
+                      Debug.Log($"{context.NpcObject.name}: TI NPC reached exit and is NOT in endDay schedule. Transitioning to Patrol.", context.NpcObject);
+                      // Transition to the Patrol state (normal behavior after exiting store)
+                      context.TransitionToState(TestState.Patrol);
+                  }
              }
              else
              {
                   Debug.Log($"{context.NpcObject.name}: This is a Transient NPC. Transitioning to ReturningToPool.", context.NpcObject);
-                  // Transition to the ReturningToPool state using the context helper (existing logic)
+                  // Transient NPCs always return to pool after exiting
                   context.TransitionToState(GeneralState.ReturningToPool);
              }
-            // --- END PHASE 3, SUBSTEP 3 ---
+            // --- END PHASE 1, SUBSTEP 5 ---
         }
 
         public override void OnExit(NpcStateContext context)
@@ -135,3 +146,4 @@ namespace Game.NPC.States
         }
     }
 }
+// --- END OF FILE CustomerExitingStateSO.cs ---

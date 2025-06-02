@@ -26,7 +26,7 @@ namespace Game.NPC.Handlers // Place alongside other handlers
         [Tooltip("The speed at which the NPC moves along the path.")]
         [SerializeField] private float pathFollowingSpeed = 3.5f; // Match BasicPatrol/NavMesh speed
         [Tooltip("The distance threshold to consider a waypoint reached.")]
-        [SerializeField] private float waypointArrivalThreshold = 0.75f; // Match BasicPatrol/BasicExiting threshold
+        [SerializeField] internal float waypointArrivalThreshold = 0.75f; // Match BasicPatrol/BasicExiting threshold
         [Tooltip("The rotation speed.")]
         [SerializeField] private float rotationSpeed = 0.5f;
 

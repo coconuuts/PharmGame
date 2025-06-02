@@ -2,16 +2,21 @@
 
 using UnityEngine;
 using System;
+using System.Collections.Generic; // Needed for Dictionary
 using Game.NPC.States;
 using Systems.Inventory;
 using Game.NPC.Types;
 using Game.NPC.BasicStates; // Needed for BasicState enum, BasicPathState enum
+using Game.Utilities; // Needed for TimeRange
+using Game.NPC.Decisions; // Needed for DecisionOption
+using System.Linq; // Needed for accessing PathState enum
 
-namespace Game.NPC.TI
+namespace Game.NPC.TI // Keep in the TI namespace
 {
     /// <summary>
     /// Represents the persistent data for a True Identity NPC, independent of their GameObject.
     /// Includes fields needed for off-screen simulation, including path following.
+    /// Now includes schedule time ranges, unique decision options, and intended day start behavior.
     /// </summary>
     [System.Serializable]
     public class TiNpcData
@@ -37,6 +42,27 @@ namespace Game.NPC.TI
         [Tooltip("The assembly qualified name of the NPC's current state enum type (can be Active or Basic).")]
         [SerializeField] private string currentStateEnumType;
 
+        // --- Schedule Settings ---
+        [Header("Schedule Settings")]
+        [Tooltip("The time range during the day when this NPC is allowed to be active or simulated.")]
+        [SerializeField] public Game.Utilities.TimeRange startDay;
+        [Tooltip("The time range during the day when this NPC should begin exiting/returning home.")]
+        [SerializeField] public Game.Utilities.TimeRange endDay;
+        // --- END NEW ---
+
+        // --- Decision Point Settings ---
+        [Header("Decision Point Settings")]
+        [Tooltip("Unique decision options for this NPC, keyed by Decision Point ID.")]
+        [SerializeField]
+        // --- FIX: Make the serialized field public internal for manager access ---
+        public SerializableDecisionOptionDictionary uniqueDecisionOptions = new SerializableDecisionOptionDictionary();
+        // --- END FIX ---
+
+        // Public getter returns a runtime Dictionary derived from the serialized list
+        public Dictionary<string, DecisionOption> UniqueDecisionOptions => uniqueDecisionOptions.ToDictionary();
+        // --- END NEW ---
+
+
         // --- PHASE 4, SUBSTEP 1: Add Simulation Data Fields ---
         [Header("Simulation Data (Managed Off-screen)")]
         [Tooltip("The target position for off-screen movement simulation (e.g., patrol point, exit, waypoint). Null if no target.")]
@@ -54,6 +80,28 @@ namespace Game.NPC.TI
         [SerializeField] public bool simulatedFollowReverse; // Public for direct access by simulation logic
         [Tooltip("True if the NPC is currently following a path in simulation.")]
         [SerializeField] public bool isFollowingPathBasic; // Public flag for simulation logic
+        // --- END NEW ---
+
+        // --- NEW: Schedule Runtime Flags (Phase 1, Substep 1.5) ---
+        [System.NonSerialized] public bool isEndingDay; // Flag set by ProximityManager when within endDay range
+        // --- END NEW ---
+
+        // --- NEW: Intended Day Start Behavior Fields (Step 2) ---
+        [Header("Day Start Behavior")]
+        [Tooltip("If true, the NPC will follow a path when its day starts. If false, it will transition to a specific state.")]
+        [SerializeField] public bool usePathForDayStart = false; // <-- NEW Toggle Field
+
+        [Tooltip("The string name of the NPC's intended *Active* state enum value when its day starts (e.g., TestState.Patrol, CustomerState.LookingToShop). Only used if 'Use Path For Day Start' is false.")]
+        [SerializeField] internal string dayStartActiveStateEnumKey;
+        [Tooltip("The assembly qualified name of the NPC's intended *Active* state enum type when its day starts (e.g., Game.NPC.TestState, Game.NPC.CustomerState). Only used if 'Use Path For Day Start' is false.")]
+        [SerializeField] internal string dayStartActiveStateEnumType;
+
+        [Tooltip("The Path ID if the day start behavior is path following. Only used if 'Use Path For Day Start' is true.")]
+        [SerializeField] internal string dayStartPathID;
+        [Tooltip("The index of the waypoint to start the path from (0-based) if the day start behavior is path following.")]
+        [SerializeField] internal int dayStartStartIndex;
+        [Tooltip("Optional: If true, follow the path in reverse from the start index if the day start behavior is path following.")]
+        [SerializeField] internal bool dayStartFollowReverse;
         // --- END NEW ---
 
 
@@ -82,6 +130,18 @@ namespace Game.NPC.TI
         // Activation status is writable
         public bool IsActiveGameObject { get => isActiveGameObject; set => isActiveGameObject = value; }
 
+        // --- NEW: Public Getters for Day Start Behavior (Step 2) ---
+        public string DayStartActiveStateEnumKey => dayStartActiveStateEnumKey;
+        public string DayStartActiveStateEnumType => dayStartActiveStateEnumType;
+        public string DayStartPathID => dayStartPathID;
+        public int DayStartStartIndex => dayStartStartIndex;
+        public bool DayStartFollowReverse => dayStartFollowReverse;
+        // --- END NEW ---
+
+        // --- NEW: Public Getter for the toggle (Step 2) ---
+        public bool UsePathForDayStart => usePathForDayStart;
+        // --- END NEW ---
+
 
         /// <summary>
         /// Attempts to parse the stored state strings into a runtime System.Enum value.
@@ -91,27 +151,51 @@ namespace Game.NPC.TI
         {
             get
             {
-                if (string.IsNullOrEmpty(currentStateEnumKey) || string.IsNullOrEmpty(currentStateEnumType)) return null;
-
-                try
-                {
-                    // Attempt to get the enum type using the stored string
-                    Type enumType = Type.GetType(currentStateEnumType);
-                    if (enumType == null || !enumType.IsEnum)
-                    {
-                        // Debug.LogError($"TiNpcData ({id}): Failed to get Enum Type '{currentStateEnumType}' for state '{currentStateEnumKey}'."); // Too noisy if many NPCs
-                        return null;
-                    }
-                    // Attempt to parse the string key into an enum value
-                    return (System.Enum)Enum.Parse(enumType, currentStateEnumKey);
-                }
-                catch (Exception e)
-                {
-                    Debug.LogError($"TiNpcData ({id}): Failed to parse enum '{currentStateEnumKey}' of type '{currentStateEnumType}': {e.Message}");
-                    return null;
-                }
+                return ParseStateEnum(currentStateEnumKey, currentStateEnumType);
             }
         }
+
+         /// <summary>
+         /// Attempts to determine and parse the intended day start Active state enum value
+         /// based on the 'usePathForDayStart' toggle.
+         /// Returns PathState.FollowPath if usePathForDayStart is true,
+         /// otherwise attempts to parse the stored state key/type.
+         /// Returns null if parsing fails or configuration is invalid.
+         /// </summary>
+         public System.Enum DayStartActiveStateEnum
+         {
+              get
+              {
+                   if (usePathForDayStart)
+                   {
+                        // If using a path, the intended state is PathState.FollowPath
+                        // We need to get the enum value for PathState.FollowPath.
+                        // This requires knowing the type Game.NPC.PathState.
+                        try
+                        {
+                            Type pathStateType = typeof(Game.NPC.PathState); // Directly get the type
+                            if (pathStateType.IsEnum)
+                            {
+                                 // Get the enum value for 'FollowPath'
+                                 return (System.Enum)Enum.Parse(pathStateType, PathState.FollowPath.ToString());
+                            } else {
+                                Debug.LogError($"TiNpcData ({id}): Expected Game.NPC.PathState to be an enum, but it's not! Cannot determine Day Start Active State for path.", NpcGameObject);
+                                return null;
+                            }
+                        }
+                        catch (Exception e)
+                        {
+                             Debug.LogError($"TiNpcData ({id}): Failed to get PathState.FollowPath enum value for Day Start Active State: {e.Message}. Check if PathState.FollowPath exists.", NpcGameObject);
+                             return null;
+                        }
+                   }
+                   else
+                   {
+                        // If not using a path, parse the stored state key/type
+                        return ParseStateEnum(dayStartActiveStateEnumKey, dayStartActiveStateEnumType);
+                   }
+              }
+         }
 
 
         /// <summary>
@@ -130,6 +214,22 @@ namespace Game.NPC.TI
             this.currentStateEnumKey = null; // Set on load/simulation/activation
             this.currentStateEnumType = null; // Set on load/simulation/activation
 
+            // Initialize schedule fields with default (full day)
+            this.startDay = new Game.Utilities.TimeRange(0, 0, 23, 59); // Default: available all day
+            this.endDay = new Game.Utilities.TimeRange(22, 0, 5, 0); // Default: start exiting between 22:00 and 05:00
+
+            // Initialize unique decision options dictionary wrapper
+            this.uniqueDecisionOptions = new SerializableDecisionOptionDictionary(); // <-- Initialize dictionary wrapper
+
+            // Initialize day start behavior fields (will be populated on load)
+            this.usePathForDayStart = false; // <-- NEW: Initialize toggle
+            this.dayStartActiveStateEnumKey = null;
+            this.dayStartActiveStateEnumType = null;
+            this.dayStartPathID = null;
+            this.dayStartStartIndex = 0;
+            this.dayStartFollowReverse = false;
+
+
             // Debug.Log($"DEBUG TiNpcData ({id}): Constructor called (InstanceID: {this.GetHashCode()}). Initializing isActiveGameObject=false, NpcGameObject=null.", NpcGameObject); // Too verbose
             this.isActiveGameObject = false; // Starts without a GameObject
             this.NpcGameObject = null;
@@ -143,6 +243,9 @@ namespace Game.NPC.TI
             this.simulatedWaypointIndex = -1;
             this.simulatedFollowReverse = false;
             this.isFollowingPathBasic = false;
+
+            // Initialize schedule runtime flag
+            this.isEndingDay = false; // <-- NEW: Initialize flag
         }
 
         /// <summary>
@@ -161,6 +264,34 @@ namespace Game.NPC.TI
             currentStateEnumKey = stateEnum.ToString();
             currentStateEnumType = stateEnum.GetType().AssemblyQualifiedName; // Use AssemblyQualifiedName for robust loading
         }
+
+         /// <summary>
+         /// Helper to set the intended day start Active state using a System.Enum.
+         /// Note: This does NOT set the usePathForDayStart toggle or path data.
+         /// </summary>
+         public void SetDayStartActiveState(System.Enum stateEnum)
+         {
+              if (stateEnum == null)
+              {
+                   dayStartActiveStateEnumKey = null;
+                   dayStartActiveStateEnumType = null;
+                   return;
+              }
+              dayStartActiveStateEnumKey = stateEnum.ToString();
+              dayStartActiveStateEnumType = stateEnum.GetType().AssemblyQualifiedName; // Use AssemblyQualifiedName for robust loading
+         }
+
+         /// <summary>
+         /// Helper to set the intended day start path data.
+         /// Note: This does NOT set the usePathForDayStart toggle or state key/type.
+         /// </summary>
+         public void SetDayStartPath(string pathID, int startIndex, bool followReverse)
+         {
+              dayStartPathID = pathID;
+              dayStartStartIndex = startIndex;
+              dayStartFollowReverse = followReverse;
+         }
+
 
         /// <summary>
         /// Links this TiNpcData instance to an active GameObject.
@@ -199,6 +330,88 @@ namespace Game.NPC.TI
               TiNpcData other = (TiNpcData)obj;
               return id == other.id; // Assuming ID is the unique identifier
           }
+
+         /// <summary>
+         /// Static helper to parse state enum strings into a System.Enum value.
+         /// </summary>
+         /// <param name="enumKey">The string name of the enum value.</param>
+         /// <param name="enumTypeString">The assembly qualified name of the enum type.</param>
+         /// <returns>The parsed System.Enum value, or null if parsing fails.</returns>
+         public static System.Enum ParseStateEnum(string enumKey, string enumTypeString)
+         {
+              if (string.IsNullOrEmpty(enumKey) || string.IsNullOrEmpty(enumTypeString)) return null;
+
+              try
+              {
+                   Type enumType = Type.GetType(enumTypeString);
+                   if (enumType == null || !enumType.IsEnum)
+                   {
+                        // Debug.LogError($"TiNpcData: Failed to get Enum Type '{enumTypeString}' for state '{enumKey}'."); // Too noisy
+                        return null;
+                   }
+                   return (System.Enum)Enum.Parse(enumType, enumKey);
+              }
+              catch (Exception e)
+              {
+                   Debug.LogError($"TiNpcData: Failed to parse enum '{enumKey}' of type '{enumTypeString}': {e.Message}");
+                   return null;
+              }
+         }
     }
+
+    // --- NEW: Serializable Dictionary Wrapper for Unique Decision Options ---
+    // Unity cannot directly serialize Dictionaries, so we use a wrapper with a List of KeyValuePair structs.
+    [System.Serializable]
+    public class SerializableDecisionOptionDictionary
+    {
+        [System.Serializable]
+        public struct KeyValuePair
+        {
+            [Tooltip("The ID of the Decision Point.")]
+            public string decisionPointID;
+            [Tooltip("The unique decision option for this NPC at this point.")]
+            public DecisionOption decisionOption;
+        }
+
+        // --- FIX: Make the list public internal for direct manager access ---
+        [SerializeField] public List<KeyValuePair> entries = new List<KeyValuePair>();
+        // --- END FIX ---
+
+        // Helper method to convert the list to a runtime Dictionary
+        public Dictionary<string, DecisionOption> ToDictionary()
+        {
+            var dict = new Dictionary<string, DecisionOption>();
+            foreach (var entry in entries)
+            {
+                if (!string.IsNullOrWhiteSpace(entry.decisionPointID))
+                {
+                    // Handle potential duplicate keys if needed, or let Add throw
+                    if (!dict.ContainsKey(entry.decisionPointID))
+                    {
+                         dict.Add(entry.decisionPointID, entry.decisionOption);
+                    } else {
+                         Debug.LogWarning($"SerializableDecisionOptionDictionary: Duplicate key '{entry.decisionPointID}' found. Skipping duplicate entry.");
+                    }
+                } else {
+                     Debug.LogWarning("SerializableDecisionOptionDictionary: Found entry with null or empty decisionPointID. Skipping.");
+                }
+            }
+            return dict;
+        }
+
+        // Optional: Helper method to populate the list from a dictionary (for saving)
+        // public void FromDictionary(Dictionary<string, DecisionOption> dict)
+        // {
+        //     entries.Clear();
+        //     if (dict != null)
+        //     {
+        //         foreach (var pair in dict)
+        //         {
+        //             entries.Add(new KeyValuePair { decisionPointID = pair.Key, decisionOption = pair.Value });
+        //         }
+        //     }
+        // }
+    }
+    // --- END NEW ---
 }
 // --- END OF FILE TiNpcData.cs ---

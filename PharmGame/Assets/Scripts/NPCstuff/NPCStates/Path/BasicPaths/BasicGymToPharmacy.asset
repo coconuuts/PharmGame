@@ -18,5 +18,6 @@ MonoBehaviour:
   pathAsset: {fileID: 11400000, guid: eb4044d295a495c4d9e4becc20f0a80c, type: 2}
   startIndex: 0
   followReverse: 0
-  nextBasicStateEnumKey: BasicLookToShop
-  nextBasicStateEnumType: Game.NPC.BasicStates.BasicState
+  decisionPoint: {fileID: 11400000, guid: 6618bfb237a71b7418269a31a67a4727, type: 2}
+  nextBasicStateEnumKey: 
+  nextBasicStateEnumType: 

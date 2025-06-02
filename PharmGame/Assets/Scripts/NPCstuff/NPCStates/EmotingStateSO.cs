@@ -1,4 +1,6 @@
-// --- Updated EmotingStateSO.cs (Full Placeholder Logic) ---
+// --- START OF FILE EmotingStateSO.cs ---
+
+// --- Updated EmotingStateSO.cs (Phase 1, Substep 6) ---
 using UnityEngine;
 using System.Collections;
 using System;
@@ -6,6 +8,7 @@ using CustomerManagement;
 using Game.NPC;
 using Game.Events;
 using Game.NPC.States;
+using Game.NPC.TI; // Needed for TiNpcData // <-- NEW: Added using directive
 
 namespace Game.NPC.States
 {
@@ -71,12 +74,26 @@ namespace Game.NPC.States
              // TODO: In a real system, you might wait for the animation to finish here
              // yield return new WaitUntil(() => !context.AnimationHandler.IsPlaying(emoteAnimationName)); // Requires AnimationHandler method
 
-             Debug.Log($"{context.NpcObject.name}: Emote duration finished. Publishing NpcEmoteEndedEvent.", context.NpcObject);
+             Debug.Log($"{context.NpcObject.name}: Emote duration finished.", context.NpcObject);
 
-             // --- PUBLISH THE COMPLETION EVENT ---
-             context.PublishEvent(new NpcEmoteEndedEvent(context.NpcObject));
-             // This coroutine will automatically be stopped when the state changes.
-             // ------------------------------------
+             // --- PHASE 1, SUBSTEP 6: Check endDay flag for TI NPCs before ending interruption ---
+             if (context.Runner != null && context.Runner.IsTrueIdentityNpc && context.TiData != null && context.TiData.isEndingDay)
+             {
+                  Debug.Log($"{context.NpcObject.name}: TI NPC finished emoting and is in endDay schedule. Transitioning to ReturningToPool.", context.NpcObject);
+                  // Transition directly to ReturningToPool, bypassing the interruption handler's return logic
+                  context.TransitionToState(GeneralState.ReturningToPool);
+             }
+             else
+             {
+                  Debug.Log($"{context.NpcObject.name}: Finished emoting. Publishing NpcEmoteEndedEvent to end interruption.", context.NpcObject);
+                  // --- PUBLISH THE COMPLETION EVENT ---
+                  // This event is handled by NpcEventHandler, which calls InterruptionHandler.EndInterruption()
+                  context.PublishEvent(new NpcEmoteEndedEvent(context.NpcObject));
+                  // ------------------------------------
+             }
+             // This coroutine will automatically be stopped when the state changes (either to ReturningToPool or via the interruption handler).
+             // --- END PHASE 1, SUBSTEP 6 ---
         }
     }
 }
+// --- END OF FILE EmotingStateSO.cs ---

@@ -13,6 +13,9 @@ using Game.NPC.Handlers;
 using Game.Spatial; // Needed for GridManager
 using Game.Proximity; // Needed for ProximityManager
 using Game.Navigation; // Needed for WaypointManager (needed by BasicPathStateSO)
+using Game.Utilities; // Needed for TimeRange
+using Game.NPC.Decisions; // Needed for DecisionOption, SerializableDecisionOptionDictionary
+
 
 namespace Game.NPC.TI // Keep in the TI namespace
 {
@@ -22,7 +25,8 @@ namespace Game.NPC.TI // Keep in the TI namespace
     /// Implements off-screen simulation logic (delegating to BasicNpcStateManager)
     /// and provides methods for ProximityManager to trigger activation/deactivation.
     /// Uses a single collection of data records and filters on the fly.
-    /// Now includes mappings for path following states.
+    /// Now includes mappings for path following states, loads schedule time ranges,
+    /// loads unique decision options, and configures intended day start behavior.
     /// </summary>
     public class TiNpcManager : MonoBehaviour
     {
@@ -43,7 +47,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
         // Reference to ProximityManager (will be obtained in Awake/Start)
         private ProximityManager proximityManager;
         // Reference to WaypointManager (will be obtained in Awake/Start)
-        private WaypointManager waypointManager; // <-- NEW: Reference to WaypointManager
+        private WaypointManager waypointManager;
 
 
         [Header("TI NPC Setup")]
@@ -78,17 +82,38 @@ namespace Game.NPC.TI // Keep in the TI namespace
             public string id;
             public Vector3 homePosition;
             public Quaternion homeRotation = Quaternion.identity; // Default rotation
-            [Tooltip("Initial Basic State for this dummy NPC.")]
-            [SerializeField] public BasicState initialBasicState = BasicState.BasicPatrol; // Initial Basic State
-            // --- NEW: Optional initial path data for dummy NPCs ---
-            [Tooltip("Optional: Initial Basic Path State for this dummy NPC.")]
-            [SerializeField] public BasicPathState initialBasicPathState = BasicPathState.None; // Use None as default
-            [Tooltip("Optional: Path ID if starting in a Basic Path State.")]
-            [SerializeField] public string initialPathID;
-            [Tooltip("Optional: Start Index if starting in a Basic Path State.")]
-            [SerializeField] public int initialStartIndex = 0;
-            [Tooltip("Optional: Follow Reverse if starting in a Basic Path State.")]
-            [SerializeField] public bool initialFollowReverse = false;
+
+            // --- NEW: Day Start Behavior Configuration (Step 1) ---
+            [Header("Intended Day Start Behavior")]
+            [Tooltip("If true, the NPC will follow a path when its day starts. If false, it will transition to a specific state.")]
+            [SerializeField] public bool usePathForDayStart = false;
+
+            [Tooltip("The Enum key for the *Active* state this NPC should transition to when its day starts (e.g., TestState.Patrol, CustomerState.LookingToShop). Only used if 'Use Path For Day Start' is false.")]
+            [SerializeField] public string dayStartActiveStateEnumKey;
+            [Tooltip("The Type name of the Enum key for the day start state (e.g., Game.NPC.TestState, Game.NPC.CustomerState). Only used if 'Use Path For Day Start' is false.")]
+            [SerializeField] public string dayStartActiveStateEnumType;
+
+            [Tooltip("The Path ID if the day start behavior is path following. Only used if 'Use Path For Day Start' is true.")]
+            [SerializeField] public string dayStartPathID;
+            [Tooltip("The index of the waypoint to start the path from (0-based) if the day start behavior is path following.")]
+            [SerializeField] public int dayStartStartIndex = 0;
+            [Tooltip("If true, follow the path in reverse from the start index if the day start behavior is path following.")]
+            [SerializeField] public bool dayStartFollowReverse = false;
+            // --- END NEW ---
+
+
+            // --- Schedule Time Ranges for Dummy Data ---
+            [Header("Schedule Time Ranges")]
+            [Tooltip("The time range during the day when this NPC is allowed to be active or simulated.")]
+            [SerializeField] public Game.Utilities.TimeRange startDay = new Game.Utilities.TimeRange(0, 0, 23, 59); // Default: all day
+            [Tooltip("The time range during the day when this NPC should begin exiting/returning home.")]
+            [SerializeField] public Game.Utilities.TimeRange endDay = new Game.Utilities.TimeRange(22, 0, 5, 0); // Default: 10 PM to 5 AM
+            // --- End Schedule Time Ranges ---
+
+            // --- NEW: Unique Decision Options for Dummy Data ---
+            [Header("Unique Decision Options (by Point ID)")]
+            [Tooltip("Unique decision options for this dummy NPC, keyed by Decision Point ID.")]
+            [SerializeField] public SerializableDecisionOptionDictionary uniqueDecisionOptions = new SerializableDecisionOptionDictionary();
             // --- END NEW ---
         }
 
@@ -101,7 +126,6 @@ namespace Game.NPC.TI // Keep in the TI namespace
 
          // Coroutine references
          private Coroutine simulationCoroutine;
-         // Removed proximityCheckCoroutine - ProximityManager handles this
 
 
         // --- State Mapping Dictionaries ---
@@ -144,16 +168,12 @@ namespace Game.NPC.TI // Keep in the TI namespace
                  return;
             }
 
-             // Get reference to the CustomerManager if not assigned
-             if (customerManager == null)
-             {
-                  customerManager = CustomerManagement.CustomerManager.Instance;
-             }
-              if (customerManager == null)
-              {
-                  Debug.LogError("TiNpcManager: CustomerManager instance not found or not assigned! TI NPCs cannot activate into customer roles. Assign in Inspector or ensure it's a functioning Singleton.", this);
-              }
-
+               // Get reference to the CustomerManager if not assigned
+               if (customerManager == null)
+               {
+                    customerManager = CustomerManagement.CustomerManager.Instance;
+                    Debug.LogError("TiNpcManager: CustomerManager instance not found or not assigned! TI NPCs cannot activate into customer roles. Assign in Inspector or ensure it's a functioning Singleton.", this);
+               }
              // Get reference to BasicNpcStateManager
              basicNpcStateManager = BasicNpcStateManager.Instance;
              if (basicNpcStateManager == null)
@@ -178,7 +198,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
                   // Do NOT disable manager entirely, but NPCs won't activate/deactivate.
              }
 
-             // --- NEW: Get reference to WaypointManager ---
+             // --- Get reference to WaypointManager ---
              waypointManager = WaypointManager.Instance;
              if (waypointManager == null)
              {
@@ -222,7 +242,6 @@ namespace Game.NPC.TI // Keep in the TI namespace
                   Debug.LogWarning("TiNpcManager: BasicNpcStateManager, GridManager, or Player Transform is null. Cannot start simulation coroutine."); // Updated log
              }
 
-            // Removed starting ProximityCheckRoutine - ProximityManager handles this
         }
 
         private void OnEnable()
@@ -233,7 +252,6 @@ namespace Game.NPC.TI // Keep in the TI namespace
                   Debug.Log("TiNpcManager: Restarting simulation coroutine on OnEnable.");
                   simulationCoroutine = StartCoroutine(SimulateInactiveNpcsRoutine());
              }
-             // Removed restarting proximityCheckCoroutine
         }
 
         private void OnDisable()
@@ -245,7 +263,6 @@ namespace Game.NPC.TI // Keep in the TI namespace
                   StopCoroutine(simulationCoroutine);
                   simulationCoroutine = null;
              }
-             // Removed stopping proximityCheckCoroutine
         }
 
         private void OnDestroy()
@@ -341,6 +358,9 @@ namespace Game.NPC.TI // Keep in the TI namespace
              basicToActiveStateMap[BasicState.BasicWaitForCashier] = CustomerState.Queue; // This is the DEFAULT mapping, can be overridden during activation for specific logic.
              basicToActiveStateMap[BasicState.BasicExitingStore] = CustomerState.Exiting;
              // BasicState.None is not mapped back to an active state, handled by activation logic.
+             // --- NEW: Add mapping for BasicIdleAtHome ---
+             basicToActiveStateMap[BasicState.BasicIdleAtHome] = GeneralState.Idle; // Map to Active Idle as a fallback
+             // --- END NEW ---
 
              // --- NEW: Basic Path State Mapping ---
              basicToActiveStateMap[BasicPathState.BasicFollowPath] = PathState.FollowPath;
@@ -370,7 +390,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
 
              // Fallback for active states that don't have a defined mapping (e.g., unlisted states, future states)
              // Assume these should default to patrolling when inactive.
-             Debug.LogWarning($"TiNpcManager: No Basic State mapping found for Active State '{activeStateEnum.GetType().Name}.{activeStateEnum.ToString()}'. Falling back to BasicPatrol.");
+             Debug.LogWarning($"TiNpcManager: No Basic State mapping found for Active State '{activeStateEnum.GetType().Name}.{activeStateEnum.ToString() ?? "NULL"}'. Falling back to BasicPatrol.");
              return BasicState.BasicPatrol; // Default fallback for unmapped active states
         }
 
@@ -392,13 +412,14 @@ namespace Game.NPC.TI // Keep in the TI namespace
              }
 
              // Error if a Basic State doesn't have a mapping back to an Active State
-             Debug.LogError($"TiNpcManager: No Active State mapping found for Basic State '{basicStateEnum.GetType().Name}.{basicStateEnum.ToString()}'! Returning GeneralState.Idle as fallback. Review mappings!");
+             Debug.LogError($"TiNpcManager: No Active State mapping found for Basic State '{basicStateEnum.GetType().Name}.{basicStateEnum.ToString() ?? "NULL"}'! Returning GeneralState.Idle as fallback. Review mappings!");
              return GeneralState.Idle; // Error fallback
         }
 
 
         /// <summary>
         /// The low-tick simulation routine. Iterates over inactive NPCs found near the player via the grid,
+        /// AND inactive NPCs currently following a path simulation regardless of distance,
         /// delegating simulation logic to the BasicNpcStateManager.
         /// </summary>
         private IEnumerator SimulateInactiveNpcsRoutine()
@@ -425,58 +446,139 @@ namespace Game.NPC.TI // Keep in the TI namespace
                        yield return new WaitForSeconds(simulationTickInterval * 5);
                        continue;
                    }
-                    // --- NEW: Check for WaypointManager dependency for path simulation ---
-                    if (waypointManager == null)
+                    if (waypointManager == null) // Check WaypointManager dependency for path simulation
                     {
-                         Debug.LogError("SIM TiNpcManager: WaypointManager is null! Cannot simulate path following for inactive NPCs.", this);
-                         // Continue simulation for non-path states, but path states will fallback.
+                         // Simulation for non-path states can continue, but path states will fallback internally.
                          // No need to yield longer here, just log the specific issue.
+                         Debug.LogWarning("SIM TiNpcManager: WaypointManager not found. Simulation of path following for inactive NPCs may not work correctly.");
                     }
+                    // --- NEW: Check TimeManager dependency for schedule checks ---
+                    if (TimeManager.Instance == null)
+                    {
+                         Debug.LogError("SIM TiNpcManager: TimeManager instance is null! Cannot perform schedule checks during simulation.", this);
+                         yield return new WaitForSeconds(simulationTickInterval * 5);
+                         continue; // Cannot proceed
+                    }
+                    DateTime currentTime = TimeManager.Instance.CurrentGameTime; // Get current game time
                     // --- END NEW ---
 
 
-                  // --- Use GridManager to find inactive NPCs near the player ---
-                  // We simulate inactive NPCs that are *not* near enough to be activated,
-                  // but still potentially within a larger simulation radius if needed.
-                  // ProximityManager will define the exact radius for 'Far' NPCs.
-                  // Using ProximityManager's farRadius + cellSize for the query radius.
+                  // --- Build the list of NPCs to simulate this tick ---
+                  List<TiNpcData> simulationCandidates = new List<TiNpcData>();
+                  HashSet<TiNpcData> addedToBatch = new HashSet<TiNpcData>(); // Use a set to prevent duplicates
+
+                  // 1. Find inactive NPCs near the player using the grid (Standard Proximity Simulation)
+                  // Query a radius slightly larger than the farthest zone radius to catch NPCs just outside.
                   float simulationQueryRadius = (proximityManager != null ? proximityManager.farRadius : 30f) + (gridManager != null ? gridManager.cellSize : 5f); // Query slightly beyond far radius
+                  Vector3 playerPosition = playerTransform.position;
 
-                  List<TiNpcData> potentialSimulationBatch = gridManager.QueryItemsInRadius(playerTransform.position, simulationQueryRadius);
+                  if (gridManager != null) // Ensure gridManager is available for query
+                  {
+                       List<TiNpcData> nearbyInactiveNpcs = gridManager.QueryItemsInRadius(playerPosition, simulationQueryRadius)
+                            .Where(data => !data.IsActiveGameObject) // Filter for inactive only
+                            .ToList();
 
-                  // Filter for only inactive NPCs from the queried list
-                  List<TiNpcData> inactiveBatch = potentialSimulationBatch.Where(data => !data.IsActiveGameObject).ToList();
-                  // --- END NEW ---
+                       foreach(var data in nearbyInactiveNpcs)
+                       {
+                            if (addedToBatch.Add(data)) // Add to set and list if not already present
+                            {
+                                simulationCandidates.Add(data);
+                            }
+                       }
+                  } else {
+                       // Fallback for simulation if GridManager is missing (very inefficient, should not happen in final build)
+                       // Iterate ALL inactive NPCs and check distance (only if GridManager is null)
+                       Debug.LogError("SIM TiNpcManager: GridManager is null, falling back to inefficient distance check for nearby inactive NPCs!");
+                       foreach (var data in allTiNpcs.Values)
+                       {
+                           if (!data.IsActiveGameObject)
+                           {
+                                Vector3 npcPosition = data.CurrentWorldPosition; // Use saved data position
+                                float distanceToPlayerSq = (npcPosition - playerPosition).sqrMagnitude;
+                                if (distanceToPlayerSq <= simulationQueryRadius * simulationQueryRadius)
+                                {
+                                    if (addedToBatch.Add(data))
+                                    {
+                                        simulationCandidates.Add(data);
+                                    }
+                                }
+                           }
+                       }
+                  }
 
 
-                   int totalInactiveCount = inactiveBatch.Count;
+                  // 2. Find inactive NPCs that MUST be simulated (e.g., path following) regardless of proximity
+                  // Iterate over *all* known TI NPCs
+                  foreach (var data in allTiNpcs.Values)
+                  {
+                       // Check if inactive AND currently in a BasicPathState AND flagged as following a path simulation
+                       bool isInactivePathFollowing = !data.IsActiveGameObject &&
+                                                      data.isFollowingPathBasic &&
+                                                      data.CurrentStateEnum != null &&
+                                                      data.CurrentStateEnum.Equals(BasicPathState.BasicFollowPath); // Explicitly check for BasicPathState.BasicFollowPath enum value
 
-                   if (totalInactiveCount == 0)
+
+                       if (isInactivePathFollowing)
+                       {
+                            // Add to the batch if not already added (e.g., was also nearby)
+                            if (addedToBatch.Add(data))
+                            {
+                                simulationCandidates.Add(data);
+                            }
+                       }
+                  }
+                  // --- Finished building the list of NPCs to simulate ---
+
+
+                   int totalToSimulate = simulationCandidates.Count;
+
+                   if (totalToSimulate == 0)
                    {
-                        yield return new WaitForSeconds(simulationTickInterval * 2);
+                        // If no candidates, just wait for the next interval
+                        yield return new WaitForSeconds(simulationTickInterval * 2); // Wait a bit longer if nothing is happening
+                        simulationIndex = 0; // Reset index if list is empty
                         continue;
                    }
 
-                   // Wrap the simulation index if it exceeds the total number of inactive NPCs
-                   if (simulationIndex >= totalInactiveCount)
+                   // Wrap the simulation index if it exceeds the total number of simulation candidates
+                   if (simulationIndex >= totalToSimulate)
                    {
                         simulationIndex = 0;
                    }
 
-                   // Get the batch from the list of inactive NPCs
-                   // Ensure we don't try to Skip past the end of the list if totalInactiveCount is small
-                   List<TiNpcData> currentBatch = inactiveBatch.Skip(simulationIndex).Take(maxNpcsToSimulatePerTick).ToList();
+                   // Get the batch from the combined list of simulation candidates
+                   // Ensure we handle wrapping around the end of the list
+                   List<TiNpcData> currentBatch;
+                   if (simulationIndex + maxNpcsToSimulatePerTick <= totalToSimulate)
+                   {
+                       currentBatch = simulationCandidates.Skip(simulationIndex).Take(maxNpcsToSimulatePerTick).ToList();
+                   }
+                   else
+                   {
+                        int remainingInList = totalToSimulate - simulationIndex;
+                        int neededFromStart = maxNpcsToSimulatePerTick - remainingInList;
+                        currentBatch = simulationCandidates.Skip(simulationIndex).Take(remainingInList).ToList();
+                        currentBatch.AddRange(simulationCandidates.Take(neededFromStart)); // Add from the start to complete the batch
+                   }
 
 
-                  if (currentBatch.Count == 0)
+                  if (currentBatch.Count == 0 && totalToSimulate > 0)
                   {
-                       // This can happen if simulationIndex is exactly totalInactiveCount and totalInactiveCount < maxNpcsToSimulatePerTick
-                       // In this case, we processed the last batch in the previous tick, and simulationIndex wrapped to 0
-                       // but the list is now empty. Just continue to the next wait period.
-                       // Debug.LogWarning($"SIM TiNpcManager: Current batch is empty despite total inactive count being {totalInactiveCount}! Check maxNpcsToSimulatePerTick ({maxNpcsToSimulatePerTick}) or logic.");
-                        yield return new WaitForSeconds(simulationTickInterval * 2); // Wait a bit longer
-                        continue; // Go to next iteration
+                       // This case can happen if totalToSimulate is > 0 but < maxNpcsToSimulatePerTick
+                       // and simulationIndex is totalToSimulate or more. The batching logic above should handle this correctly now.
+                       // If we reach here, it might indicate an issue or just need a reset.
+                       Debug.LogWarning($"SIM TiNpcManager: Generated an empty batch ({currentBatch.Count}) despite {totalToSimulate} candidates available! Resetting index.");
+                        simulationIndex = 0; // Force reset index
+                        continue; // Skip this tick's simulation and wait for the next interval
                   }
+                  else if (currentBatch.Count == 0)
+                  {
+                       // totalToSimulate must be 0 here. Covered by the check above.
+                       simulationIndex = 0; // Reset index
+                       yield return new WaitForSeconds(simulationTickInterval * 2); // Wait a bit longer
+                       continue; // Go to next iteration
+                  }
+
 
                    // Process the batch
                   int countProcessedThisTick = 0;
@@ -487,35 +589,111 @@ namespace Game.NPC.TI // Keep in the TI namespace
                        // This check is crucial to confirm if an active NPC is mistakenly in this list (should not happen with filtering)
                        if (npcData.IsActiveGameObject)
                        {
-                           Debug.LogError($"SIM TiNpcManager: Found ACTIVE NPC '{npcData.Id}' (GameObject '{npcData.NpcGameObject?.name ?? "NULL"}') in the INACTIVE batch after filtering! This should not happen. Skipping simulation for this NPC.", npcData.NpcGameObject);
-                           countProcessedThisTick++; // Still count this entry as processed in the batch
+                           Debug.LogError($"SIM TiNpcManager: Found ACTIVE NPC '{npcData.Id}' (GameObject '{npcData.NpcGameObject?.name ?? "NULL"}') in the INACTIVE simulation batch! This should not happen. Skipping simulation for this NPC.", npcData.NpcGameObject);
+                           countProcessedThisTick++; // Still count this entry as processed in the batch to advance index correctly
                            continue; // Skip simulation logic for this NPC
                        }
+                        // Ensure the state is valid for simulation before ticking
+                       BasicNpcStateSO currentStateSO = basicNpcStateManager?.GetBasicStateSO(npcData.CurrentStateEnum);
+                       if (currentStateSO == null)
+                       {
+                           Debug.LogError($"SIM {npcData.Id}: Current Basic State SO not found for Enum '{npcData.CurrentStateEnum?.GetType().Name}.{npcData.CurrentStateEnum?.ToString() ?? "NULL"}' during simulation tick! Cannot simulate. Transitioning to BasicPatrol (fallback) via BasicNpcStateManager.", npcData.NpcGameObject);
+                           // Delegate the fallback transition to BasicNpcStateManager, which handles missing states.
+                           basicNpcStateManager.TransitionToBasicState(npcData, BasicState.BasicPatrol); // Use BasicState enum directly
+                           countProcessedThisTick++; // Count this entry
+                           continue; // Skip simulation logic for this NPC this tick
+                       }
+
+                       // --- NEW: Check if StartDay has begun and transition from BasicIdleAtHome (Step 4) ---
+                       if (npcData.CurrentStateEnum != null && npcData.CurrentStateEnum.Equals(BasicState.BasicIdleAtHome))
+                       {
+                            if (npcData.startDay.IsWithinRange(currentTime))
+                            {
+                                Debug.Log($"SIM {npcData.Id}: StartDay has begun ({npcData.startDay}, Current Time: {currentTime:HH:mm}). Transitioning from BasicIdleAtHome to day start state.", npcData.NpcGameObject);
+
+                                // Get the intended Active start state from TiData (uses the refined property)
+                                Enum dayStartActiveState = npcData.DayStartActiveStateEnum;
+
+                                if (dayStartActiveState != null)
+                                {
+                                     // Map the Active state to its Basic equivalent for simulation
+                                     Enum dayStartBasicState = GetBasicStateFromActiveState(dayStartActiveState);
+
+                                     if (dayStartBasicState != null)
+                                     {
+                                          // --- NEW: If the day start state is a BasicPathState, prime the simulation path data from the dayStart fields ---
+                                          // This logic uses the DayStart... fields directly from TiNpcData.
+                                          if (dayStartBasicState.Equals(BasicPathState.BasicFollowPath))
+                                          {
+                                               // Use the dayStart fields to initialize the simulated path data
+                                               npcData.simulatedPathID = npcData.DayStartPathID;
+                                               npcData.simulatedWaypointIndex = npcData.DayStartStartIndex; // Start *at* this index, the BasicPathStateSO.OnEnter will target the next one
+                                               npcData.simulatedFollowReverse = npcData.DayStartFollowReverse;
+                                               npcData.isFollowingPathBasic = true; // Flag as following a path simulation
+                                               Debug.Log($"SIM {npcData.Id}: Priming path simulation data for BasicPathState transition: PathID='{npcData.simulatedPathID}', Index={npcData.simulatedWaypointIndex}, Reverse={npcData.simulatedFollowReverse}.", npcData.NpcGameObject);
+                                          } else {
+                                               // If not transitioning to a path state, ensure path simulation data is cleared
+                                               npcData.simulatedPathID = null;
+                                               npcData.simulatedWaypointIndex = -1;
+                                               npcData.simulatedFollowReverse = false;
+                                               npcData.isFollowingPathBasic = false;
+                                          }
+                                          // --- END NEW ---
+
+                                          // Trigger the state transition to the determined basic state
+                                          basicNpcStateManager.TransitionToBasicState(npcData, dayStartBasicState);
+
+                                          // Continue to the next NPC in the batch. The new state's logic
+                                          // will run on the *next* simulation tick for this NPC.
+                                          countProcessedThisTick++;
+                                          continue; // Skip the rest of the tick logic for this NPC this frame
+                                     } else {
+                                          Debug.LogError($"SIM {npcData.Id}: Could not map intended Day Start Active State '{dayStartActiveState.GetType().Name}.{dayStartActiveState.ToString() ?? "NULL"}' to a Basic State! Transitioning to BasicPatrol fallback.", npcData.NpcGameObject);
+                                           basicNpcStateManager.TransitionToBasicState(npcData, BasicState.BasicPatrol);
+                                           countProcessedThisTick++;
+                                           continue;
+                                     }
+                                } else {
+                                     // This is the error case the user reported. The DayStartActiveStateEnum property is null.
+                                     // This happens if usePathForDayStart is false but key/type are empty, OR
+                                     // if usePathForDayStart is true but PathState.FollowPath cannot be parsed.
+                                     Debug.LogError($"SIM {npcData.Id}: Intended Day Start Active State is null or invalid! Cannot transition from BasicIdleAtHome. Transitioning to BasicPatrol fallback. Check Day Start configuration in Dummy Data.", npcData.NpcGameObject); // Added more specific error message
+                                      basicNpcStateManager.TransitionToBasicState(npcData, BasicState.BasicPatrol);
+                                      countProcessedThisTick++;
+                                      continue;
+                                }
+                            }
+                            // If in BasicIdleAtHome but day hasn't started, do nothing and continue to next NPC
+                            countProcessedThisTick++; // Still count as processed in batch
+                            continue; // Skip the rest of the tick logic for this NPC this frame
+                       }
+                       // --- END NEW ---
+
 
                        // --- DELEGATE SIMULATION TO BASICNPCSTATEMANAGER ---
                        // BasicNpcStateManager will handle calling GridManager.UpdateItemPosition after simulation tick
+                       // This only happens if the NPC was NOT in BasicIdleAtHome or transitioned out of it this tick.
                        basicNpcStateManager.SimulateTickForNpc(npcData, simulationTickInterval);
                        // --- END DELEGATION ---
 
                        countProcessedThisTick++;
                   }
 
-                  // Advance the simulation index by the number of NPCs processed in this batch.
+                  // Advance the simulation index by the number of NPCs *actually processed* in this batch.
                   // This must be done *after* iterating the batch.
-                  simulationIndex += batchSize;
+                  simulationIndex += countProcessedThisTick; // Use the actual count processed
 
-                  // Wrap the simulation index should now wrap based on the total number of *inactive* NPCs found in the query,
-                  // NOT the total number of all NPCs. Recalculate total inactive count from the queried list.
-                   totalInactiveCount = inactiveBatch.Count; // Use the count from the list queried this tick
-                  if (totalInactiveCount > 0) // Avoid division by zero or wrapping when list is empty
+                  // Wrap the simulation index based on the total number of *simulation candidates* found in this tick.
+                  //totalToSimulate is the count determined *before* batching.
+                  if (totalToSimulate > 0)
                   {
-                      simulationIndex %= totalInactiveCount;
+                      simulationIndex %= totalToSimulate;
                   } else {
-                       simulationIndex = 0; // Reset if no inactive NPCs left in the query area
+                       simulationIndex = 0; // Reset if no candidates were found this tick
                   }
 
                   // Log simulation tick summary (Optional, can be noisy)
-                  // Debug.Log($"SIM TiNpcManager: Simulated {countProcessedThisTick} inactive NPCs this tick. Total inactive in query area: {totalInactiveCount}. Next batch starts at index {simulationIndex}.");
+                  // Debug.Log($"SIM TiNpcManager: Simulated {countProcessedThisTick} inactive NPCs this tick from {totalToSimulate} candidates. Next batch starts at index {simulationIndex}.");
              }
         }
 
@@ -540,6 +718,15 @@ namespace Game.NPC.TI // Keep in the TI namespace
                    Debug.LogError("TiNpcManager: Cannot activate TI NPC. Required manager (TI Prefabs list, PoolingManager, CustomerManager, BasicNpcStateManager, GridManager, or WaypointManager) is null.", this); // Updated log
                    return;
               }
+               // --- NEW: Check TimeManager dependency for schedule checks ---
+               if (TimeManager.Instance == null)
+               {
+                    Debug.LogError("PROXIMITY TiNpcManager: TimeManager instance is null! Cannot perform schedule checks during activation.", this);
+                    return; // Cannot proceed
+               }
+               DateTime currentTime = TimeManager.Instance.CurrentGameTime; // Get current game time
+               // --- END NEW ---
+
 
               GameObject prefabToUse = tiNpcPrefabs[UnityEngine.Random.Range(0, tiNpcPrefabs.Count)]; // Pick a random TI prefab
               GameObject npcObject = poolingManager.GetPooledObject(prefabToUse);
@@ -560,8 +747,75 @@ namespace Game.NPC.TI // Keep in the TI namespace
                        Enum startingActiveStateEnum = null; // The active state we will transition to
                        bool handledActivationBySavedState = false; // Flag to know if we used the specific logic below
 
+                         // --- NEW: Handle activation from BasicIdleAtHome (Step 5) ---
+                         if (savedStateEnum != null && savedStateEnum.Equals(BasicState.BasicIdleAtHome))
+                         {
+                             Debug.Log($"PROXIMITY {tiData.Id}: Saved state is BasicIdleAtHome. Checking schedule for activation.", npcObject);
+                             handledActivationBySavedState = true; // Handling this case
+
+                             if (tiData.startDay.IsWithinRange(currentTime))
+                             {
+                                  // Day has started, activate to the intended day start state (uses the refined property)
+                                  Debug.Log($"PROXIMITY {tiData.Id}: Day has started ({tiData.startDay}, Current Time: {currentTime:HH:mm}). Activating to intended day start state.", npcObject);
+                                  startingActiveStateEnum = tiData.DayStartActiveStateEnum;
+
+                                   // --- NEW: If activating into a PathState, prime the Runner's temporary path data from the dayStart fields ---
+                                   // This data is read by PathStateSO.OnEnter when it detects activation from a saved state.
+                                   // This logic uses the DayStart... fields directly from TiNpcData.
+                                   if (startingActiveStateEnum != null && startingActiveStateEnum.Equals(PathState.FollowPath))
+                                   {
+                                        if (runner.PathFollowingHandler != null)
+                                        {
+                                             // Prime the Runner's temporary interruption/activation path data fields
+                                             // Note: These fields are usually for interruption, but we can repurpose them
+                                             // or add new ones on the Runner for activation specifically.
+                                             // Let's use the existing interrupted fields for simplicity, but clear the 'wasInterrupted' flag.
+                                             runner.interruptedPathID = tiData.DayStartPathID; // <-- Use DayStartPathID
+                                             runner.interruptedWaypointIndex = tiData.DayStartStartIndex; // <-- Use DayStartStartIndex
+                                             runner.interruptedFollowReverse = tiData.DayStartFollowReverse; // <-- Use DayStartFollowReverse
+                                             runner.wasInterruptedFromPathState = false; // Ensure this is false, it's not an interruption resume
+
+                                             // Also set the tiData path simulation flags to true temporarily so PathStateSO.OnEnter reads them
+                                             tiData.simulatedPathID = tiData.DayStartPathID; // Temporarily copy to sim fields
+                                             tiData.simulatedWaypointIndex = tiData.DayStartStartIndex;
+                                             tiData.simulatedFollowReverse = tiData.DayStartFollowReverse;
+                                             tiData.isFollowingPathBasic = true; // Flag to tell PathStateSO.OnEnter to restore
+
+                                             Debug.Log($"PROXIMITY {tiData.Id}: Priming Runner/TiData for PathState activation: PathID='{runner.interruptedPathID}', Index={runner.interruptedWaypointIndex}, Reverse={runner.interruptedFollowReverse}.", npcObject);
+                                        } else {
+                                             Debug.LogError($"PROXIMITY {tiData.Id}: Runner is missing NpcPathFollowingHandler during PathState activation! Cannot prime path data. NPC will likely start path from beginning.", npcObject);
+                                             // Fallback: PathState.OnEnter will handle starting from index 0.
+                                        }
+                                   }
+                                   // --- END NEW ---
+
+                                  // Clear all simulation data as active state takes over
+                                  tiData.simulatedTargetPosition = null;
+                                  tiData.simulatedStateTimer = 0f;
+                                  tiData.simulatedPathID = null; // Clear sim path data *after* priming runner/tiData temp fields if needed
+                                  tiData.simulatedWaypointIndex = -1;
+                                  tiData.simulatedFollowReverse = false;
+                                  tiData.isFollowingPathBasic = false; // Clear this flag now
+
+                             } else {
+                                  // Day has NOT started, NPC should remain idle at home even if activated.
+                                  Debug.Log($"PROXIMITY {tiData.Id}: Day has NOT started ({tiData.startDay}, Current Time: {currentTime:HH:mm}). Activating to Active Idle state.", npcObject);
+                                  startingActiveStateEnum = GeneralState.Idle; // Activate to Active Idle state
+
+                                   // Clear all simulation data as active state takes over
+                                  tiData.simulatedTargetPosition = null;
+                                  tiData.simulatedStateTimer = 0f;
+                                  tiData.simulatedPathID = null;
+                                  tiData.simulatedWaypointIndex = -1;
+                                  tiData.simulatedFollowReverse = false;
+                                  tiData.isFollowingPathBasic = false;
+                             }
+                         }
+                         // --- END NEW ---
+
+
                          // --- Handle activation from BasicWaitForCashierState ---
-                         if (savedStateEnum != null && savedStateEnum.Equals(BasicState.BasicWaitForCashier))
+                         else if (savedStateEnum != null && savedStateEnum.Equals(BasicState.BasicWaitForCashier))
                          {
                               Debug.Log($"PROXIMITY {tiData.Id}: Saved state is BasicWaitForCashier. Checking live queue/register status.", npcObject);
                               handledActivationBySavedState = true; // We are handling this specific case
@@ -596,13 +850,13 @@ namespace Game.NPC.TI // Keep in the TI namespace
                                         if (customerManager.TryJoinQueue(runner, out assignedSpotTransform, out assignedSpotIndex))
                                         {
                                              // Successfully joined queue, setup the handler and transition to Queue state
-                                             Debug.Log($"PROXIMITY {tiData.Id}: Successfully joined main queue at spot {assignedSpotIndex}. Activating to Queue state.", npcObject);
+                                             Debug.Log($"PROXIMITY {tiData.Id}: Successfully rejoined main queue at spot {assignedSpotIndex}. Activating to Queue state.", npcObject);
                                              // Use the new SetupQueueSpot method to configure the handler and runner target
                                              queueHandler.SetupQueueSpot(assignedSpotTransform, assignedSpotIndex, QueueType.Main);
                                              startingActiveStateEnum = CustomerState.Queue;
                                              // Clear simulation data as active state takes over
-                                             tiData.simulatedTargetPosition = null;
-                                             tiData.simulatedStateTimer = 0f;
+                                             tiData.simulatedTargetPosition = null; // Clear simulated target
+                                             tiData.simulatedStateTimer = 0f; // Reset timer
                                              // Clear path simulation data
                                              tiData.simulatedPathID = null;
                                              tiData.simulatedWaypointIndex = -1;
@@ -641,7 +895,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
                                    }
                               }
                          }
-                         // --- END Handle activation from BasicWaitForCashierState ---
+                         // --- END BasicWaitForCashierState handling ---
 
                          // --- Handle activation from BasicBrowseState ---
                          else if (savedStateEnum != null && savedStateEnum.Equals(BasicState.BasicBrowse))
@@ -686,7 +940,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
                          }
                          // --- END BasicBrowseState handling ---
 
-                         // --- NEW: Handle activation from BasicPathState ---
+                         // --- Handle activation from BasicPathState ---
                          else if (savedStateEnum != null && savedStateEnum.Equals(BasicPathState.BasicFollowPath))
                          {
                               Debug.Log($"PROXIMITY {tiData.Id}: Saved state is BasicFollowPath. Restoring path progress.", npcObject);
@@ -712,35 +966,39 @@ namespace Game.NPC.TI // Keep in the TI namespace
                               else
                               {
                                    // Path data seems valid, restore it on the active handler *after* Runner.Activate
-                                   // The Runner.Activate call will transition to the PathState.FollowPath.
-                                   // The PathState.OnEnter will handle the initial NavMesh leg if needed,
-                                   // or the PathFollowingHandler.RestorePathProgress (Substep 4.5) will be called
-                                   // to skip the NavMesh leg if they were mid-path.
-
-                                   // We need to pass the path data to the Runner/PathFollowingHandler.
-                                   // The Runner.Activate method needs to be updated to accept this data,
-                                   // or the PathFollowingHandler needs a public method to restore state.
-                                   // Let's add a public method to PathFollowingHandler (Substep 4.5)
-                                   // and call it *after* runner.Activate returns.
+                                   // This bypasses the NavMesh leg.
+                                   PathSO pathSOToRestore = waypointManager?.GetPath(tiData.simulatedPathID);
+                                   if (pathSOToRestore != null)
+                                   {
+                                        // Call a new method on the PathFollowingHandler to restore state (Substep 4.5 in previous plan, now implicitly handled by PathStateSO logic)
+                                        // This call is now handled by PathStateSO.OnEnter when it detects activation from TI data
+                                        // We just need to ensure the PathStateSO is the target state.
+                                        // The PathStateSO.OnEnter will read the path data directly from tiData.
+                                        // We just need to ensure the state mapping is correct.
+                                        Debug.Log($"PROXIMITY {tiData.Id}: Path data valid. PathState.OnEnter will handle restoration from TiData.", npcObject);
+                                   } else {
+                                        Debug.LogError($"PROXIMITY {tiData.Id}: PathSO '{tiData.simulatedPathID}' not found via WaypointManager during BasicPathState activation! Cannot restore path progress. NPC will likely start path from beginning.", npcObject);
+                                        // Fallback: The PathState.OnEnter will handle starting from the beginning (index 0) as a fallback if restore fails.
+                                   }
 
                                    // Clear simulation data as active state takes over
                                    tiData.simulatedTargetPosition = null; // Clear simulated target
                                    tiData.simulatedStateTimer = 0f; // Reset timer
                                    // Note: We do NOT clear simulatedPathID, simulatedWaypointIndex, simulatedFollowReverse, isFollowingPathBasic here.
-                                   // These are needed by the PathFollowingHandler.RestorePathProgress method (Substep 4.5).
+                                   // These are needed by the PathStateSO.OnEnter when it detects activation from TI data.
                                    // They will be cleared by the PathFollowingHandler itself when it stops following the path.
                               }
                          }
                          // --- END NEW ---
 
-                         // --- Existing Logic (for states OTHER THAN BasicWaitForCashier, BasicBrowse, BasicPathState) ---
+                         // --- Existing Logic (for states OTHER THAN BasicIdleAtHome, BasicWaitForCashier, BasicBrowse, BasicPathState) ---
                          if (!handledActivationBySavedState) // Only run this if the specific BasicState cases were NOT handled
                          {
                               if (savedStateEnum != null && basicNpcStateManager.IsBasicState(savedStateEnum))
                               {
                                    // If the saved state is a BasicState (but NOT the special cases), map it to the corresponding Active State
                                    startingActiveStateEnum = GetActiveStateFromBasicState(savedStateEnum);
-                                   Debug.Log($"PROXIMITY {tiData.Id}: Saved state '{savedStateEnum.GetType().Name}.{savedStateEnum.ToString()}' is a Basic State (generic mapping). Mapping to Active State '{startingActiveStateEnum?.GetType().Name}.{startingActiveStateEnum?.ToString() ?? "NULL"}'.", npcObject);
+                                   Debug.Log($"PROXIMITY {tiData.Id}: Saved state '{savedStateEnum.GetType().Name}.{savedStateEnum.ToString() ?? "NULL"}' is a Basic State (generic mapping). Mapping to Active State '{startingActiveStateEnum?.GetType().Name}.{startingActiveStateEnum?.ToString() ?? "NULL"}'.", npcObject);
                                    // Reset simulation data when transitioning from simulation to active
                                    tiData.simulatedTargetPosition = null; // Clear simulated target
                                    tiData.simulatedStateTimer = 0f; // Reset timer on activation
@@ -755,7 +1013,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
                                    // If the saved state is NOT a BasicState (e.g., an old Active state saved directly),
                                    // try to use it directly as the starting active state.
                                    startingActiveStateEnum = savedStateEnum;
-                                   Debug.Log($"PROXIMITY {tiData.Id}: Saved state '{savedStateEnum.GetType().Name}.{savedStateEnum.ToString()}' is NOT a Basic State. Attempting to use as Active starting state.", npcObject);
+                                   Debug.Log($"PROXIMITY {tiData.Id}: Saved state '{savedStateEnum.GetType().Name}.{savedStateEnum.ToString() ?? "NULL"}' is NOT a Basic State. Attempting to use as Active starting state.", npcObject);
                                    // Clear existing simulation data anyway as it's old simulation data.
                                    tiData.simulatedTargetPosition = null;
                                    tiData.simulatedStateTimer = 0f;
@@ -787,34 +1045,6 @@ namespace Game.NPC.TI // Keep in the TI namespace
                          runner.Activate(tiData, customerManager, startingActiveStateEnum); // <-- Pass determined override state Enum
 
                          Debug.Log($"PROXIMITY TiNpcManager: Activation initiated for TI NPC '{tiData.Id}' (GameObject '{npcObject.name}'). Runner.Activate called with override state: {startingActiveStateEnum?.GetType().Name}.{startingActiveStateEnum?.ToString() ?? "NULL"}");
-
-                         // --- NEW: If activating into a PathState, restore path progress on the handler ---
-                         // This happens *after* Runner.Activate has set up the runner and transitioned to the state.
-                         // The PathState.OnEnter will run, but if the NPC was mid-path, we need to tell the handler
-                         // to skip the NavMesh leg and resume path following from the saved index.
-                         if (startingActiveStateEnum != null && startingActiveStateEnum.Equals(PathState.FollowPath))
-                         {
-                              // Check if the data indicates they were mid-path simulation
-                              if (tiData.isFollowingPathBasic && !string.IsNullOrWhiteSpace(tiData.simulatedPathID) && tiData.simulatedWaypointIndex != -1)
-                              {
-                                   Debug.Log($"PROXIMITY {tiData.Id}: Activating into PathState. Restoring path progress on handler: PathID='{tiData.simulatedPathID}', Index={tiData.simulatedWaypointIndex}, Reverse={tiData.simulatedFollowReverse}.", npcObject);
-                                   // Get the PathSO asset
-                                   PathSO pathSOToRestore = waypointManager?.GetPath(tiData.simulatedPathID);
-                                   if (pathSOToRestore != null)
-                                   {
-                                        // Call a new method on the PathFollowingHandler to restore state (Substep 4.5)
-                                        runner.PathFollowingHandler?.RestorePathProgress(pathSOToRestore, tiData.simulatedWaypointIndex, tiData.simulatedFollowReverse);
-                                   } else {
-                                        Debug.LogError($"PROXIMITY {tiData.Id}: PathSO '{tiData.simulatedPathID}' not found via WaypointManager during PathState activation restore! Cannot restore path progress. NPC will likely start path from beginning.", npcObject);
-                                        // The PathState.OnEnter will handle starting from the beginning (index 0) as a fallback.
-                                   }
-                              } else {
-                                   // Not mid-path simulation, PathState.OnEnter will handle starting from the beginning (index 0)
-                                   Debug.Log($"PROXIMITY {tiData.Id}: Activating into PathState, but not mid-path simulation. PathState.OnEnter will handle starting from beginning.", npcObject);
-                              }
-                         }
-                         // --- END NEW ---
-
 
                    }
                    else
@@ -930,7 +1160,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
                   } else
                   {
                       // This shouldn't happen if mapping and GetBasicStateSO work, but defensive
-                      Debug.LogError($"PROXIMITY {tiData.Id}: Could not get target Basic State SO for '{targetBasicState.GetType().Name}.{targetBasicState.ToString()}' during deactivation request. Cannot initialize simulation state data!", runner.gameObject);
+                      Debug.LogError($"PROXIMITY {tiData.Id}: Could not get target Basic State SO for '{targetBasicState.GetType().Name}.{targetBasicState.ToString() ?? "NULL"}' during deactivation request. Cannot initialize simulation state data!", runner.gameObject);
                       // Data might be left in a bad state, but proceed with pooling.
                   }
                   // --- END Call OnEnter ---
@@ -1183,7 +1413,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
                   Debug.LogError("TiNpcManager: GridManager not found. Cannot add dummy TI NPC data to the grid.", this);
                   // Continue loading data into allTiNpcs, but grid will be empty. Proximity/Simulation will fail.
              }
-             // --- NEW: Check WaypointManager for dummy path data initialization ---
+             // --- Check WaypointManager for dummy path data initialization ---
              if (waypointManager == null)
              {
                   Debug.LogWarning("TiNpcManager: WaypointManager not found. Dummy NPCs configured with BasicPathState will not have their path data initialized correctly.", this);
@@ -1208,82 +1438,147 @@ namespace Game.NPC.TI // Keep in the TI namespace
 
                   TiNpcData newNpcData = new TiNpcData(entry.id, entry.homePosition, entry.homeRotation);
 
-                  newNpcData.CurrentWorldPosition = newNpcData.HomePosition;
-                  newNpcData.CurrentWorldRotation = newNpcData.HomeRotation;
+                  // --- Assign schedule time ranges from dummy data ---
+                  newNpcData.startDay = entry.startDay;
+                  newNpcData.endDay = entry.endDay;
+                  // --- END NEW ---
 
-                  // --- Initialize with the specified Basic State from dummy data ---
-                   Enum initialBasicStateEnum = entry.initialBasicState; // Default to BasicState enum
+                  // --- NEW: Assign unique decision options from dummy data ---
+                  // Directly copy the serialized list from the dummy entry to the TiNpcData
+                  newNpcData.uniqueDecisionOptions.entries = new List<SerializableDecisionOptionDictionary.KeyValuePair>(entry.uniqueDecisionOptions.entries);
+                  // --- END NEW ---
 
-                   // --- NEW: Check if a BasicPathState is configured instead ---
-                   if (entry.initialBasicPathState != BasicPathState.None)
+                  // --- NEW: Assign intended day start behavior from dummy data (Step 3) ---
+                  // Assign the new toggle and path fields
+                  newNpcData.usePathForDayStart = entry.usePathForDayStart; // <-- NEW
+                  newNpcData.dayStartActiveStateEnumKey = entry.dayStartActiveStateEnumKey;
+                  newNpcData.dayStartActiveStateEnumType = entry.dayStartActiveStateEnumType;
+                  newNpcData.dayStartPathID = entry.dayStartPathID; // <-- NEW
+                  newNpcData.dayStartStartIndex = entry.dayStartStartIndex; // <-- NEW
+                  newNpcData.dayStartFollowReverse = entry.dayStartFollowReverse; // <-- NEW
+                  // --- END NEW ---
+
+
+                  // --- Determine Initial State based on Schedule (Step 3) ---
+                  Enum initialBasicStateEnum;
+                   // --- NEW: Check TimeManager dependency for initial state determination ---
+                   if (TimeManager.Instance == null)
                    {
-                       initialBasicStateEnum = entry.initialBasicPathState; // Use the BasicPathState if specified
-                       Debug.Log($"TiNpcManager: Dummy NPC '{entry.id}' configured with initial Basic Path State '{initialBasicStateEnum}'.");
+                       Debug.LogError($"TiNpcManager: TimeManager instance is null! Cannot determine initial state for dummy NPC '{entry.id}' based on schedule. Defaulting to BasicPatrol.", this);
+                       initialBasicStateEnum = BasicState.BasicPatrol; // Fallback if TimeManager is missing
+                   } else {
+                       DateTime currentTime = TimeManager.Instance.CurrentGameTime; // Get current game time
 
-                       // --- Initialize path simulation data if starting in a BasicPathState ---
-                       if (waypointManager != null && !string.IsNullOrWhiteSpace(entry.initialPathID))
+                       if (newNpcData.startDay.IsWithinRange(currentTime))
                        {
-                           PathSO initialPathSO = waypointManager.GetPath(entry.initialPathID);
-                           if (initialPathSO != null && entry.initialStartIndex >= 0 && entry.initialStartIndex < initialPathSO.WaypointCount)
-                           {
-                                newNpcData.simulatedPathID = entry.initialPathID;
-                                newNpcData.simulatedWaypointIndex = entry.initialStartIndex; // Start *at* this index
-                                newNpcData.simulatedFollowReverse = entry.initialFollowReverse;
-                                newNpcData.isFollowingPathBasic = true; // Flag as following a path
+                            // Day has started, determine initial state from the intended day start behavior
+                            // Use the refined property getter which handles path vs state logic
+                            Enum dayStartActiveState = newNpcData.DayStartActiveStateEnum; // <-- Use refined property
 
-                                // Set initial position to the start waypoint's position
-                                string startWaypointID = initialPathSO.GetWaypointID(entry.initialStartIndex);
-                                Transform startWaypointTransform = waypointManager.GetWaypointTransform(startWaypointID);
-                                if (startWaypointTransform != null)
-                                {
-                                     newNpcData.CurrentWorldPosition = startWaypointTransform.position;
-                                     // Simulate initial rotation towards the next waypoint
-                                     // Need to get the BasicPathStateSO to call its rotation helper or duplicate logic
-                                     // Let's duplicate the rotation logic here for initialization simplicity
-                                     int nextTargetIndex = newNpcData.simulatedFollowReverse ? newNpcData.simulatedWaypointIndex - 1 : newNpcData.simulatedWaypointIndex + 1;
-                                     bool hasNextWaypoint = newNpcData.simulatedFollowReverse ? (nextTargetIndex >= 0) : (nextTargetIndex < initialPathSO.WaypointCount);
-                                     if (hasNextWaypoint)
-                                     {
-                                          string nextTargetWaypointID = initialPathSO.GetWaypointID(nextTargetIndex);
-                                          Transform nextTargetTransform = waypointManager.GetWaypointTransform(nextTargetWaypointID);
-                                          if (nextTargetTransform != null)
-                                          {
-                                               Vector3 direction = (nextTargetTransform.position - newNpcData.CurrentWorldPosition).normalized;
-                                               if (direction.sqrMagnitude > 0.001f)
-                                               {
-                                                    newNpcData.CurrentWorldRotation = Quaternion.LookRotation(direction);
-                                               }
-                                          }
-                                     }
-                                }
-                                else
-                                {
-                                     Debug.LogError($"TiNpcManager: Dummy NPC '{entry.id}' configured with initial path '{entry.initialPathID}' (index {entry.initialStartIndex}), but start waypoint '{startWaypointID}' not found! Cannot initialize position. Falling back to BasicPatrol.", this);
-                                     initialBasicStateEnum = BasicState.BasicPatrol; // Fallback state
-                                     // Clear invalid path data
-                                     newNpcData.simulatedPathID = null;
-                                     newNpcData.simulatedWaypointIndex = -1;
-                                     newNpcData.simulatedFollowReverse = false;
-                                     newNpcData.isFollowingPathBasic = false;
-                                     newNpcData.CurrentWorldPosition = newNpcData.HomePosition; // Reset position
-                                     newNpcData.CurrentWorldRotation = newNpcData.HomeRotation; // Reset rotation
-                                }
+                            if (dayStartActiveState != null)
+                            {
+                                 initialBasicStateEnum = GetBasicStateFromActiveState(dayStartActiveState); // Map to Basic State
+                                 Debug.Log($"TiNpcManager: Dummy NPC '{entry.id}' day has started ({newNpcData.startDay}, Current Time: {currentTime:HH:mm}). Initial Basic State is mapped from Day Start Active State: '{initialBasicStateEnum?.GetType().Name}.{initialBasicStateEnum?.ToString() ?? "NULL"}'.", this);
+                                 // --- NEW: If starting in a BasicPathState, prime the simulation path data from the dayStart fields ---
+                                 // This logic uses the DayStart... fields directly from newNpcData.
+                                 if (initialBasicStateEnum != null && initialBasicStateEnum.Equals(BasicPathState.BasicFollowPath))
+                                 {
+                                      // Use the dayStart fields to initialize the simulated path data
+                                      newNpcData.simulatedPathID = newNpcData.DayStartPathID; // <-- Use DayStartPathID
+                                      newNpcData.simulatedWaypointIndex = newNpcData.DayStartStartIndex; // <-- Use DayStartStartIndex
+                                      newNpcData.simulatedFollowReverse = newNpcData.DayStartFollowReverse; // <-- Use DayStartFollowReverse
+                                      newNpcData.isFollowingPathBasic = true; // Flag as following a path simulation
+                                      Debug.Log($"TiNpcManager: Priming path simulation data for initial BasicPathState: PathID='{newNpcData.simulatedPathID}', Index={newNpcData.simulatedWaypointIndex}, Reverse={newNpcData.simulatedFollowReverse}.", this);
 
-                           } else {
-                                Debug.LogError($"TiNpcManager: Dummy NPC '{entry.id}' configured with initial path '{entry.initialPathID}' (index {entry.initialStartIndex}), but PathSO not found or index invalid! Cannot initialize path data. Falling back to BasicPatrol.", this);
-                                initialBasicStateEnum = BasicState.BasicPatrol; // Fallback state
-                                // Clear invalid path data
-                                newNpcData.simulatedPathID = null;
-                                newNpcData.simulatedWaypointIndex = -1;
-                                newNpcData.simulatedFollowReverse = false;
-                                newNpcData.isFollowingPathBasic = false;
-                           }
-                       } else if (entry.initialBasicPathState != BasicPathState.None)
-                       {
-                            Debug.LogWarning($"TiNpcManager: Dummy NPC '{entry.id}' configured with BasicPathState '{initialBasicStateEnum}', but no initial Path ID provided or WaypointManager is null. Cannot initialize path data. Falling back to BasicPatrol.", this);
-                            initialBasicStateEnum = BasicState.BasicPatrol; // Fallback state
+                                       // Set initial position to the start waypoint's position if path data is valid
+                                       if (waypointManager != null && !string.IsNullOrWhiteSpace(newNpcData.simulatedPathID) && newNpcData.simulatedWaypointIndex >= 0)
+                                       {
+                                            PathSO initialPathSO = waypointManager.GetPath(newNpcData.simulatedPathID);
+                                            if (initialPathSO != null && newNpcData.simulatedWaypointIndex < initialPathSO.WaypointCount)
+                                            {
+                                                 string startWaypointID = initialPathSO.GetWaypointID(newNpcData.simulatedWaypointIndex);
+                                                 Transform startWaypointTransform = waypointManager.GetWaypointTransform(startWaypointID);
+                                                 if (startWaypointTransform != null)
+                                                 {
+                                                      newNpcData.CurrentWorldPosition = startWaypointTransform.position;
+                                                      // Simulate initial rotation towards the next waypoint (duplicate logic from BasicPathStateSO.OnEnter)
+                                                      int nextTargetIndex = newNpcData.simulatedFollowReverse ? newNpcData.simulatedWaypointIndex - 1 : newNpcData.simulatedWaypointIndex + 1;
+                                                      bool hasNextWaypoint = newNpcData.simulatedFollowReverse ? (nextTargetIndex >= 0) : (nextTargetIndex < initialPathSO.WaypointCount);
+                                                      if (hasNextWaypoint)
+                                                      {
+                                                           string nextTargetWaypointID = initialPathSO.GetWaypointID(nextTargetIndex);
+                                                           Transform nextTargetTransform = waypointManager.GetWaypointTransform(nextTargetWaypointID);
+                                                           if (nextTargetTransform != null)
+                                                           {
+                                                                Vector3 direction = (nextTargetTransform.position - newNpcData.CurrentWorldPosition).normalized;
+                                                                if (direction.sqrMagnitude > 0.001f)
+                                                                {
+                                                                     newNpcData.CurrentWorldRotation = Quaternion.LookRotation(direction);
+                                                                }
+                                                           }
+                                                      }
+                                                      Debug.Log($"TiNpcManager: Initialized position for dummy NPC '{entry.id}' to path start waypoint {newNpcData.CurrentWorldPosition}.", this);
+                                                 }
+                                                 else
+                                                 {
+                                                      Debug.LogError($"TiNpcManager: Start waypoint '{startWaypointID}' for initial path '{newNpcData.simulatedPathID}' not found during dummy load! Cannot initialize position. Falling back to BasicPatrol.", this);
+                                                      initialBasicStateEnum = BasicState.BasicPatrol; // Fallback state
+                                                      // Clear invalid path data
+                                                      newNpcData.simulatedPathID = null;
+                                                      newNpcData.simulatedWaypointIndex = -1;
+                                                      newNpcData.simulatedFollowReverse = false;
+                                                      newNpcData.isFollowingPathBasic = false;
+                                                      newNpcData.CurrentWorldPosition = newNpcData.HomePosition; // Reset position
+                                                      newNpcData.CurrentWorldRotation = newNpcData.HomeRotation; // Reset rotation
+                                                 }
+                                            } else {
+                                                 Debug.LogError($"TiNpcManager: Initial PathSO '{newNpcData.simulatedPathID}' not found or index {newNpcData.simulatedWaypointIndex} invalid during dummy load! Cannot initialize path data. Falling back to BasicPatrol.", this);
+                                                 initialBasicStateEnum = BasicState.BasicPatrol; // Fallback state
+                                                 // Clear invalid path data
+                                                 newNpcData.simulatedPathID = null;
+                                                 newNpcData.simulatedWaypointIndex = -1;
+                                                 newNpcData.simulatedFollowReverse = false;
+                                                 newNpcData.isFollowingPathBasic = false;
+                                            }
+                                       } else {
+                                            Debug.LogWarning($"TiNpcManager: Dummy NPC '{entry.id}' configured with BasicPathState but missing Path ID or WaypointManager is null. Cannot initialize path data. Falling back to BasicPatrol.", this);
+                                            initialBasicStateEnum = BasicState.BasicPatrol; // Fallback state
+                                       }
+                                 } else {
+                                      // If not starting in a path state, ensure path simulation data is cleared
+                                      newNpcData.simulatedPathID = null;
+                                      newNpcData.simulatedWaypointIndex = -1;
+                                      newNpcData.simulatedFollowReverse = false;
+                                      newNpcData.isFollowingPathBasic = false;
+                                      // Position and rotation should be set by the state's OnEnter later
+                                 }
+                                 // --- END NEW ---
+                            } else {
+                                 // Day start state config is invalid, fallback
+                                 // This happens if usePathForDayStart is false but key/type are empty, OR
+                                 // if usePathForDayStart is true but PathState.FollowPath cannot be parsed.
+                                 Debug.LogError($"TiNpcManager: Dummy NPC '{entry.id}' day has started, but Day Start Active State config is null or invalid! Falling back to BasicPatrol. Check Day Start configuration in Dummy Data.", this); // Added more specific error message
+                                 initialBasicStateEnum = BasicState.BasicPatrol;
+                                 // Ensure path simulation data is cleared on fallback
+                                 newNpcData.simulatedPathID = null;
+                                 newNpcData.simulatedWaypointIndex = -1;
+                                 newNpcData.simulatedFollowReverse = false;
+                                 newNpcData.isFollowingPathBasic = false;
+                             }
+                       } else {
+                            // Day has NOT started, initial state is BasicIdleAtHome
+                            Debug.Log($"TiNpcManager: Dummy NPC '{entry.id}' day has NOT started ({newNpcData.startDay}, Current Time: {currentTime:HH:mm}). Initial Basic State is BasicIdleAtHome.", this);
+                            initialBasicStateEnum = BasicState.BasicIdleAtHome;
+                            // Ensure position/rotation is home and simulation data is cleared when starting in BasicIdleAtHome
+                            newNpcData.CurrentWorldPosition = newNpcData.HomePosition;
+                            newNpcData.CurrentWorldRotation = newNpcData.HomeRotation;
+                            newNpcData.simulatedTargetPosition = null;
+                            newNpcData.simulatedStateTimer = 0f;
+                            newNpcData.simulatedPathID = null;
+                            newNpcData.simulatedWaypointIndex = -1;
+                            newNpcData.simulatedFollowReverse = false;
+                            newNpcData.isFollowingPathBasic = false;
                        }
-                       // Note: If falling back to BasicPatrol, the BasicPatrolStateSO.OnEnter will handle its own initialization.
                    }
                    // --- END NEW ---
 
@@ -1301,9 +1596,18 @@ namespace Game.NPC.TI // Keep in the TI namespace
                    // Call the OnEnter for this initial basic state immediately to set up simulation data (timer, target)
                    // This replicates the OnEnter call that would happen if the NPC transitioned into this state.
                    // Note: BasicPathStateSO.OnEnter handles its own initialization based on isFollowingPathBasic flag.
-                   initialStateSO.OnEnter(newNpcData, basicNpcStateManager); // Pass the data and the manager
+                   // We only need to call OnEnter if the state is NOT BasicIdleAtHome, because BasicIdleAtHome.OnEnter
+                   // has already been implicitly handled by setting position/rotation to home and clearing targets above.
+                   // Calling it again would just re-log the same thing.
+                   if (!initialBasicStateEnum.Equals(BasicState.BasicIdleAtHome)) // <-- NEW: Only call OnEnter if not BasicIdleAtHome
+                   {
+                        initialStateSO.OnEnter(newNpcData, basicNpcStateManager); // Pass the data and the manager
+                   }
+                   // --- END NEW ---
+
 
                   // Flags and GameObject link are initialized in the TiNpcData constructor (isActiveGameObject=false, NpcGameObject=null)
+                  // isEndingDay is also initialized in the constructor (false)
 
                   allTiNpcs.Add(newNpcData.Id, newNpcData);
 
@@ -1311,9 +1615,9 @@ namespace Game.NPC.TI // Keep in the TI namespace
                   if (gridManager != null)
                   {
                       gridManager.AddItem(newNpcData, newNpcData.CurrentWorldPosition);
-                      Debug.Log($"TiNpcManager: Loaded dummy NPC '{newNpcData.Id}' with initial Basic State '{initialBasicStateEnum}'. Simulation timer initialized to {newNpcData.simulatedStateTimer:F2}s, Target: {newNpcData.simulatedTargetPosition?.ToString() ?? "NULL"}. Path Data: Following={newNpcData.isFollowingPathBasic}, ID='{newNpcData.simulatedPathID}', Index={newNpcData.simulatedWaypointIndex}, Reverse={newNpcData.simulatedFollowReverse}. Added to grid.", this); // Updated log
+                      Debug.Log($"TiNpcManager: Loaded dummy NPC '{newNpcData.Id}' with initial Basic State '{initialBasicStateEnum}'. Schedule: {newNpcData.startDay} to {newNpcData.endDay}. Unique Options: {newNpcData.uniqueDecisionOptions.entries.Count}. Simulation timer initialized to {newNpcData.simulatedStateTimer:F2}s, Target: {newNpcData.simulatedTargetPosition?.ToString() ?? "NULL"}. Path Data: Following={newNpcData.isFollowingPathBasic}, ID='{newNpcData.simulatedPathID}', Index={newNpcData.simulatedWaypointIndex}, Reverse={newNpcData.simulatedFollowReverse}. Added to grid.", this); // Updated log
                   } else {
-                       Debug.Log($"TiNpcManager: Loaded dummy NPC '{newNpcData.Id}' with initial Basic State '{initialBasicStateEnum}'. Simulation timer initialized to {newNpcData.simulatedStateTimer:F2}s, Target: {newNpcData.simulatedTargetPosition?.ToString() ?? "NULL"}. Path Data: Following={newNpcData.isFollowingPathBasic}, ID='{newNpcData.simulatedPathID}', Index={newNpcData.simulatedWaypointIndex}, Reverse={newNpcData.simulatedFollowReverse}. GridManager is null, NOT added to grid.", this); // Updated log
+                       Debug.Log($"TiNpcManager: Loaded dummy NPC '{newNpcData.Id}' with initial Basic State '{initialBasicStateEnum}'. Schedule: {newNpcData.startDay} to {newNpcData.endDay}. Unique Options: {newNpcData.uniqueDecisionOptions.entries.Count}. Simulation timer initialized to {newNpcData.simulatedStateTimer:F2}s, Target: {newNpcData.simulatedTargetPosition?.ToString() ?? "NULL"}. Path Data: Following={newNpcData.isFollowingPathBasic}, ID='{newNpcData.simulatedPathID}', Index={newNpcData.simulatedWaypointIndex}, Reverse={newNpcData.simulatedFollowReverse}. GridManager is null, NOT added to grid.", this); // Updated log
                   }
              }
         }

@@ -4,8 +4,9 @@ using UnityEngine;
 using System.Collections.Generic;
 using System; // Needed for System.Enum, Type
 using Game.NPC.TI; // Needed for TiNpcData, TiNpcManager
-using Game.NPC.BasicStates; // Needed for BasicState enum, BasicNpcStateSO
+using Game.NPC.BasicStates; // Needed for BasicState enum, BasicPathState enum, BasicNpcStateSO
 using System.Linq; // Needed for ToDictionary
+using Game.Spatial; // Needed for GridManager // <-- ADDED using directive
 
 namespace Game.NPC.BasicStates // Place Basic State Manager in the Basic States namespace
 {
@@ -29,6 +30,10 @@ namespace Game.NPC.BasicStates // Place Basic State Manager in the Basic States 
         // Reference to the TiNpcManager (needed for state lookups etc.)
         // This reference will be obtained in Awake/Start
         private TiNpcManager tiNpcManager;
+
+        // Reference to GridManager (needed for updating position during simulation)
+        // This reference will be obtained in Awake/Start
+        private GridManager gridManager; // <-- ADDED GridManager reference
 
 
         private void Awake()
@@ -61,13 +66,23 @@ namespace Game.NPC.BasicStates // Place Basic State Manager in the Basic States 
 
         private void Start()
         {
-            // Get reference to the TiNpcManager
+             // Get reference to the TiNpcManager
              tiNpcManager = TiNpcManager.Instance;
              if (tiNpcManager == null)
              {
                   Debug.LogError("BasicNpcStateManager: TiNpcManager instance not found! Cannot simulate TI NPCs. Ensure TiNpcManager is in the scene.", this);
                   // Do NOT disable the manager entirely, just simulation won't work.
              }
+
+             // --- GET GridManager reference ---
+             gridManager = GridManager.Instance;
+             if (gridManager == null)
+             {
+                  Debug.LogError("BasicNpcStateManager: GridManager instance not found! Cannot update grid position during simulation. Ensure GridManager is in the scene.", this);
+                  // Simulation will still run, but grid won't be updated, leading to the reported issue.
+             }
+             // --- END GET ---
+
 
              Debug.Log("BasicNpcStateManager: Start completed.");
         }
@@ -196,6 +211,11 @@ namespace Game.NPC.BasicStates // Place Basic State Manager in the Basic States 
                 return; // Exit tick processing for this NPC this frame
             }
 
+             // --- Capture position BEFORE simulation tick ---
+             Vector3 oldPosition = data.CurrentWorldPosition;
+             // --- END Capture ---
+
+
             // --- Handle Timeout Logic ---
             if (currentStateSO.ShouldUseTimeout)
             {
@@ -223,6 +243,23 @@ namespace Game.NPC.BasicStates // Place Basic State Manager in the Basic States 
             // and set timer to Random.Range() when it arrives.
             currentStateSO.SimulateTick(data, deltaTime, this);
             // --- END Execution ---
+
+            // --- Update Grid Position AFTER simulation tick if position changed ---
+            Vector3 newPosition = data.CurrentWorldPosition;
+            // Check if position actually changed before calling grid update
+            // Using a small tolerance for floating point comparison
+            if (Vector3.SqrMagnitude(newPosition - oldPosition) > 0.001f * 0.001f) // Check squared magnitude against a small threshold
+            {
+                 if (gridManager != null)
+                 {
+                      // Update the item's position in the grid
+                      gridManager.UpdateItemPosition(data, oldPosition, newPosition);
+                      // Debug.Log($"SIM {data.Id}: Position changed from {oldPosition} to {newPosition}. Updated grid.", data.NpcGameObject); // Too noisy
+                 } else {
+                      Debug.LogWarning($"SIM {data.Id}: GridManager is null! Cannot update grid position after simulation tick.", data.NpcGameObject);
+                 }
+            }
+            // --- END Update Grid ---
         }
 
         /// <summary>

@@ -15,7 +15,8 @@ namespace Game.NPC.BasicStates
         BasicEnteringStore,     // Simulates movement towards the first store point
         BasicBrowse,            // Simulates browsing at a store location
         BasicWaitForCashier,    // Simulates waiting in a queue or at the register
-        BasicExitingStore       // Simulates movement towards an exit point
+        BasicExitingStore,       // Simulates movement towards an exit point
+        BasicIdleAtHome,
         // Add other basic states as needed in the future
     }
 }

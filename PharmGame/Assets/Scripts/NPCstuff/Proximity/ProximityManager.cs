@@ -1,3 +1,5 @@
+// --- START OF FILE ProximityManager.cs ---
+
 using UnityEngine;
 using System.Collections.Generic;
 using System.Collections; // Needed for Coroutine
@@ -7,6 +9,7 @@ using System; // Needed for Enum
 using Game.NPC; // Needed for NpcStateMachineRunner
 using Game.NPC.States; // Needed for NpcStateSO
 using System.Linq; // Added for Where
+using Game.Utilities; // Needed for TimeRange // <-- NEW: Added using directive
 
 namespace Game.Proximity
 {
@@ -16,6 +19,7 @@ namespace Game.Proximity
     /// activation, deactivation, and update throttling based on zone transitions.
     /// Relies on GridManager for efficient spatial queries.
     /// Now also manages the ticking of active NPCs in Near and Moderate zones, and handles interrupted NPCs.
+    /// Integrates time-based scheduling for activation.
     /// </summary>
     public class ProximityManager : MonoBehaviour
     {
@@ -29,6 +33,9 @@ namespace Game.Proximity
         private TiNpcManager tiNpcManager;
         // Reference to GridManager (will be obtained in Awake/Start)
         private GridManager gridManager;
+        // Reference to ProximityManager (will be obtained in Awake/Start)
+        // private ProximityManager proximityManager; // Removed self-reference, use Instance
+
 
         [Header("Proximity Settings")]
         [Tooltip("The radius around the player for the 'Near' zone (full updates).")]
@@ -214,6 +221,7 @@ namespace Game.Proximity
 
         /// <summary>
         /// The periodic routine that checks NPC proximity to the player and updates their zones.
+        /// Also handles time-based activation/deactivation checks.
         /// </summary>
         private IEnumerator ProximityCheckRoutine()
         {
@@ -233,6 +241,15 @@ namespace Game.Proximity
                       yield return new WaitForSeconds(proximityCheckInterval * 5);
                       continue; // Cannot proceed
                  }
+                 // --- NEW: Check TimeManager dependency ---
+                 if (TimeManager.Instance == null)
+                 {
+                      Debug.LogError("ProximityManager: TimeManager instance is null! Cannot perform time-based scheduling checks.", this);
+                      yield return new WaitForSeconds(proximityCheckInterval * 5);
+                      continue; // Cannot proceed
+                 }
+                 DateTime currentTime = TimeManager.Instance.CurrentGameTime; // Get current game time
+                 // --- END NEW ---
 
 
                 Vector3 playerPosition = playerTransform.position;
@@ -324,10 +341,23 @@ namespace Game.Proximity
                         // Transition from Far to Moderate or Near -> ACTIVATE
                         if (previousZone == ProximityZone.Far && (currentZone == ProximityZone.Moderate || currentZone == ProximityZone.Near))
                         {
-                            Debug.Log($"PROXIMITY {tiData.Id}: Triggering Activation.");
-                            tiNpcManager.RequestActivateTiNpc(tiData);
-                            // The runner will be available *after* RequestActivateTiNpc returns and the object is pooled.
-                            // We'll add the runner to the list below after the main transition logic.
+                            // --- NEW: Check if within startDay schedule before activating ---
+                            if (tiData.startDay.IsWithinRange(currentTime))
+                            {
+                                Debug.Log($"PROXIMITY {tiData.Id}: Triggering Activation (Within startDay schedule {tiData.startDay}).");
+                                tiNpcManager.RequestActivateTiNpc(tiData);
+                                // The runner will be available *after* RequestActivateTiNpc returns and the object is pooled.
+                                // We'll add the runner to the list below after the main transition logic.
+                            }
+                            else
+                            {
+                                // NPC is within proximity but outside their schedule. Keep them inactive/Far.
+                                Debug.Log($"PROXIMITY {tiData.Id}: Skipping Activation. Outside startDay schedule {tiData.startDay} (Current Time: {currentTime:HH:mm}).", tiData.NpcGameObject);
+                                // Keep currentZone as Far in the tracking dictionary for this NPC
+                                npcProximityZones[tiData] = ProximityZone.Far; // Explicitly ensure it stays Far in tracking
+                                continue; // Skip further processing for this NPC this tick
+                            }
+                            // --- END NEW ---
                         }
                         // Transition from Moderate or Near to Far -> DEACTIVATE
                         else if ((previousZone == ProximityZone.Moderate || previousZone == ProximityZone.Near) && currentZone == ProximityZone.Far)
@@ -387,15 +417,41 @@ namespace Game.Proximity
                         // --- END PHASE 2.3 & 3.2 LOGIC ---
                     }
 
-                    // Update the tracked zone *after* processing transitions (unless deactivation was blocked by state)
-                    npcProximityZones[tiData] = currentZone;
+                    // Update the tracked zone *after* processing transitions (unless deactivation was blocked by state or schedule)
+                    // Ensure we only update if we didn't skip processing this NPC
+                    if (npcsToProcess.Contains(tiData)) // Check if we are still processing this NPC
+                    {
+                         npcProximityZones[tiData] = currentZone;
+                    }
+
+
+                    // --- NEW: Check endDay schedule for active/simulated NPCs ---
+                    // This check happens regardless of zone transition, for NPCs currently tracked
+                    if (tiData.IsActiveGameObject || (npcProximityZones.TryGetValue(tiData, out ProximityZone trackedZone) && trackedZone != ProximityZone.Far))
+                    {
+                         bool shouldEndDay = tiData.endDay.IsWithinRange(currentTime);
+                         if (shouldEndDay && !tiData.isEndingDay)
+                         {
+                              Debug.Log($"PROXIMITY {tiData.Id}: Entered endDay schedule {tiData.endDay} (Current Time: {currentTime:HH:mm}). Setting isEndingDay flag to true.", tiData.NpcGameObject);
+                              tiData.isEndingDay = true; // Set the flag
+                         }
+                         else if (!shouldEndDay && tiData.isEndingDay)
+                         {
+                              Debug.Log($"PROXIMITY {tiData.Id}: Exited endDay schedule {tiData.endDay} (Current Time: {currentTime:HH:mm}). Setting isEndingDay flag to false.", tiData.NpcGameObject);
+                              tiData.isEndingDay = false; // Clear the flag
+                         }
+                    }
+                    // --- END NEW ---
+
 
                     // --- NEW: Add newly activated runners to the lists ---
                     // This handles the case where Far -> Near/Moderate activation just happened.
                     // The runner should now exist and be linked.
-                    if (previousZone == ProximityZone.Far && (currentZone == ProximityZone.Moderate || currentZone == ProximityZone.Near))
+                    // This needs to happen *after* RequestActivateTiNpc and the tiData.LinkGameObject call.
+                    // We also need to check if the activation was *not* skipped due to schedule.
+                    if (previousZone == ProximityZone.Far && (currentZone == ProximityZone.Moderate || currentZone == ProximityZone.Near) && tiData.IsActiveGameObject && tiData.NpcGameObject != null) // Check if activation actually happened
                     {
-                         NpcStateMachineRunner runner = tiData.NpcGameObject?.GetComponent<NpcStateMachineRunner>();
+                         NpcStateMachineRunner runner = tiData.NpcGameObject.GetComponent<NpcStateMachineRunner>(); // Get the runner from the newly linked GO
                          if (runner != null)
                          {
                               if (currentZone == ProximityZone.Near) runnersToAddNear.Add(runner);
@@ -518,7 +574,7 @@ namespace Game.Proximity
                 }
 
                 // Advance the index by the batch size
-                moderateTickIndex += moderateBatchSize; // Use moderateBatchSize field
+                moderateTickIndex += moderateBatchSize; // Use the actual batch size processed
 
                 // Wrap the index again based on the current total count (it might have changed)
                 totalModerateCount = activeModerateRunners.Count; // Re-get count
@@ -700,3 +756,4 @@ namespace Game.Proximity
         // --- END DEBUG ---
     }
 }
+// --- END OF FILE ProximityManager.cs ---
