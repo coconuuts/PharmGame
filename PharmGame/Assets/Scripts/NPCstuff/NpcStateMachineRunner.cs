@@ -1,4 +1,4 @@
-// --- START OF FILE NpcStateMachineRunner.cs (Modified) ---
+// --- START OF FILE NpcStateMachineRunner.cs (Modified for Generic Path) ---
 
 using UnityEngine;
 using System.Collections.Generic;
@@ -24,6 +24,7 @@ namespace Game.NPC
      /// Creates and provides the NpcStateContext to executing states.
      /// Can represent a transient customer or an active True Identity NPC.
      /// MODIFIED: Populates TiNpcManager reference in NpcStateContext.
+     /// ADDED: Temporary fields and method to pass path data to the generic PathStateSO.
      /// </summary>
      [RequireComponent(typeof(NpcMovementHandler))] // Ensure handlers are attached
      [RequireComponent(typeof(NpcAnimationHandler))]
@@ -126,11 +127,23 @@ namespace Game.NPC
           private bool isInterpolatingRotation; // Separate flag for rotation
 
           // --- Temporary storage for active path progress when interrupted ---
+          // These fields are used by NpcInterruptionHandler to save/restore path state.
+          // PathStateSO.OnEnter also reads these if wasInterruptedFromPathState is true.
           internal string interruptedPathID;
           internal int interruptedWaypointIndex = -1;
           internal bool interruptedFollowReverse = false;
           internal bool wasInterruptedFromPathState = false; // Flag to indicate interruption from PathState
           // --- END Temporary storage ---
+
+          // --- Temporary storage for path data when transitioning to generic PathState ---
+          // These fields are set by the caller (e.g., another state, TiNpcManager)
+          // just before requesting a transition to PathState.FollowPath.
+          // The generic PathStateSO.OnEnter reads these fields.
+          internal PathSO tempPathSO; // <-- NEW FIELD
+          internal int tempStartIndex; // <-- NEW FIELD
+          internal bool tempFollowReverse; // <-- NEW FIELD
+          // --- END Temporary storage for generic path transition ---
+
 
           private void Awake()
           {
@@ -188,6 +201,13 @@ namespace Game.NPC
                interpolationDuration = 0f;
                isInterpolatingPosition = false;
                isInterpolatingRotation = false;
+
+               // --- Initialize temporary path fields ---
+               tempPathSO = null; // <-- Initialize
+               tempStartIndex = 0; // <-- Initialize
+               tempFollowReverse = false; // <-- Initialize
+               // --- END Initialize temporary path fields ---
+
 
                Debug.Log($"{gameObject.name}: NpcStateMachineRunner Awake completed.");
           }
@@ -358,8 +378,8 @@ namespace Game.NPC
                    ProximityManager.ProximityZone currentZone = ProximityManager.Instance.GetNpcProximityZone(TiData);
                    // Check if currently interrupted
                    bool isCurrentlyInterrupted = interruptionHandler.IsInterrupted();
-                   // Check if currently active customer
-                   bool isInsideStore = Manager.IsTiNpcInsideStore(TiData);
+                   // Check if currently active customer (implies they are inside the store area)
+                   bool isInsideStore = Manager.IsTiNpcInsideStore(TiData); // Assuming CustomerManager has this method
 
                    // If Near or Interrupted, tick core logic every frame
                     if (currentZone == ProximityManager.ProximityZone.Near || isCurrentlyInterrupted || (IsTrueIdentityNpc && isInsideStore))
@@ -511,13 +531,14 @@ namespace Game.NPC
                this.Manager = manager;
                // Context Manager will be set in Update/TransitionToState before use
 
-               ResetRunnerTransientData(); // Resets handlers
+               ResetRunnerTransientData(); // Resets handlers and temporary path fields
 
                // Transient NPCs are always Near/Full update mode initially
                // REMOVED: SetUpdateMode(ProximityManager.ProximityZone.Near); // Set initial mode for transient
 
                queueHandler?.Initialize(this.Manager);
                // PathFollowingHandler doesn't need Initialize with Manager currently
+
 
                if (MovementHandler != null && MovementHandler.Agent != null)
                {
@@ -528,7 +549,7 @@ namespace Game.NPC
                     {
                          Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Warped to {startPosition} using MovementHandler.");
                          // After warp, ensure interpolation is off
-                         isInterpolatingPosition = false; 
+                         isInterpolatingPosition = false;
                          isInterpolatingRotation = false;
                     }
                     else
@@ -598,7 +619,7 @@ namespace Game.NPC
                               // Note: TiNpcManager.ActivateTiNpc should have already updated the grid with this position
                          }
                          // After warp, ensure interpolation is off
-                         isInterpolatingPosition = false; 
+                         isInterpolatingPosition = false;
                          isInterpolatingRotation = false;
                     }
                     else
@@ -641,6 +662,13 @@ namespace Game.NPC
                     // Populate TiData and TiNpcManager in context BEFORE TransitionToState
                     _stateContext.TiData = TiData;
                     _stateContext.TiNpcManager = tiNpcManager; // <-- Populate TiNpcManager in context
+
+                    // Note: If the startingState is PathState.FollowPath, TiNpcManager.RequestActivateTiNpc
+                    // should have already primed the tiData.simulated... fields if resuming a path sim,
+                    // or the tiData.DayStart... fields if starting a day path.
+                    // PathStateSO.OnEnter will read from tiData or runner.temp fields.
+                    // No need to call PreparePathTransition here for activation, as PathStateSO.OnEnter
+                    // has special logic for reading from TiData directly when IsTrueIdentityNpc is true.
 
                     TransitionToState(startingState);
                }
@@ -721,6 +749,12 @@ namespace Game.NPC
                interruptedFollowReverse = false;
                wasInterruptedFromPathState = false;
 
+               // --- Reset temporary path fields ---
+               tempPathSO = null; // <-- Reset
+               tempStartIndex = 0; // <-- Reset
+               tempFollowReverse = false; // <-- Reset
+               // --- END Reset temporary path fields ---
+
 
                if (!IsTrueIdentityNpc)
                {
@@ -729,7 +763,7 @@ namespace Game.NPC
 
                interruptionHandler?.Reset();
                queueHandler?.Reset();
-               npcPathFollowingHandler?.Reset(); 
+               npcPathFollowingHandler?.Reset();
 
                Debug.Log($"{gameObject.name}: NpcStateMachineRunner transient data reset, including handlers.");
           }
@@ -869,6 +903,41 @@ namespace Game.NPC
                NpcStateSO nextState = GetStateSO(targetEnum);
 
                TransitionToState(nextState);
+          }
+
+          /// <summary>
+          /// Prepares the Runner with path data for the *next* transition,
+          /// assuming the next state will be the generic PathState.FollowPath.
+          /// This data is read by PathStateSO.OnEnter when starting a new path.
+          /// </summary>
+          /// <param name="path">The PathSO to follow.</param>
+          /// <param name="startIndex">The index of the waypoint to start from.</param>
+          /// <param name="reverse">Whether to follow the path in reverse.</param>
+          public void PreparePathTransition(PathSO path, int startIndex, bool reverse) // <-- NEW METHOD
+          {
+               if (path == null)
+               {
+                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): PreparePathTransition called with a null PathSO!", this);
+                    // Clear existing temp data on error
+                    tempPathSO = null;
+                    tempStartIndex = 0;
+                    tempFollowReverse = false;
+                    return;
+               }
+               if (startIndex < 0 || startIndex >= path.WaypointCount)
+               {
+                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): PreparePathTransition called with invalid startIndex {startIndex} for path '{path.PathID}' (WaypointCount: {path.WaypointCount})!", this);
+                     // Clear existing temp data on error
+                    tempPathSO = null;
+                    tempStartIndex = 0;
+                    tempFollowReverse = false;
+                    return;
+               }
+
+               tempPathSO = path;
+               tempStartIndex = startIndex;
+               tempFollowReverse = reverse;
+               // Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Prepared path transition data for path '{path.PathID}', start index {startIndex}, reverse {reverse}.", this); // Too noisy
           }
 
 
@@ -1141,4 +1210,4 @@ namespace Game.NPC
      }
 }
 
-// --- END OF FILE NpcStateMachineRunner.cs (Modified) ---
+// --- END OF FILE NpcStateMachineRunner.cs (Modified for Generic Path) ---

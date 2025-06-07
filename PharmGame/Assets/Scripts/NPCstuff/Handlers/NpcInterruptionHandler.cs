@@ -109,7 +109,7 @@ namespace Game.NPC.Handlers // Placing handlers together
                     if (currentStateSO.HandledState != null && currentStateSO.HandledState.Equals(PathState.FollowPath) && runner.PathFollowingHandler != null && runner.PathFollowingHandler.IsFollowingPath)
                          {
                               Debug.Log($"{runner.gameObject.name}: Interrupted from PathState. Saving active path progress temporarily.", runner.gameObject);
-                              runner.interruptedPathID = runner.PathFollowingHandler.GetCurrentPathID();
+                              runner.interruptedPathID = runner.PathFollowingHandler.GetCurrentPathSO()?.PathID;
                               runner.interruptedWaypointIndex = runner.PathFollowingHandler.GetCurrentTargetWaypointIndex();
                               runner.interruptedFollowReverse = runner.PathFollowingHandler.GetFollowReverse();
                               runner.wasInterruptedFromPathState = true; // Set the flag

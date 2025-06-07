@@ -1214,6 +1214,51 @@ MonoBehaviour:
   volume: {fileID: 986335654}
   skyboxMaterial: {fileID: 2100000, guid: d7e0b043f024cb842a15ecfd51fbe487, type: 2}
   timeSettings: {fileID: 11400000, guid: 809dc195db61d5e478860b1b2b7c313a, type: 2}
+--- !u!1 &101631595
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 101631596}
+  - component: {fileID: 101631597}
+  m_Layer: 0
+  m_Name: P2P
+  m_TagString: Waypoint
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &101631596
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 101631595}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -10.93, y: 0, z: 3.27}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 652145980}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &101631597
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 101631595}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d6c2e8012a351664e9fa6721903ae4f6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  id: P2P
 --- !u!1 &105677563 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 6892696334404131044, guid: 8202459e60c16e64a96afbd191a02aa8, type: 3}
@@ -6617,6 +6662,7 @@ Transform:
   - {fileID: 969715660}
   - {fileID: 671516359}
   - {fileID: 2147373147}
+  - {fileID: 101631596}
   m_Father: {fileID: 763258581}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &653167264 stripped
@@ -7635,7 +7681,7 @@ MonoBehaviour:
     startDay:
       startHour: 7
       startMinute: 0
-      endHour: 8
+      endHour: 19
       endMinute: 0
     endDay:
       startHour: 20
@@ -7730,7 +7776,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   pathAssets:
   - {fileID: 11400000, guid: eb4044d295a495c4d9e4becc20f0a80c, type: 2}
-  decisionPointAssets: []
+  decisionPointAssets:
+  - {fileID: 11400000, guid: 6618bfb237a71b7418269a31a67a4727, type: 2}
   waypointTag: Waypoint
 --- !u!1 &765084589
 GameObject:

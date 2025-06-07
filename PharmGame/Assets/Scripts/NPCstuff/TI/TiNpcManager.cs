@@ -1,3 +1,5 @@
+// --- START OF FILE TiNpcManager.cs (Modified for Generic Path Activation) ---
+
 using UnityEngine;
 using System.Collections.Generic;
 using System.Linq; // Needed for LINQ (Where, FirstOrDefault)
@@ -27,6 +29,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
     /// Uses a single collection of data records and filters on the fly.
     /// Now includes mappings for path following states, loads schedule time ranges,
     /// loads unique decision options, and configures intended day start behavior.
+    /// MODIFIED: Updated activation logic for generic PathState.FollowPath.
     /// </summary>
     public class TiNpcManager : MonoBehaviour
     {
@@ -353,7 +356,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
 
              // --- Basic Path State Mapping ---
              basicToActiveStateMap[BasicPathState.BasicFollowPath] = PathState.FollowPath;
-             
+
              Debug.Log($"TiNpcManager: State mappings setup. Active->Basic: {activeToBaseStateMap.Count}, Basic->Active: {basicToActiveStateMap.Count}");
         }
 
@@ -611,9 +614,9 @@ namespace Game.NPC.TI // Keep in the TI namespace
                                           if (dayStartBasicState.Equals(BasicPathState.BasicFollowPath))
                                           {
                                                // Use the dayStart fields to initialize the simulated path data
-                                               npcData.simulatedPathID = npcData.DayStartPathID;
-                                               npcData.simulatedWaypointIndex = npcData.DayStartStartIndex; // Start *at* this index, the BasicPathStateSO.OnEnter will target the next one
-                                               npcData.simulatedFollowReverse = npcData.DayStartFollowReverse;
+                                               npcData.simulatedPathID = npcData.DayStartPathID; // <-- Use DayStartPathID
+                                               npcData.simulatedWaypointIndex = npcData.DayStartStartIndex; // <-- Use DayStartStartIndex
+                                               npcData.simulatedFollowReverse = npcData.DayStartFollowReverse; // <-- Use DayStartFollowReverse
                                                npcData.isFollowingPathBasic = true; // Flag as following a path simulation
                                                Debug.Log($"SIM {npcData.Id}: Priming path simulation data for BasicPathState transition: PathID='{npcData.simulatedPathID}', Index={npcData.simulatedWaypointIndex}, Reverse={npcData.simulatedFollowReverse}.", npcData.NpcGameObject);
                                           } else {
@@ -659,7 +662,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
                        // --- END DELEGATION ---
 
                        countProcessedThisTick++;
-                  }
+                   }
 
                   // Advance the simulation index by the number of NPCs *actually processed* in this batch.
                   // This must be done *after* iterating the batch.
@@ -686,7 +689,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
          /// Called by ProximityManager.
          /// </summary>
          /// <param name="tiData">The persistent data of the NPC to activate.</param>
-         public void RequestActivateTiNpc(TiNpcData tiData) 
+         public void RequestActivateTiNpc(TiNpcData tiData)
          {
                // Check if it's genuinely inactive before proceeding
               if (tiData == null || tiData.IsActiveGameObject || tiData.NpcGameObject != null)
@@ -740,42 +743,30 @@ namespace Game.NPC.TI // Keep in the TI namespace
                                   Debug.Log($"PROXIMITY {tiData.Id}: Day has started ({tiData.startDay}, Current Time: {currentTime:HH:mm}). Activating to intended day start state.", npcObject);
                                   startingActiveStateEnum = tiData.DayStartActiveStateEnum;
 
-                                   // --- If activating into a PathState, prime the Runner's temporary path data from the dayStart fields ---
+                                   // --- If activating into a PathState, prime the TiData's simulated path data from the dayStart fields ---
                                    // This data is read by PathStateSO.OnEnter when it detects activation from a saved state.
                                    // This logic uses the DayStart... fields directly from TiNpcData.
                                    if (startingActiveStateEnum != null && startingActiveStateEnum.Equals(PathState.FollowPath))
                                    {
-                                        if (runner.PathFollowingHandler != null)
-                                        {
-                                             // Prime the Runner's temporary interruption/activation path data fields
-                                             // Note: These fields are usually for interruption, but we can repurpose them
-                                             // or add new ones on the Runner for activation specifically.
-                                             // Let's use the existing interrupted fields for simplicity, but clear the 'wasInterrupted' flag.
-                                             runner.interruptedPathID = tiData.DayStartPathID; // <-- Use DayStartPathID
-                                             runner.interruptedWaypointIndex = tiData.DayStartStartIndex; // <-- Use DayStartStartIndex
-                                             runner.interruptedFollowReverse = tiData.DayStartFollowReverse; // <-- Use DayStartFollowReverse
-                                             runner.wasInterruptedFromPathState = false; // Ensure this is false, it's not an interruption resume
+                                        // Use the dayStart fields to initialize the simulated path data on TiData
+                                        // PathStateSO.OnEnter will read these directly from TiData when IsTrueIdentityNpc is true
+                                        tiData.simulatedPathID = tiData.DayStartPathID; // <-- Use DayStartPathID
+                                        tiData.simulatedWaypointIndex = tiData.DayStartStartIndex; // <-- Use DayStartStartIndex
+                                        tiData.simulatedFollowReverse = tiData.DayStartFollowReverse; // <-- Use DayStartFollowReverse
+                                        tiData.isFollowingPathBasic = true; // Flag to tell PathStateSO.OnEnter to restore
 
-                                             // Also set the tiData path simulation flags to true temporarily so PathStateSO.OnEnter reads them
-                                             tiData.simulatedPathID = tiData.DayStartPathID; // Temporarily copy to sim fields
-                                             tiData.simulatedWaypointIndex = tiData.DayStartStartIndex;
-                                             tiData.simulatedFollowReverse = tiData.DayStartFollowReverse;
-                                             tiData.isFollowingPathBasic = true; // Flag to tell PathStateSO.OnEnter to restore
+                                        // REMOVED: Redundant copy to runner.interrupted... fields
+                                        // REMOVED: Setting runner.wasInterruptedFromPathState = false
 
-                                             Debug.Log($"PROXIMITY {tiData.Id}: Priming Runner/TiData for PathState activation: PathID='{runner.interruptedPathID}', Index={runner.interruptedWaypointIndex}, Reverse={runner.interruptedFollowReverse}.", npcObject);
-                                        } else {
-                                             Debug.LogError($"PROXIMITY {tiData.Id}: Runner is missing NpcPathFollowingHandler during PathState activation! Cannot prime path data. NPC will likely start path from beginning.", npcObject);
-                                             // Fallback: PathState.OnEnter will handle starting from index 0.
-                                        }
+                                        Debug.Log($"PROXIMITY {tiData.Id}: Primed TiData for PathState activation from DayStart: PathID='{tiData.simulatedPathID}', Index={tiData.simulatedWaypointIndex}, Reverse={tiData.simulatedFollowReverse}.", npcObject);
                                    }
 
-                                  // Clear all simulation data as active state takes over
+                                  // Clear all NON-PATH simulation data as active state takes over
                                   tiData.simulatedTargetPosition = null;
                                   tiData.simulatedStateTimer = 0f;
-                                  tiData.simulatedPathID = null; // Clear sim path data *after* priming runner/tiData temp fields if needed
-                                  tiData.simulatedWaypointIndex = -1;
-                                  tiData.simulatedFollowReverse = false;
-                                  tiData.isFollowingPathBasic = false; // Clear this flag now
+                                  // Note: simulatedPathID, simulatedWaypointIndex, simulatedFollowReverse, isFollowingPathBasic
+                                  // are NOT cleared here if activating into a PathState, as they are needed by PathStateSO.OnEnter.
+                                  // They ARE cleared if activating into a non-PathState (handled by the else block below).
 
                              } else {
                                   // Day has NOT started, NPC should remain idle at home even if activated.
@@ -927,7 +918,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
                               // Get the corresponding active path state enum
                               startingActiveStateEnum = GetActiveStateFromBasicState(savedStateEnum); // Should map to PathState.FollowPath
 
-                              // Check if path data is valid
+                              // Check if path data is valid on TiData
                               if (string.IsNullOrWhiteSpace(tiData.simulatedPathID) || tiData.simulatedWaypointIndex < 0 || waypointManager == null)
                               {
                                    Debug.LogError($"PROXIMITY {tiData.Id}: Invalid path simulation data found during BasicPathState activation! PathID: '{tiData.simulatedPathID}', Index: {tiData.simulatedWaypointIndex}. Transitioning to BasicPatrol fallback.", npcObject);
@@ -943,27 +934,19 @@ namespace Game.NPC.TI // Keep in the TI namespace
                               }
                               else
                               {
-                                   // Path data seems valid, restore it on the active handler *after* Runner.Activate
-                                   // This bypasses the NavMesh leg.
-                                   PathSO pathSOToRestore = waypointManager?.GetPath(tiData.simulatedPathID);
-                                   if (pathSOToRestore != null)
-                                   {
-                                        // Call a method on the PathFollowingHandler to restore state 
-                                        // This call is now handled by PathStateSO.OnEnter when it detects activation from TI data
-                                        // We just need to ensure the PathStateSO is the target state.
-                                        // The PathStateSO.OnEnter will read the path data directly from tiData.
-                                        // We just need to ensure the state mapping is correct.
-                                        Debug.Log($"PROXIMITY {tiData.Id}: Path data valid. PathState.OnEnter will handle restoration from TiData.", npcObject);
-                                   } else {
-                                        Debug.LogError($"PROXIMITY {tiData.Id}: PathSO '{tiData.simulatedPathID}' not found via WaypointManager during BasicPathState activation! Cannot restore path progress. NPC will likely start path from beginning.", npcObject);
-                                        // Fallback: The PathState.OnEnter will handle starting from the beginning (index 0) as a fallback if restore fails.
-                                   }
+                                   // Path data seems valid. The generic PathStateSO.OnEnter will read the
+                                   // tiData.simulated... fields directly when it detects activation from TI data.
+                                   // We just need to ensure the state mapping is correct and the data is still on tiData.
+                                   Debug.Log($"PROXIMITY {tiData.Id}: Path data valid on TiData. PathState.OnEnter will handle restoration from TiData.", npcObject);
 
-                                   // Clear simulation data as active state takes over
+                                   // REMOVED: Redundant copy to runner.interrupted... fields
+                                   // REMOVED: Setting runner.wasInterruptedFromPathState = false
+
+                                   // Clear NON-PATH simulation data as active state takes over
                                    tiData.simulatedTargetPosition = null; // Clear simulated target
-                                   tiData.simulatedStateTimer = 0f; // Reset timer
-                                   // Note: We do NOT clear simulatedPathID, simulatedWaypointIndex, simulatedFollowReverse, isFollowingPathBasic here.
-                                   // These are needed by the PathStateSO.OnEnter when it detects activation from TI data.
+                                   tiData.simulatedStateTimer = 0f; // Reset timer on activation
+                                   // Note: simulatedPathID, simulatedWaypointIndex, simulatedFollowReverse, isFollowingPathBasic
+                                   // are NOT cleared here, as they are needed by the PathStateSO.OnEnter.
                                    // They will be cleared by the PathFollowingHandler itself when it stops following the path.
                               }
                          }
@@ -1107,7 +1090,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
                          // This case should ideally not happen if the NPC is interrupted, as PathState.OnExit stops the handler.
                          // But it handles cases where the NPC might be deactivated *while* in PathState without interruption logic triggering first.
                          Debug.Log($"PROXIMITY {tiData.Id}: Currently in PathState and following a path (not interrupted). Saving CURRENT path progress.", runner.gameObject);
-                         tiData.simulatedPathID = runner.PathFollowingHandler.GetCurrentPathID();
+                         tiData.simulatedPathID = runner.PathFollowingHandler.GetCurrentPathSO()?.PathID;
                          tiData.simulatedWaypointIndex = runner.PathFollowingHandler.GetCurrentTargetWaypointIndex(); // Save the index they were moving *towards*
                          tiData.simulatedFollowReverse = runner.PathFollowingHandler.GetFollowReverse();
                          tiData.isFollowingPathBasic = true; // Flag that they were on a path simulation when deactivated
@@ -1165,115 +1148,123 @@ namespace Game.NPC.TI // Keep in the TI namespace
               }
          }
 
+          /// <summary>
+          /// Called by CustomerManager when a TI NPC's GameObject is
+          /// ready to be returned to the pool after deactivation.
+          /// Handles the final cleanup and data unlinking.
+          /// </summary>
+          public void HandleTiNpcReturnToPool(GameObject npcObject)
+          {
+               Debug.Log($"POOL TiNpcManager: HandleTiNpcReturnToPool received GameObject '{npcObject.name}'.");
 
-        /// <summary>
-        /// Called by CustomerManager when a TI NPC's GameObject is
-        /// ready to be returned to the pool after deactivation.
-        /// Handles the final cleanup and data unlinking.
-        /// </summary>
-        public void HandleTiNpcReturnToPool(GameObject npcObject)
-        {
-             Debug.Log($"POOL TiNpcManager: HandleTiNpcReturnToPool received GameObject '{npcObject.name}'.");
+               if (npcObject == null)
+               {
+                    Debug.LogWarning("TiNpcManager: Received null GameObject in HandleTiNpcReturnToPool. Ignoring.", this);
+                    return;
+               }
 
-             if (npcObject == null)
-             {
-                  Debug.LogWarning("TiNpcManager: Received null GameObject in HandleTiNpcReturnToPool. Ignoring.", this);
-                  return;
-             }
+               NpcStateMachineRunner runner = npcObject.GetComponent<NpcStateMachineRunner>();
+               if (runner == null)
+               {
+                    Debug.LogWarning($"TiNpcManager: Received GameObject '{npcObject.name}' without NpcStateMachineRunner in HandleTiNpcReturnToPool. Cannot process as TI NPC. Attempting to return to pool directly.", npcObject);
+                    if (npcObject.GetComponent<PooledObjectInfo>() != null) poolingManager.ReturnPooledObject(npcObject);
+                    else Destroy(npcObject); // Fallback
+                    return;
+               }
 
-             NpcStateMachineRunner runner = npcObject.GetComponent<NpcStateMachineRunner>();
-             if (runner == null)
-             {
-                  Debug.LogWarning($"TiNpcManager: Received GameObject '{npcObject.name}' without NpcStateMachineRunner in HandleTiNpcReturnToPool. Cannot process as TI NPC. Attempting to return to pool directly.", npcObject);
-                   if(npcObject.GetComponent<PooledObjectInfo>() != null) poolingManager.ReturnPooledObject(npcObject);
-                   else Destroy(npcObject); // Fallback
-                  return;
-             }
+               // Find the TiNpcData associated with this runner.
+               // It *should* have been linked via NpcGameObject property.
+               TiNpcData deactivatedTiData = allTiNpcs.Values.FirstOrDefault(data => data.NpcGameObject == npcObject);
 
-             // Find the TiNpcData associated with this runner.
-             // It *should* have been linked via NpcGameObject property.
-             TiNpcData deactivatedTiData = allTiNpcs.Values.FirstOrDefault(data => data.NpcGameObject == npcObject);
+               if (deactivatedTiData != null)
+               {
+                    Debug.Log($"POOL TiNpcManager: Found TiNpcData for '{deactivatedTiData.Id}' linked to GameObject '{npcObject.name}'. Unlinking data and flags.");
 
-             if (deactivatedTiData != null)
-             {
-                 Debug.Log($"POOL TiNpcManager: Found TiNpcData for '{deactivatedTiData.Id}' linked to GameObject '{npcObject.name}'. Unlinking data and flags.");
+                    // --- Clear the data link and flags ---
+                    deactivatedTiData.UnlinkGameObject(); // Use helper to set NpcGameObject=null and isActiveGameObject=false
+                                                          // --- END ---
 
-                 // --- Clear the data link and flags ---
-                 deactivatedTiData.UnlinkGameObject(); // Use helper to set NpcGameObject=null and isActiveGameObject=false
-                 // --- END ---
+                    // --- Update the NPC's position in the grid with its final position before pooling ---
+                    // The Runner.Deactivate should have already saved the final position to tiData.CurrentWorldPosition
+                    if (gridManager != null)
+                    {
+                         // Use the position saved in TiData by Runner.Deactivate()
+                         // The old position for UpdateItemPosition doesn't strictly matter here
+                         // as we are just ensuring it's in the grid at its final position.
+                         // Using the GameObject's position just before pooling as the 'old' position is fine.
+                         gridManager.UpdateItemPosition(deactivatedTiData, npcObject.transform.position, deactivatedTiData.CurrentWorldPosition);
+                         Debug.Log($"POOL TiNpcManager: Updated grid position for '{deactivatedTiData.Id}' to final position {deactivatedTiData.CurrentWorldPosition}.", npcObject);
+                    }
+                    else
+                    {
+                         Debug.LogWarning($"POOL TiNpcManager: GridManager is null! Cannot update grid position for '{deactivatedTiData.Id}' on return to pool.", npcObject);
+                    }
 
-                 // --- Update the NPC's position in the grid with its final position before pooling ---
-                 // The Runner.Deactivate should have already saved the final position to tiData.CurrentWorldPosition
-                 if (gridManager != null)
-                 {
-                      // Use the position saved in TiData by Runner.Deactivate()
-                      // The old position for UpdateItemPosition doesn't strictly matter here
-                      // as we are just ensuring it's in the grid at its final position.
-                      // Using the GameObject's position just before pooling as the 'old' position is fine.
-                      gridManager.UpdateItemPosition(deactivatedTiData, npcObject.transform.position, deactivatedTiData.CurrentWorldPosition);
-                      Debug.Log($"POOL TiNpcManager: Updated grid position for '{deactivatedTiData.Id}' to final position {deactivatedTiData.CurrentWorldPosition}.", npcObject);
-                 } else {
-                      Debug.LogWarning($"POOL TiNpcManager: GridManager is null! Cannot update grid position for '{deactivatedTiData.Id}' on return to pool.", npcObject);
-                 }
+                    // --- Remove the runner from ProximityManager's active lists ---
+                    if (proximityManager != null)
+                    {
+                         Debug.Log($"POOL TiNpcManager: Removing runner '{runner.gameObject.name}' from ProximityManager active lists.", runner.gameObject);
+                         proximityManager.RemoveRunnerFromActiveLists(runner);
+                    }
+                    else
+                    {
+                         Debug.LogWarning($"POOL TiNpcManager: ProximityManager is null! Cannot remove runner '{runner.gameObject.name}' from active lists.", runner.gameObject);
+                    }
+               }
+               else
+               {
+                    // This warning indicates the NpcGameObject -> TiNpcData link was already broken before this handler was called.
+                    // This could happen if Runner.Deactivate somehow failed or if the object was pooled via another path.
+                    Debug.LogWarning($"POOL TiNpcManager: Could not find TiNpcData linked to returning GameObject '{npcObject.name}' in HandleTiNpcReturnToPool! Data link already lost or inconsistent. Runner.IsTrueIdentityNpc: {runner.IsTrueIdentityNpc}.", npcObject);
 
-                 // --- Remove the runner from ProximityManager's active lists ---
-                 if (proximityManager != null)
-                 {
-                      Debug.Log($"POOL TiNpcManager: Removing runner '{runner.gameObject.name}' from ProximityManager active lists.", runner.gameObject);
-                      proximityManager.RemoveRunnerFromActiveLists(runner); 
-                 } else {
-                      Debug.LogWarning($"POOL TiNpcManager: ProximityManager is null! Cannot remove runner '{runner.gameObject.name}' from active lists.", runner.gameObject);
-                 }
-             }
-             else
-             {
-                  // This warning indicates the NpcGameObject -> TiNpcData link was already broken before this handler was called.
-                  // This could happen if Runner.Deactivate somehow failed or if the object was pooled via another path.
-                 Debug.LogWarning($"POOL TiNpcManager: Could not find TiNpcData linked to returning GameObject '{npcObject.name}' in HandleTiNpcReturnToPool! Data link already lost or inconsistent. Runner.IsTrueIdentityNpc: {runner.IsTrueIdentityNpc}.", npcObject);
+                    // Defensive cleanup: If it was a TI NPC (check runner flag), try to find the data by ID if available
+                    if (runner.IsTrueIdentityNpc && runner.TiData != null && !string.IsNullOrEmpty(runner.TiData.Id))
+                    {
+                         // Try to find the data using the ID saved in the runner (if still there)
+                         TiNpcData dataById = GetTiNpcData(runner.TiData.Id);
+                         if (dataById != null)
+                         {
+                              Debug.LogError($"POOL TiNpcManager: Found TiNpcData by ID '{dataById.Id}' ({dataById.GetHashCode()}), but GameObject link was missing! Forcing link cleanup on data object. GameObject was likely pooled incorrectly.", npcObject);
+                              dataById.UnlinkGameObject(); // Unlink the data object
+                                                           // Attempt to remove from grid using the data's last known position
+                              gridManager?.RemoveItem(dataById, dataById.CurrentWorldPosition);
+                         }
+                         else
+                         {
+                              Debug.LogError($"POOL TiNpcManager: Runner flagged as TI ({runner.IsTrueIdentityNpc}), but TiData link was lost, and TiData ID '{runner.TiData.Id}' lookup failed! Cannot perform data cleanup.", npcObject);
+                         }
+                    }
+                    else if (runner.IsTrueIdentityNpc)
+                    {
+                         Debug.LogError($"POOL TiNpcManager: Runner flagged as TI ({runner.IsTrueIdentityNpc}), but TiData link was lost and TiData ID was null/empty! Cannot perform data cleanup.", npcObject);
+                    }
+                    // If runner is not flagged as TI, the CustomerManager should have handled it.
+                    // If we somehow get a non-TI here, it's a flow error, but pool it anyway.
 
-                 // Defensive cleanup: If it was a TI NPC (check runner flag), try to find the data by ID if available
-                 if (runner.IsTrueIdentityNpc && runner.TiData != null && !string.IsNullOrEmpty(runner.TiData.Id))
-                 {
-                      // Try to find the data using the ID saved in the runner (if still there)
-                      TiNpcData dataById = GetTiNpcData(runner.TiData.Id);
-                      if (dataById != null)
-                      {
-                           Debug.LogError($"POOL TiNpcManager: Found TiNpcData by ID '{dataById.Id}' ({dataById.GetHashCode()}), but GameObject link was missing! Forcing link cleanup on data object. GameObject was likely pooled incorrectly.", npcObject);
-                           dataById.UnlinkGameObject(); // Unlink the data object
-                           // Attempt to remove from grid using the data's last known position
-                           gridManager?.RemoveItem(dataById, dataById.CurrentWorldPosition);
-                      } else {
-                           Debug.LogError($"POOL TiNpcManager: Runner flagged as TI ({runner.IsTrueIdentityNpc}), but TiData link was lost, and TiData ID '{runner.TiData.Id}' lookup failed! Cannot perform data cleanup.", npcObject);
-                      }
-                 }
-                 else if (runner.IsTrueIdentityNpc)
-                 {
-                      Debug.LogError($"POOL TiNpcManager: Runner flagged as TI ({runner.IsTrueIdentityNpc}), but TiData link was lost and TiData ID was null/empty! Cannot perform data cleanup.", npcObject);
-                 }
-                 // If runner is not flagged as TI, the CustomerManager should have handled it.
-                 // If we somehow get a non-TI here, it's a flow error, but pool it anyway.
+                    // --- Attempt to remove the runner from ProximityManager's active lists even if data link is broken ---
+                    if (proximityManager != null)
+                    {
+                         Debug.LogWarning($"POOL TiNpcManager: Attempting to remove runner '{runner.gameObject.name}' from ProximityManager active lists despite data link issue.", runner.gameObject);
+                         proximityManager.RemoveRunnerFromActiveLists(runner);
+                    }
+                    else
+                    {
+                         Debug.LogWarning($"POOL TiNpcManager: ProximityManager is null! Cannot remove runner '{runner.gameObject.name}' from active lists.", runner.gameObject);
+                    }
+               }
 
-                 // --- Attempt to remove the runner from ProximityManager's active lists even if data link is broken ---
-                 if (proximityManager != null)
-                 {
-                      Debug.LogWarning($"POOL TiNpcManager: Attempting to remove runner '{runner.gameObject.name}' from ProximityManager active lists despite data link issue.", runner.gameObject);
-                      proximityManager.RemoveRunnerFromActiveLists(runner); 
-                 } else {
-                      Debug.LogWarning($"POOL TiNpcManager: ProximityManager is null! Cannot remove runner '{runner.gameObject.name}' from active lists.", runner.gameObject);
-                 }
-             }
-
-             Debug.Log($"POOL TiNpcManager: Returning TI NPC GameObject '{npcObject.name}' to pool.");
-             if (poolingManager != null)
-             {
-                 poolingManager.ReturnPooledObject(npcObject);
-             }
-             else
-             {
-                 Debug.LogError($"TiNpcManager: PoolingManager is null! Cannot return TI NPC GameObject '{npcObject.name}' to pool. Destroying.", this);
-                 Destroy(npcObject);
-             }
-        }
+               Debug.Log($"POOL TiNpcManager: Returning TI NPC GameObject '{npcObject.name}' to pool.");
+               if (poolingManager != null)
+               {
+                    poolingManager.ReturnPooledObject(npcObject);
+               }
+               else
+               {
+                    Debug.LogError($"TiNpcManager: PoolingManager is null! Cannot return TI NPC GameObject '{npcObject.name}' to pool. Destroying.", this);
+                    Destroy(npcObject);
+               }
+          }
+        
 
 
         /// <summary>
@@ -1283,16 +1274,18 @@ namespace Game.NPC.TI // Keep in the TI namespace
         /// <param name="data">The TiNpcData associated with the active NPC.</param>
         /// <param name="oldPosition">The NPC's position before the change.</param>
         /// <param name="newPosition">The NPC's new position.</param>
-        public void NotifyActiveNpcPositionChanged(TiNpcData data, Vector3 oldPosition, Vector3 newPosition)
-        {
-             if (gridManager != null)
-             {
-                  gridManager.UpdateItemPosition(data, oldPosition, newPosition);
-                  // Debug.Log($"TiNpcManager: Notified of active NPC '{data.Id}' position change. Updated grid.", data.NpcGameObject); // Too noisy
-             } else {
-                  Debug.LogWarning($"TiNpcManager: GridManager is null! Cannot update grid position for active NPC '{data.Id}'.", data.NpcGameObject);
-             }
-        }
+          public void NotifyActiveNpcPositionChanged(TiNpcData data, Vector3 oldPosition, Vector3 newPosition)
+          {
+               if (gridManager != null)
+               {
+                    gridManager.UpdateItemPosition(data, oldPosition, newPosition);
+                    // Debug.Log($"TiNpcManager: Notified of active NPC '{data.Id}' position change. Updated grid.", data.NpcGameObject); // Too noisy
+               }
+               else
+               {
+                    Debug.LogWarning($"TiNpcManager: GridManager is null! Cannot update grid position for active NPC '{data.Id}'.", data.NpcGameObject);
+               }
+          }
 
 
         /// <summary>
@@ -1405,11 +1398,11 @@ namespace Game.NPC.TI // Keep in the TI namespace
 
                   // --- Assign intended day start behavior from dummy data ---
                   // Assign the new toggle and path fields
-                  newNpcData.usePathForDayStart = entry.usePathForDayStart; 
+                  newNpcData.usePathForDayStart = entry.usePathForDayStart;
                   newNpcData.dayStartActiveStateEnumKey = entry.dayStartActiveStateEnumKey;
                   newNpcData.dayStartActiveStateEnumType = entry.dayStartActiveStateEnumType;
-                  newNpcData.dayStartPathID = entry.dayStartPathID; 
-                  newNpcData.dayStartStartIndex = entry.dayStartStartIndex; 
+                  newNpcData.dayStartPathID = entry.dayStartPathID;
+                  newNpcData.dayStartStartIndex = entry.dayStartStartIndex;
                   newNpcData.dayStartFollowReverse = entry.dayStartFollowReverse;
 
                   // --- Determine Initial State based on Schedule ---
@@ -1577,3 +1570,5 @@ namespace Game.NPC.TI // Keep in the TI namespace
         // --- End Restored LoadDummyNpcData ---
     }
 }
+
+// --- END OF FILE TiNpcManager.cs (Modified for Generic Path Activation) ---

@@ -69,6 +69,7 @@ namespace Game.NPC.States // Context is closely related to states
         // Public properties/methods to access Path Following Handler functionality
         public bool IsFollowingPath => PathFollowingHandler?.IsFollowingPath ?? false;
         public bool HasReachedEndOfPath => PathFollowingHandler?.HasReachedEndOfPath ?? false;
+        public PathSO GetCurrentPathSO() => PathFollowingHandler?.GetCurrentPathSO();
 
 
         /// <summary>
@@ -111,7 +112,7 @@ namespace Game.NPC.States // Context is closely related to states
         /// <summary>
         /// Gets the ID of the path currently being followed via the PathFollowingHandler.
         /// </summary>
-        public string GetCurrentPathID() => PathFollowingHandler?.GetCurrentPathID();
+        public string GetCurrentPathID() => PathFollowingHandler?.GetCurrentPathSO()?.PathID;
 
         /// <summary>
         /// Gets the ID of the waypoint the NPC is currently moving towards via the PathFollowingHandler.

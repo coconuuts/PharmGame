@@ -1,4 +1,4 @@
-// --- START OF FILE PathStateSO.cs (Final Refactored) ---
+// --- START OF FILE PathStateSO.cs (Refactored Generic) ---
 
 using UnityEngine;
 using System; // Needed for System.Enum
@@ -12,204 +12,167 @@ using Game.NPC.Decisions; // Needed for DecisionPointSO, NpcDecisionHelper // St
 namespace Game.NPC.States // Place alongside other active states
 {
     /// <summary>
-    /// Active state for an NPC to follow a predefined waypoint path.
+    /// Generic Active state for an NPC to follow a predefined waypoint path.
     /// Handles the initial NavMesh leg to the first waypoint, then uses the PathFollowingHandler.
     /// Now supports restoring progress for activated TI NPCs and triggers decision logic
     /// upon reaching a linked Decision Point.
-    /// MODIFIED: End behavior (Decision Point or fixed transition) is now defined on the PathSO asset.
+    /// End behavior (Decision Point or fixed transition) is defined on the PathSO asset.
     /// Uses PathTransitionDetails to handle transitions to other paths.
+    /// This single asset handles the logic for *any* path, receiving path data dynamically.
     /// </summary>
-    [CreateAssetMenu(fileName = "PathState_", menuName = "NPC/Path States/Follow Path", order = 50)] // Order appropriately
+    [CreateAssetMenu(fileName = "PathState_FollowPath", menuName = "NPC/Path States/Follow Path (Generic)", order = 50)] // Use a generic name
     public class PathStateSO : NpcStateSO
     {
         // --- State Configuration ---
-        [Header("Path Settings")]
-        [Tooltip("The PathSO asset defining the path to follow.")]
-        [SerializeField] private PathSO pathAsset;
-        [Tooltip("The index of the waypoint to start the path from (0-based).")]
-        [SerializeField] private int startIndex = 0; // <-- This field is on the SO asset
-        [Tooltip("If true, follow the path in reverse from the start index.")]
-        [SerializeField] private bool followReverse = false; // <-- This field is on the SO asset
+        // REMOVED: Serialized fields for specific path asset, start index, and reverse flag.
+        // These will be provided dynamically via the Runner or TiData.
 
         // --- NpcStateSO Overrides ---
-        public override System.Enum HandledState => Game.NPC.PathState.FollowPath; 
+        public override System.Enum HandledState => Game.NPC.PathState.FollowPath;
 
         public override void OnEnter(NpcStateContext context)
         {
             base.OnEnter(context); // Call base OnEnter (logs entry, enables Agent)
 
             // Validate basic dependencies
-            if (pathAsset == null)
-            {
-                Debug.LogError($"{context.NpcObject.name}: PathStateSO '{name}' has no Path Asset assigned! Transitioning to fallback.", context.NpcObject);
-                context.TransitionToState(GeneralState.Idle); // Fallback
-                return;
-            }
             if (WaypointManager.Instance == null)
             {
-                 Debug.LogError($"{context.NpcObject.name}: WaypointManager.Instance is null! Cannot follow path '{pathAsset.PathID}'. Transitioning to fallback.", context.NpcObject);
+                 Debug.LogError($"{context.NpcObject.name}: WaypointManager.Instance is null! Cannot follow path. Transitioning to fallback.", context.NpcObject);
                  context.TransitionToState(GeneralState.Idle); // Fallback
                  return;
              }
 
-             // Log entry, noting that end behavior is defined on the PathSO
-             Debug.Log($"{context.NpcObject.name}: Entering PathState '{name}' for path '{pathAsset.PathID}'. End behavior defined on PathSO asset.");
+             Debug.Log($"{context.NpcObject.name}: Entering Generic PathState '{name}'. Determining path data source.");
 
+            PathSO pathToFollow = null;
+            int startWaypointIndex = -1;
+            bool followReverseDirection = false;
+            bool isResumingPath = false; // Flag to indicate if we are resuming an existing path
 
-            // --- Check if returning from interruption using temporary flag ---
+            // --- Determine path data source: TiNpcData (if resuming) or Runner (if starting new) ---
+
+            // Priority 1: Check if returning from interruption (data saved on Runner)
             if (context.Runner.wasInterruptedFromPathState)
             {
-                 Debug.Log($"{context.NpcObject.name}: Returning from PathState interruption. Attempting to restore active path progress.", context.NpcObject);
+                 Debug.Log($"{context.NpcObject.name}: PathState OnEnter: Resuming from interruption. Reading path data from Runner's temporary fields.", context.NpcObject);
+                 pathToFollow = WaypointManager.Instance.GetPath(context.Runner.interruptedPathID);
+                 startWaypointIndex = context.Runner.interruptedWaypointIndex; // This is the target index they were moving towards
+                 followReverseDirection = context.Runner.interruptedFollowReverse;
+                 isResumingPath = true;
 
-                 // Use the temporary path data saved by NpcInterruptionHandler.TryInterrupt
-                 // The pathAsset must match the interrupted path ID for a valid restore into *this* state
-                 PathSO interruptedPathSO = WaypointManager.Instance.GetPath(context.Runner.interruptedPathID);
+                 // Clear the temporary interruption path data on the Runner *after* reading it
+                 context.Runner.interruptedPathID = null;
+                 context.Runner.interruptedWaypointIndex = -1;
+                 context.Runner.interruptedFollowReverse = false;
+                 context.Runner.wasInterruptedFromPathState = false; // Clear the flag
+            }
+            // Priority 2: Check if activating TI NPC mid-path simulation (data saved on TiData)
+            else if (context.Runner.IsTrueIdentityNpc && context.TiData != null && context.TiData.isFollowingPathBasic)
+            {
+                 Debug.Log($"{context.NpcObject.name}: PathState OnEnter: TI NPC activating mid-path simulation. Reading path data from TiData.", context.NpcObject);
+                 pathToFollow = WaypointManager.Instance.GetPath(context.TiData.simulatedPathID);
+                 startWaypointIndex = context.TiData.simulatedWaypointIndex; // This is the target index they were moving towards
+                 followReverseDirection = context.TiData.simulatedFollowReverse;
+                 isResumingPath = true;
 
-                 if (interruptedPathSO != null && interruptedPathSO.PathID == pathAsset.PathID)
+                 // Clear simulation path data on TiData *after* reading it (data is now transferred to active handler)
+                 context.TiData.simulatedPathID = null;
+                 context.TiData.simulatedWaypointIndex = -1;
+                 context.TiData.simulatedFollowReverse = false;
+                 context.TiData.isFollowingPathBasic = false; // Clear this flag now
+            }
+            // Priority 3: Starting a NEW path (data provided via Runner's temporary fields by the caller)
+            else
+            {
+                 Debug.Log($"{context.NpcObject.name}: PathState OnEnter: Starting a NEW path. Reading path data from Runner's temporary fields.", context.NpcObject);
+                 // Read the path data from the Runner's temporary fields
+                 pathToFollow = context.Runner.tempPathSO; // <-- Read from new temporary field
+                 startWaypointIndex = context.Runner.tempStartIndex; // <-- Read from new temporary field
+                 followReverseDirection = context.Runner.tempFollowReverse; // <-- Read from new temporary field
+
+                 // Clear the Runner's temporary fields *after* reading them
+                 context.Runner.tempPathSO = null;
+                 context.Runner.tempStartIndex = 0; // Reset to default
+                 context.Runner.tempFollowReverse = false; // Reset to default
+            }
+            // --- END Determine path data source ---
+
+
+            // --- Validate obtained path data ---
+            if (pathToFollow == null)
+            {
+                 Debug.LogError($"{context.NpcObject.name}: PathState OnEnter: No PathSO provided or found from any source! Transitioning to fallback.", context.NpcObject);
+                 context.TransitionToState(GeneralState.Idle); // Fallback
+                 return;
+            }
+            if (startWaypointIndex < 0 || startWaypointIndex >= pathToFollow.WaypointCount)
+            {
+                 Debug.LogError($"{context.NpcObject.name}: PathState OnEnter: Invalid start/resume waypoint index {startWaypointIndex} for path '{pathToFollow.PathID}' (WaypointCount: {pathToFollow.WaypointCount})! Transitioning to fallback.", context.NpcObject);
+                 context.TransitionToState(GeneralState.Idle); // Fallback
+                 return;
+            }
+            // --- End Validate ---
+
+
+            // --- Handle Resuming Path (from interruption or TI activation) ---
+            if (isResumingPath)
+            {
+                 Debug.Log($"{context.NpcObject.name}: PathState OnEnter: Attempting to restore path progress for path '{pathToFollow.PathID}' towards index {startWaypointIndex}, reverse: {followReverseDirection}.", context.NpcObject);
+
+                 // Call the PathFollowingHandler to restore its state directly.
+                 // This bypasses the NavMesh leg.
+                 bool restored = context.RestorePathProgress(
+                      pathToFollow, // Use the obtained path asset
+                      startWaypointIndex, // Use the obtained index (this is the target they were moving towards)
+                      followReverseDirection // Use the obtained direction
+                 );
+
+                 if (restored)
                  {
-                      bool restored = context.RestorePathProgress(
-                          interruptedPathSO, // Use path SO from WaypointManager
-                          context.Runner.interruptedWaypointIndex, // Use the saved index
-                          context.Runner.interruptedFollowReverse // Use the saved direction
-                      );
+                      Debug.Log($"{context.NpcObject.name}: Successfully restored path progress.", context.NpcObject);
 
-                       // --- Clear the temporary interruption path data AFTER attempting restore ---
-                       // Clearing here handles both success and failure of RestorePathProgress
-                       context.Runner.interruptedPathID = null;
-                       context.Runner.interruptedWaypointIndex = -1;
-                       context.Runner.interruptedFollowReverse = false;
-                       context.Runner.wasInterruptedFromPathState = false; // Clear the flag
-                       // --- END Clear ---
+                      // --- Check if already at the end waypoint after restoring ---
+                      // If restored exactly at the end, trigger OnReachedDestination logic immediately
+                      // PathFollowingHandler.IsFollowingPath will be true initially after RestorePathProgress,
+                      // but HasReachedEndOfPath will be false. We need a separate check here.
+                      // Check distance to the target waypoint stored *in the handler* after restore.
+                      // The target waypoint ID is available via context.GetCurrentTargetWaypointID()
+                      string targetWaypointID = context.GetCurrentTargetWaypointID();
+                      Transform targetWaypointTransform = WaypointManager.Instance.GetWaypointTransform(targetWaypointID);
 
-                      if (restored)
+                        // Use the PathFollowingHandler's threshold for consistency
+                      if (targetWaypointTransform != null && context.PathFollowingHandler != null && Vector3.Distance(context.NpcObject.transform.position, targetWaypointTransform.position) < context.PathFollowingHandler.waypointArrivalThreshold)
                       {
-                           Debug.Log($"{context.NpcObject.name}: Successfully restored active path progress.", context.NpcObject);
-
-                           // --- Check if already at the end waypoint after restoring ---
-                           // If restored exactly at the end, trigger OnReachedDestination logic immediately
-                           // PathFollowingHandler.IsFollowingPath will be true initially after RestorePathProgress,
-                           // but HasReachedEndOfPath will be false. We need a separate check here.
-                           // Check distance to the target waypoint stored *in the handler* after restore.
-                           // The target waypoint ID is available via context.GetCurrentTargetWaypointID()
-                           string targetWaypointID = context.GetCurrentTargetWaypointID();
-                           Transform targetWaypointTransform = WaypointManager.Instance.GetWaypointTransform(targetWaypointID);
-
-                           if (targetWaypointTransform != null && context.PathFollowingHandler != null && Vector3.Distance(context.NpcObject.transform.position, targetWaypointTransform.position) < context.PathFollowingHandler.waypointArrivalThreshold)
-                           {
-                                // We are at the target waypoint (which should be the end of the path).
-                                Debug.Log($"{context.NpcObject.name}: Restored exactly at the target waypoint '{targetWaypointID}'. Triggering OnReachedDestination logic immediately.", context.NpcObject);
-                                // Call OnReachedDestination directly
-                                OnReachedDestination(context); // Call this SO's implementation
-                                return; // Exit OnEnter early, decision/transition handled
-                           }
-
-                           // Path following handler is now active and not at the end yet. OnUpdate will monitor it.
-                           // Return early, skipping the NavMesh logic below.
-                           return;
+                           // We are at the target waypoint (which should be the end of the path).
+                           Debug.Log($"{context.NpcObject.name}: Restored exactly at the target waypoint '{targetWaypointID}'. Triggering OnReachedDestination logic immediately.", context.NpcObject);
+                           // Call OnReachedDestination directly
+                           OnReachedDestination(context); // Call this SO's implementation
+                           return; // Exit OnEnter early, decision/transition handled
                       }
-                      else
-                      {
-                           Debug.LogError($"{context.NpcObject.name}: Failed to restore active path progress after interruption! Falling back to starting path from beginning via NavMesh.", context.NpcObject);
-                           // Fall through to the standard NavMesh logic below.
-                      }
-                 } else {
-                      // Path ID mismatch or interruptedPathSO is null - cannot restore into this state
-                      Debug.LogWarning($"{context.NpcObject.name}: Was interrupted from a different path ('{context.Runner.interruptedPathID ?? "NULL"}') or interrupted path SO is null. Cannot restore into PathState '{name}' (PathID: '{pathAsset.PathID}'). Falling back to starting this path from beginning via NavMesh.", context.NpcObject);
-                       // --- Clear the temporary interruption path data ---
-                       context.Runner.interruptedPathID = null;
-                       context.Runner.interruptedWaypointIndex = -1;
-                       context.Runner.interruptedFollowReverse = false;
-                       context.Runner.wasInterruptedFromPathState = false; // Clear the flag
-                       // --- END Clear ---
+
+                      // Path following handler is now active and not at the end yet. OnUpdate will monitor it.
+                      // Return early, skipping the NavMesh logic below.
+                      return;
+                 }
+                 else
+                 {
+                      Debug.LogError($"{context.NpcObject.name}: Failed to restore path progress! Falling back to starting path from beginning via NavMesh.", context.NpcObject);
                       // Fall through to the standard NavMesh logic below.
+                      // The path data (pathToFollow, startWaypointIndex, followReverseDirection) is still valid for this fallback.
                  }
             }
 
-               // --- Check if this is a TI NPC activating and should restore path progress ---
-               // This logic is now slightly different: we don't *call* RestorePathProgress here anymore.
-               // We check if the data indicates they *were* following this specific path simulation.
-               // If so, OnReachedDestination needs to know that the first NavMesh leg was skipped.
-               // Let's add a flag to context or runner.
-               // The check for isFollowingPathBasic and PathID match is done in TiNpcManager.RequestActivateTiNpc.
-               // If that check passes, TiNpcManager sets the target state to PathState.FollowPath and preserves the path data on TiData.
-               // PathStateSO.OnEnter is now responsible for *using* that data.
-               if (context.Runner.IsTrueIdentityNpc && context.TiData != null && context.TiData.isFollowingPathBasic)
-               {
-                    // Check if the saved path ID on data matches the path asset configured for *this* state SO.
-                    if (context.TiData.simulatedPathID == pathAsset.PathID)
-                    {
-                         Debug.Log($"{context.NpcObject.name}: TI NPC activating into PathState '{name}'. Sim data indicates mid-path. PathFollowingHandler.RestorePathProgress will be called.", context.NpcObject);
 
-                         // Call the PathFollowingHandler to restore its state directly.
-                         // This bypasses the NavMesh leg.
-                         bool restored = context.RestorePathProgress(
-                              pathAsset, // Use the path asset configured on this SO
-                              context.TiData.simulatedWaypointIndex, // Use the saved index
-                              context.TiData.simulatedFollowReverse // Use the saved direction
-                         );
-
-                         // Clear simulation path data *after* attempting restore
-                         // This indicates the data has now been transferred to the active handler
-                         context.TiData.simulatedPathID = null;
-                         context.TiData.simulatedWaypointIndex = -1;
-                         context.TiData.simulatedFollowReverse = false;
-                         context.TiData.isFollowingPathBasic = false; // Clear this flag now
-
-                         if (restored)
-                         {
-                              Debug.Log($"{context.NpcObject.name}: Successfully restored path progress from TiData.", context.NpcObject);
-
-                              // --- Check if already at the end waypoint after restoring ---
-                              // If restored exactly at the end, trigger OnReachedDestination logic immediately
-                              // PathFollowingHandler.IsFollowingPath will be true initially after RestorePathProgress,
-                              // but HasReachedEndOfPath will be false. We need a separate check here.
-                              // Check distance to the target waypoint stored *in the handler* after restore.
-                              // The target waypoint ID is available via context.GetCurrentTargetWaypointID()
-                              string targetWaypointID = context.GetCurrentTargetWaypointID();
-                              Transform targetWaypointTransform = WaypointManager.Instance.GetWaypointTransform(targetWaypointID);
-
-                                // Use the PathFollowingHandler's threshold for consistency
-                              if (targetWaypointTransform != null && context.PathFollowingHandler != null && Vector3.Distance(context.NpcObject.transform.position, targetWaypointTransform.position) < context.PathFollowingHandler.waypointArrivalThreshold)
-                              {
-                                   // We are at the target waypoint (which should be the end of the path).
-                                   Debug.Log($"{context.NpcObject.name}: Restored exactly at the target waypoint '{targetWaypointID}'. Triggering OnReachedDestination logic immediately.", context.NpcObject);
-                                   // Call OnReachedDestination directly
-                                   OnReachedDestination(context); // Call this SO's implementation
-                                   return; // Exit OnEnter early, decision/transition handled
-                              }
-
-                              // Path following handler is now active and not at the end yet. OnUpdate will monitor it.
-                              // Return early, skipping the NavMesh logic below.
-                              return;
-                         }
-                         else
-                         {
-                              Debug.LogError($"{context.NpcObject.name}: Failed to restore path progress for TI NPC '{context.TiData.Id}' from TiData! Falling back to starting path from beginning via NavMesh.", context.NpcObject);
-                              // Fall through to the standard NavMesh logic below.
-                         }
-                    }
-                    else
-                    {
-                         // TI NPC activating, but sim data for this path asset isn't present or doesn't match.
-                         // Treat as starting a new path from the beginning.
-                         Debug.LogWarning($"{context.NpcObject.name}: TI NPC activating into PathState '{name}', but saved path data doesn't match ('{context.TiData.simulatedPathID ?? "NULL"}' vs '{pathAsset.PathID}'). Starting path from beginning via NavMesh.", context.NpcObject);
-                         // Clear any potentially stale path simulation data on TiData here for safety
-                         context.TiData.simulatedPathID = null;
-                         context.TiData.simulatedWaypointIndex = -1;
-                         context.TiData.simulatedFollowReverse = false;
-                         context.TiData.isFollowingPathBasic = false;
-                         // Fall through to the standard NavMesh logic below.
-                    }
-               }
-
-
-            // --- Standard Logic: Start NavMesh movement to the first waypoint (only if NOT restoring progress) ---
+            // --- Standard Logic: Start NavMesh movement to the first waypoint (only if NOT resuming progress) ---
             // This code is now only reached if it's a transient NPC OR a TI NPC that wasn't mid-path simulation,
             // or if restoration failed.
-            string firstWaypointID = pathAsset.GetWaypointID(startIndex);
+            // The target for the NavMesh leg is the *first waypoint* of the path segment we intend to follow.
+            // If followReverse is true, the "first" waypoint is startIndex. If false, it's startIndex.
+            // The PathFollowingHandler will handle the *next* waypoint after this one.
+            string firstWaypointID = pathToFollow.GetWaypointID(startWaypointIndex); // Use the obtained start index
             if (string.IsNullOrWhiteSpace(firstWaypointID))
             {
-                 Debug.LogError($"{context.NpcObject.name}: Path '{pathAsset.PathID}' has invalid start waypoint ID at index {startIndex}! Transitioning to fallback.", context.NpcObject);
+                 Debug.LogError($"{context.NpcObject.name}: Path '{pathToFollow.PathID}' has invalid start waypoint ID at index {startWaypointIndex}! Transitioning to fallback.", context.NpcObject);
                  context.TransitionToState(GeneralState.Idle); // Fallback
                  return;
             }
@@ -218,12 +181,12 @@ namespace Game.NPC.States // Place alongside other active states
 
             if (firstWaypointTransform == null)
             {
-                Debug.LogError($"{context.NpcObject.name}: Start waypoint with ID '{firstWaypointID}' (index {startIndex}) for path '{pathAsset.PathID}' not found in scene via WaypointManager! Transitioning to fallback.", context.NpcObject);
+                Debug.LogError($"{context.NpcObject.name}: Start waypoint with ID '{firstWaypointID}' (index {startWaypointIndex}) for path '{pathToFollow.PathID}' not found in scene via WaypointManager! Transitioning to fallback.", context.NpcObject);
                 context.TransitionToState(GeneralState.Idle); // Fallback
                 return;
             }
 
-            Debug.Log($"{context.NpcObject.name}: PathState '{name}' OnEnter. Moving to first waypoint '{firstWaypointID}' (index {startIndex}) via NavMesh.", context.NpcObject);
+            Debug.Log($"{context.NpcObject.name}: PathState '{name}' OnEnter. Moving to first waypoint '{firstWaypointID}' (index {startWaypointIndex}) via NavMesh.", context.NpcObject);
             // context.MoveToDestination handles enabling the agent and setting _hasReachedCurrentDestination = false
             bool moveStarted = context.MoveToDestination(firstWaypointTransform.position);
 
@@ -241,6 +204,14 @@ namespace Game.NPC.States // Place alongside other active states
 
             // Since NavMesh movement is starting, ensure PathFollowingHandler is stopped
             context.StopFollowingPath(); // Defensive call, should be stopped by base OnEnter/Awake/Reset
+
+            // Store the path data on the Runner temporarily for OnReachedDestination to pick up
+            // This is needed because OnReachedDestination doesn't receive the same parameters as OnEnter.
+            // We use the same temporary fields as for starting a new path.
+            context.Runner.tempPathSO = pathToFollow;
+            context.Runner.tempStartIndex = startWaypointIndex;
+            context.Runner.tempFollowReverse = followReverseDirection;
+            Debug.Log($"{context.NpcObject.name}: Stored path data on Runner temp fields for OnReachedDestination.", context.NpcObject);
         }
 
         public override void OnUpdate(NpcStateContext context)
@@ -253,12 +224,15 @@ namespace Game.NPC.States // Place alongside other active states
             // MODIFIED: Check only HasReachedEndOfPath, as IsFollowingPath becomes false in the same tick.
             if (context.PathFollowingHandler != null && context.PathFollowingHandler.HasReachedEndOfPath)
             {
-                Debug.Log($"{context.NpcObject.name}: PathFollowingHandler signalled end of path '{pathAsset.PathID}'.", context.NpcObject);
+                // Get the PathSO that the handler just finished following
+                PathSO completedPathSO = context.PathFollowingHandler.GetCurrentPathSO(); // <-- Get PathSO from handler
+
+                Debug.Log($"{context.NpcObject.name}: PathFollowingHandler signalled end of path '{completedPathSO?.PathID ?? "NULL"}'.", context.NpcObject);
 
                 // Stop the path following handler (this also re-enables the NavMeshAgent and resets HasReachedEndOfPath)
                 context.StopFollowingPath(); // Safe to call multiple times
 
-                // --- Determine next state using PathSO's GetNextActiveStateDetails ---
+                // --- Determine next state using the completed PathSO's GetNextActiveStateDetails ---
                  // Ensure TiNpcManager is available via context
                  if (context.TiNpcManager == null)
                  {
@@ -266,12 +240,18 @@ namespace Game.NPC.States // Place alongside other active states
                       context.TransitionToState(GeneralState.Idle); // Fallback
                       return;
                  }
+                 if (completedPathSO == null)
+                 {
+                      Debug.LogError($"{context.NpcObject.name}: PathFollowingHandler completed, but GetCurrentPathSO returned null! Cannot determine next state. Transitioning to Idle fallback.", context.NpcObject);
+                      context.TransitionToState(GeneralState.Idle); // Fallback
+                      return;
+                 }
 
-                 PathTransitionDetails transitionDetails = pathAsset?.GetNextActiveStateDetails(context.TiData, context.TiNpcManager) ?? new PathTransitionDetails(null); 
+                 PathTransitionDetails transitionDetails = completedPathSO.GetNextActiveStateDetails(context.TiData, context.TiNpcManager); 
 
                  if (transitionDetails.HasValidTransition)
                  {
-                      Debug.Log($"{context.NpcObject.name}: Path '{pathAsset.PathID}' end behavior determined next Active State: '{transitionDetails.TargetStateEnum.GetType().Name}.{transitionDetails.TargetStateEnum.ToString() ?? "NULL"}'.", context.NpcObject);
+                      Debug.Log($"{context.NpcObject.name}: Path '{completedPathSO.PathID}' end behavior determined next Active State: '{transitionDetails.TargetStateEnum.GetType().Name}.{transitionDetails.TargetStateEnum.ToString() ?? "NULL"}'.", context.NpcObject);
 
                       // Check if the target state is PathState.FollowPath
                       if (transitionDetails.TargetStateEnum.GetType() == typeof(Game.NPC.PathState) && transitionDetails.TargetStateEnum.Equals(Game.NPC.PathState.FollowPath))
@@ -280,7 +260,8 @@ namespace Game.NPC.States // Place alongside other active states
                            if (transitionDetails.PathAsset != null)
                            {
                                 Debug.Log($"{context.NpcObject.name}: Transitioning to follow next path '{transitionDetails.PathAsset.PathID}' from index {transitionDetails.StartIndex}, reverse: {transitionDetails.FollowReverse}.", context.NpcObject);
-                                // Start following the next path using the handler
+                                // Start following the next path using the handler directly
+                                // No state machine transition is needed here, just update the handler.
                                 bool pathStarted = context.StartFollowingPath(transitionDetails.PathAsset, transitionDetails.StartIndex, transitionDetails.FollowReverse);
                                 if (!pathStarted)
                                 {
@@ -288,9 +269,9 @@ namespace Game.NPC.States // Place alongside other active states
                                      context.TransitionToState(GeneralState.Idle); // Fallback
                                 }
                                 // Note: The state remains PathState.FollowPath, but the handler is updated.
-                                // No state machine transition is needed here.
+                                // The next tick will continue path following on the new path.
                            } else {
-                                Debug.LogError($"{context.NpcObject.name}: Path '{pathAsset.PathID}' end behavior specified PathState.FollowPath but the next Path Asset is null! Transitioning to Idle fallback.", context.NpcObject);
+                                Debug.LogError($"{context.NpcObject.name}: Path '{completedPathSO.PathID}' end behavior specified PathState.FollowPath but the next Path Asset is null in transition details! Transitioning to Idle fallback.", context.NpcObject);
                                 context.TransitionToState(GeneralState.Idle); // Fallback
                            }
                       }
@@ -304,7 +285,7 @@ namespace Game.NPC.States // Place alongside other active states
                  else
                  {
                       // GetNextActiveStateDetails returned invalid details (invalid config or decision failed)
-                      Debug.LogError($"{context.NpcObject.name}: Path '{pathAsset.PathID}' end behavior returned invalid details or failed to determine next Active State. Transitioning to Idle fallback.", context.NpcObject);
+                      Debug.LogError($"{context.NpcObject.name}: Path '{completedPathSO.PathID}' end behavior returned invalid details or failed to determine next Active State. Transitioning to Idle fallback.", context.NpcObject);
                       context.TransitionToState(GeneralState.Idle); // Fallback
                  }
             }
@@ -321,25 +302,54 @@ namespace Game.NPC.States // Place alongside other active states
             // AND CheckMovementArrival is true AND PathFollowingHandler.IsFollowingPath is false.
             // This means it's triggered when the NPC reaches the *first waypoint* via NavMesh,
             // which happens when we are NOT restoring path progress for a TI NPC.
-            Debug.Log($"{context.NpcObject.name}: Reached first waypoint (index {startIndex}) via NavMesh.", context.NpcObject);
+            Debug.Log($"{context.NpcObject.name}: Reached initial NavMesh destination (first waypoint).", context.NpcObject);
 
             // Ensure NavMesh movement is stopped (Runner already does this before calling OnReachedDestination, but defensive)
             context.MovementHandler?.StopMoving();
 
+            // --- Get the path data from the Runner's temporary fields ---
+            // This data was stored in OnEnter for the initial NavMesh leg.
+            PathSO pathSOToFollow = context.Runner.tempPathSO; // <-- Read from temporary field
+            int startWaypointIndex = context.Runner.tempStartIndex; // <-- Read from temporary field
+            bool followReverseDirection = context.Runner.tempFollowReverse; // <-- Read from temporary field
+
+            // Clear the Runner's temporary fields *after* reading them
+            context.Runner.tempPathSO = null;
+            context.Runner.tempStartIndex = 0; // Reset to default
+            context.Runner.tempFollowReverse = false; // Reset to default
+            Debug.Log($"{context.NpcObject.name}: Cleared Runner temp path fields in OnReachedDestination.", context.NpcObject);
+
+
+            // --- Validate obtained path data ---
+            if (pathSOToFollow == null)
+            {
+                 Debug.LogError($"{context.NpcObject.name}: PathState OnReachedDestination: PathSO is null from Runner temp fields! Cannot start path following. Transitioning to fallback.", context.NpcObject);
+                 context.TransitionToState(GeneralState.Idle); // Fallback
+                 return;
+            }
+             if (startWaypointIndex < 0 || startWaypointIndex >= pathSOToFollow.WaypointCount)
+             {
+                  Debug.LogError($"{context.NpcObject.name}: PathState OnReachedDestination: Invalid start index {startWaypointIndex} from Runner temp fields for path '{pathSOToFollow.PathID}'! Cannot start path following. Transitioning to fallback.", context.NpcObject);
+                  context.TransitionToState(GeneralState.Idle); // Fallback
+                  return;
+             }
+            // --- End Validate ---
+
+
             // --- Check if the first waypoint is the intended end of the path ---
-            // Determine the index of the *intended* end waypoint of the pathAsset based on startIndex and direction
-             int intendedEndIndex = followReverse ? 0 : pathAsset.WaypointCount - 1;
-             string intendedEndWaypointID = pathAsset.GetWaypointID(intendedEndIndex);
+            // Determine the index of the *intended* end waypoint of the pathSOToFollow based on startIndex and direction
+             int intendedEndIndex = followReverseDirection ? 0 : pathSOToFollow.WaypointCount - 1;
+             string intendedEndWaypointID = pathSOToFollow.GetWaypointID(intendedEndIndex);
 
              // Check if the waypoint we just reached via NavMesh is the same as the intended end waypoint
              // The waypoint we reached via NavMesh is the one we set the NavMesh destination to in OnEnter.
-             // This is the waypoint ID derived from 'startIndex'.
-             string reachedWaypointID = pathAsset.GetWaypointID(startIndex); // The waypoint reached via NavMesh leg
+             // This is the waypoint ID derived from 'startWaypointIndex'.
+             string reachedWaypointID = pathSOToFollow.GetWaypointID(startWaypointIndex); // The waypoint reached via NavMesh leg
 
             if (!string.IsNullOrWhiteSpace(intendedEndWaypointID) && intendedEndWaypointID == reachedWaypointID)
             {
                  // Reached the intended end waypoint directly via NavMesh (e.g., path had only 2 waypoints, or started at index before end)
-                 Debug.Log($"{context.NpcObject.name}: Reached intended end waypoint ('{reachedWaypointID}') directly via NavMesh.", context.NpcObject);
+                 Debug.Log($"{context.NpcObject.name}: Reached intended end waypoint ('{reachedWaypointID}') directly via NavMesh. Triggering end behavior.", context.NpcObject);
 
                  // --- Determine next state using PathSO's GetNextActiveStateDetails ---
                  // Ensure TiNpcManager is available via context
@@ -350,11 +360,11 @@ namespace Game.NPC.States // Place alongside other active states
                       return;
                  }
 
-                 PathTransitionDetails transitionDetails = pathAsset?.GetNextActiveStateDetails(context.TiData, context.TiNpcManager) ?? new PathTransitionDetails(null); 
+                 PathTransitionDetails transitionDetails = pathSOToFollow.GetNextActiveStateDetails(context.TiData, context.TiNpcManager); 
 
                  if (transitionDetails.HasValidTransition)
                  {
-                      Debug.Log($"{context.NpcObject.name}: Path '{pathAsset.PathID}' end behavior determined next Active State: '{transitionDetails.TargetStateEnum.GetType().Name}.{transitionDetails.TargetStateEnum.ToString() ?? "NULL"}'.", context.NpcObject);
+                      Debug.Log($"{context.NpcObject.name}: Path '{pathSOToFollow.PathID}' end behavior determined next Active State: '{transitionDetails.TargetStateEnum.GetType().Name}.{transitionDetails.TargetStateEnum.ToString() ?? "NULL"}'.", context.NpcObject);
 
                       // Check if the target state is PathState.FollowPath
                       if (transitionDetails.TargetStateEnum.GetType() == typeof(Game.NPC.PathState) && transitionDetails.TargetStateEnum.Equals(Game.NPC.PathState.FollowPath))
@@ -363,7 +373,8 @@ namespace Game.NPC.States // Place alongside other active states
                            if (transitionDetails.PathAsset != null)
                            {
                                 Debug.Log($"{context.NpcObject.name}: Transitioning to follow next path '{transitionDetails.PathAsset.PathID}' from index {transitionDetails.StartIndex}, reverse: {transitionDetails.FollowReverse}.", context.NpcObject);
-                                // Start following the next path using the handler
+                                // Start following the next path using the handler directly
+                                // No state machine transition is needed here, just update the handler.
                                 bool pathStarted = context.StartFollowingPath(transitionDetails.PathAsset, transitionDetails.StartIndex, transitionDetails.FollowReverse);
                                 if (!pathStarted)
                                 {
@@ -371,9 +382,9 @@ namespace Game.NPC.States // Place alongside other active states
                                      context.TransitionToState(GeneralState.Idle); // Fallback
                                 }
                                 // Note: The state remains PathState.FollowPath, but the handler is updated.
-                                // No state machine transition is needed here.
+                                // The next tick will continue path following on the new path.
                            } else {
-                                Debug.LogError($"{context.NpcObject.name}: Path '{pathAsset.PathID}' end behavior specified PathState.FollowPath but the next Path Asset is null! Transitioning to Idle fallback.", context.NpcObject);
+                                Debug.LogError($"{context.NpcObject.name}: Path '{pathSOToFollow.PathID}' end behavior specified PathState.FollowPath but the next Path Asset is null in transition details! Transitioning to Idle fallback.", context.NpcObject);
                                 context.TransitionToState(GeneralState.Idle); // Fallback
                            }
                       }
@@ -387,7 +398,7 @@ namespace Game.NPC.States // Place alongside other active states
                  else
                  {
                       // GetNextActiveStateDetails returned invalid details (invalid config or decision failed)
-                      Debug.LogError($"{context.NpcObject.name}: Path '{pathAsset.PathID}' end behavior returned invalid details or failed to determine next Active State. Transitioning to Idle fallback.", context.NpcObject);
+                      Debug.LogError($"{context.NpcObject.name}: Path '{pathSOToFollow.PathID}' end behavior returned invalid details or failed to determine next Active State. Transitioning to Idle fallback.", context.NpcObject);
                       context.TransitionToState(GeneralState.Idle); // Fallback
                  }
             }
@@ -397,11 +408,11 @@ namespace Game.NPC.States // Place alongside other active states
                 // The handler will disable the NavMeshAgent and start Rigidbody movement.
                 // We pass the path asset, the *start index* (where the NPC *is*), and the direction.
                 // The handler's StartFollowingPath will determine the *first target* waypoint index.
-                bool pathStarted = context.StartFollowingPath(pathAsset, startIndex, followReverse);
+                bool pathStarted = context.StartFollowingPath(pathSOToFollow, startWaypointIndex, followReverseDirection);
 
                 if (!pathStarted)
                 {
-                     Debug.LogError($"{context.NpcObject.name}: Failed to start path following for path '{pathAsset.PathID}'! Transitioning to fallback.", context.NpcObject);
+                     Debug.LogError($"{context.NpcObject.name}: Failed to start path following for path '{pathSOToFollow.PathID}'! Transitioning to fallback.", context.NpcObject);
                      context.TransitionToState(GeneralState.Idle); // Fallback
                      return;
                 }
@@ -422,28 +433,15 @@ namespace Game.NPC.States // Place alongside other active states
 
             // Note: Animation speed should be reset here
             // context.PlayAnimation("Idle"); // Assuming idle is the default after movement
+
+            // Clear any lingering temporary path data on the Runner just in case
+            context.Runner.tempPathSO = null;
+            context.Runner.tempStartIndex = 0;
+            context.Runner.tempFollowReverse = false;
         }
 
-        // Optional: Add validation in editor
-        #if UNITY_EDITOR
-        private void OnValidate()
-        {
-            if (pathAsset != null)
-            {
-                if (startIndex < 0 || startIndex >= pathAsset.WaypointCount)
-                {
-                    Debug.LogWarning($"PathStateSO '{name}': Start Index ({startIndex}) is out of bounds for Path Asset '{pathAsset.name}' (Waypoint Count: {pathAsset.WaypointCount}).", this);
-                }
-            }
-
-             // Add validation that pathAsset is assigned
-             if (pathAsset == null)
-             {
-                  Debug.LogError($"PathStateSO '{name}': Path Asset is not assigned! This state requires a PathSO.", this);
-             }
-        }
-        #endif
+        // REMOVED: OnValidate method as it only validated the removed serialized fields.
     }
 }
 
-// --- END OF FILE PathStateSO.cs (Final Refactored) ---
+// --- END OF FILE PathStateSO.cs (Refactored Generic) ---  

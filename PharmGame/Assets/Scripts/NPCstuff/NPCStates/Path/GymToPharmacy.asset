@@ -9,15 +9,19 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 983b1dbdfdbb14c4986e86c558fef2ea, type: 3}
+  m_Script: {fileID: 11500000, guid: 4cc3da1aa7a383745880064bc4f48c8d, type: 3}
   m_Name: GymToPharmacy
   m_EditorClassIdentifier: 
-  stateID: GymToPharmacy
-  isInterruptible: 1
-  checkMovementArrival: 1
-  pathAsset: {fileID: 11400000, guid: eb4044d295a495c4d9e4becc20f0a80c, type: 2}
-  startIndex: 0
-  followReverse: 0
+  pathID: GymToPharmacy
+  waypointIDs:
+  - Gym
+  - GP1
+  - GP2
+  - Pharmacy
+  leadsToDecisionPoint: 1
   decisionPoint: {fileID: 11400000, guid: 6618bfb237a71b7418269a31a67a4727, type: 2}
   nextStateEnumKey: 
   nextStateEnumType: 
+  fixedTransitionPathAsset: {fileID: 0}
+  fixedTransitionStartIndex: 0
+  fixedTransitionFollowReverse: 0

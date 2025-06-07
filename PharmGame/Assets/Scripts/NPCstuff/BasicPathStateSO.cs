@@ -1,4 +1,4 @@
-// --- START OF FILE BasicPathStateSO.cs (Final Refactored) ---
+// --- START OF FILE BasicPathStateSO.cs (Refactored Generic) ---
 
 using UnityEngine;
 using System; // Needed for System.Enum
@@ -12,46 +12,34 @@ using Game.NPC.Decisions; // Needed for DecisionPointSO, NpcDecisionHelper // St
 namespace Game.NPC.BasicStates // Place Basic States in their own namespace
 {
     /// <summary>
-    /// Basic state for simulating an inactive TI NPC following a predefined waypoint path.
+    /// Generic Basic state for simulating an inactive TI NPC following a predefined waypoint path.
     /// Operates directly on TiNpcData.
-    /// Now supports restoring progress for activated TI NPCs and triggers decision logic
+    /// Now supports resuming progress for activated TI NPCs and triggers decision logic
     /// upon simulating reaching a linked Decision Point.
-    /// MODIFIED: End behavior (Decision Point or fixed transition) is now defined on the PathSO asset.
+    /// End behavior (Decision Point or fixed transition) is now defined on the PathSO asset.
     /// Uses PathTransitionDetails to handle transitions to other paths.
+    /// This single asset handles the simulation logic for *any* path data stored on TiNpcData.
     /// </summary>
-    [CreateAssetMenu(fileName = "BasicPathState_", menuName = "NPC/Basic States/Basic Follow Path", order = 50)] // Order appropriately
+    [CreateAssetMenu(fileName = "BasicPathState_FollowPath", menuName = "NPC/Basic States/Basic Follow Path (Generic)", order = 50)] // Use a generic name
     public class BasicPathStateSO : BasicNpcStateSO
     {
         // --- State Configuration ---
-        [Header("Basic Path Settings")]
-        [Tooltip("The PathSO asset defining the path to simulate.")]
-        [SerializeField] private PathSO pathAsset;
-        [Tooltip("The index of the waypoint to start the path from (0-based).")]
-        [SerializeField] private int startIndex = 0; // <-- This field is on the SO asset
-        [Tooltip("If true, simulate following the path in reverse from the start index.")]
-        [SerializeField] private bool followReverse = false; // <-- This field is on the SO asset
+        // REMOVED: Serialized fields for specific path asset, start index, and reverse flag.
+        // These will be read dynamically from TiNpcData.
 
         // --- BasicNpcStateSO Overrides ---
         public override System.Enum HandledBasicState => BasicPathState.BasicFollowPath;
 
         // Basic Path states do not use the standard timeout; their 'timeout' is reaching the end of the path.
-        // However, they still need to decrement the *general* simulation timer on TiNpcData
-        // if their SimulateTick doesn't fully consume the deltaTime (e.g., waiting at a waypoint).
-        // For now, let's keep ShouldUseTimeout false, as the timeout is transition to BasicExitingStore,
-        // which is not the primary way this state transitions.
-        // The simulatedStateTimer *is* used by BasicLookToShop for its specific timeout.
-        // Let's revert ShouldUseTimeout to read the base value, but override the timer initialization in OnEnter.
-        // The base OnEnter already handles resetting the timer if ShouldUseTimeout is false. Let's stick to that.
-        // If a PathState *could* time out (e.g., stuck simulation), we'd set this to true.
-        // public override bool ShouldUseTimeout => base.ShouldUseTimeout; // Revert to base property
-         public override bool ShouldUseTimeout => false; // Keep false as per original intent
+        // The simulatedStateTimer is used by other states (like BasicLookToShop).
+         public override bool ShouldUseTimeout => false;
 
 
         public override void OnEnter(TiNpcData data, BasicNpcStateManager manager)
         {
             base.OnEnter(data, manager); // Call base OnEnter (logs entry, resets base timer/target/path data)
 
-            // Validate WaypointManager dependency early
+            // Validate dependencies early
              if (WaypointManager.Instance == null)
              {
                   Debug.LogError($"SIM {data.Id}: WaypointManager.Instance is null! Cannot simulate path. Transitioning to BasicPatrol fallback.", data.NpcGameObject);
@@ -59,127 +47,72 @@ namespace Game.NPC.BasicStates // Place Basic States in their own namespace
                   return;
              }
 
-            PathSO currentPath;
-            int currentPathStartIndex;
-            bool currentPathFollowReverse;
-
-            // --- Determine path data source: TiNpcData (if continuing) or SO Asset (if starting new) ---
-            if (data.isFollowingPathBasic) // Check if TiNpcData indicates continuing a path simulation
+            // --- Determine path data source: TiNpcData (MUST be present) ---
+            // This state should ONLY be entered if the TiNpcData already has valid path simulation data primed.
+            // This happens during LoadDummyNpcData or when transitioning from another Basic State that decides the next path.
+            if (!data.isFollowingPathBasic || string.IsNullOrWhiteSpace(data.simulatedPathID) || data.simulatedWaypointIndex < 0)
             {
-                 // Continuing an existing path simulation (e.g., transitioned from BasicIdleAtHome or another BasicPathState)
-                 Debug.Log($"SIM {data.Id}: BasicPathState '{name}' OnEnter. Continuing path simulation from TiNpcData.", data.NpcGameObject);
-                 currentPath = WaypointManager.Instance.GetPath(data.simulatedPathID); // Get path reference from data
-                 currentPathStartIndex = data.simulatedWaypointIndex; // Use index from data (this is the target they were moving towards)
-                 currentPathFollowReverse = data.simulatedFollowReverse; // Use direction from data
-
-                 if (currentPath == null)
-                 {
-                      Debug.LogError($"SIM {data.Id}: PathSO with ID '{data.simulatedPathID}' from TiNpcData not found via WaypointManager during BasicPathState OnEnter! Cannot continue simulation. Transitioning to BasicPatrol fallback.", data.NpcGameObject);
-                      // Clear invalid path data on TiNpcData
-                      data.simulatedPathID = null;
-                      data.simulatedWaypointIndex = -1;
-                      data.simulatedFollowReverse = false;
-                      data.isFollowingPathBasic = false;
-                      manager.TransitionToBasicState(data, BasicState.BasicPatrol);
-                      return;
-                 }
-
-                 // The position should already be set in the previous state's SimulateTick or OnEnter.
-                 // The target position needs to be set based on the saved index.
-                 string nextTargetWaypointID = currentPath.GetWaypointID(currentPathStartIndex); // Use the saved index
-                 Transform nextTargetTransform = WaypointManager.Instance.GetWaypointTransform(nextTargetWaypointID);
-
-                 if (nextTargetTransform != null)
-                 {
-                      data.simulatedTargetPosition = nextTargetTransform.position;
-                      // Simulate rotation towards the target waypoint from the NPC's *current* (saved) position
-                      // data.CurrentWorldPosition was saved by the Runner just before deactivation OR set by previous simulation tick.
-                      Vector3 direction = (data.simulatedTargetPosition.Value - data.CurrentWorldPosition).normalized;
-                      if (direction.sqrMagnitude > 0.001f)
-                      {
-                           data.CurrentWorldRotation = Quaternion.LookRotation(direction);
-                      }
-                      // Debug.Log($"SIM {data.Id}: Continuing path. Set simulated target position to {data.simulatedTargetPosition.Value}.", data.NpcGameObject); // Too noisy
-                 }
-                 else
-                 {
-                      Debug.LogError($"SIM {data.Id}: Saved target waypoint with ID '{nextTargetWaypointID}' (index {currentPathStartIndex}) for path '{currentPath.PathID}' not found via WaypointManager during simulation OnEnter! Cannot continue path. Transitioning to BasicPatrol fallback.", data.NpcGameObject);
-                      // Clear invalid path data on TiNpcData
-                      data.simulatedPathID = null;
-                      data.simulatedWaypointIndex = -1;
-                      data.simulatedFollowReverse = false;
-                      data.isFollowingPathBasic = false;
-                      manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Fallback
-                      return;
-                 }
-
+                 Debug.LogError($"SIM {data.Id}: BasicPathState '{name}' OnEnter: TiNpcData does NOT have valid path simulation data primed! isFollowingPathBasic: {data.isFollowingPathBasic}, simulatedPathID: '{data.simulatedPathID ?? "NULL"}', simulatedWaypointIndex: {data.simulatedWaypointIndex}. Transitioning to BasicPatrol fallback.", data.NpcGameObject);
+                 // Clear potentially invalid path data on TiNpcData
+                 data.simulatedPathID = null;
+                 data.simulatedWaypointIndex = -1;
+                 data.simulatedFollowReverse = false;
+                 data.isFollowingPathBasic = false;
+                 manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Fallback
+                 return;
             }
-            else // Not continuing a path simulation, start a new one based on this SO's configuration
+
+            // Path data is expected to be valid on TiNpcData. Read it.
+            PathSO currentPath = WaypointManager.Instance.GetPath(data.simulatedPathID);
+            int currentPathStartIndex = data.simulatedWaypointIndex; // This is the target they were moving towards
+            bool currentPathFollowReverse = data.simulatedFollowReverse;
+
+            if (currentPath == null)
             {
-                 Debug.Log($"SIM {data.Id}: BasicPathState '{name}' OnEnter. Starting NEW path simulation from SO asset.", data.NpcGameObject);
-                 currentPath = pathAsset; // Use path reference from SO asset
-                 currentPathStartIndex = this.startIndex; // Use index from SO asset
-                 currentPathFollowReverse = this.followReverse; // Use direction from SO asset
-
-                 // Validate SO asset dependencies
-                 if (currentPath == null)
-                 {
-                     Debug.LogError($"SIM {data.Id}: BasicPathStateSO '{name}' has no Path Asset assigned and is not continuing a path! Transitioning to BasicPatrol fallback.", data.NpcGameObject);
-                     manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Fallback
-                     return;
-                 }
-
-                 // Initialize path state on TiNpcData based on SO asset config
-                 data.simulatedPathID = currentPath.PathID;
-                 // For simulation, we assume they start *at* the first waypoint of the path segment.
-                 // The initial NavMesh leg is skipped in simulation.
-                 data.simulatedWaypointIndex = currentPathStartIndex; // Start *at* this index
-                 data.simulatedFollowReverse = currentPathFollowReverse;
-                 data.isFollowingPathBasic = true; // <-- Set the flag
-
-                 // Set the initial position to the start waypoint's position
-                 string startWaypointID = currentPath.GetWaypointID(currentPathStartIndex);
-                 Transform startWaypointTransform = WaypointManager.Instance.GetWaypointTransform(startWaypointID);
-                 if (startWaypointTransform != null)
-                 {
-                      data.CurrentWorldPosition = startWaypointTransform.position;
-                      // Simulate initial rotation towards the next waypoint
-                      SimulateRotationTowardsNextWaypoint(data, currentPath, data.simulatedWaypointIndex, data.simulatedFollowReverse); // <-- Pass data's state
-                 }
-                 else
-                 {
-                      Debug.LogError($"SIM {data.Id}: Start waypoint with ID '{startWaypointID}' (index {currentPathStartIndex}) for path '{currentPath.PathID}' not found via WaypointManager during BasicPathState OnEnter! Cannot initialize position. Transitioning to BasicPatrol fallback.", data.NpcGameObject);
-                      // Clear invalid path data on TiNpcData
-                      data.simulatedPathID = null;
-                      data.simulatedWaypointIndex = -1;
-                      data.simulatedFollowReverse = false;
-                      data.isFollowingPathBasic = false;
-                      manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Fallback
-                      return;
-                 }
-
-                 // The first target waypoint will be determined in the first SimulateTick.
-                 data.simulatedTargetPosition = null; // Ensure target is null to trigger next waypoint lookup in SimulateTick
+                 Debug.LogError($"SIM {data.Id}: PathSO with ID '{data.simulatedPathID}' from TiNpcData not found via WaypointManager during BasicPathState OnEnter! Cannot continue simulation. Transitioning to BasicPatrol fallback.", data.NpcGameObject);
+                 // Clear invalid path data on TiNpcData
+                 data.simulatedPathID = null;
+                 data.simulatedWaypointIndex = -1;
+                 data.simulatedFollowReverse = false;
+                 data.isFollowingPathBasic = false;
+                 manager.TransitionToBasicState(data, BasicState.BasicPatrol);
+                 return;
             }
-            // --- END Determine path data source ---
 
+            // The position should already be set in the previous state's SimulateTick or OnEnter,
+            // or by TiNpcManager.LoadDummyNpcData if starting here.
+            // The target position needs to be set based on the saved index.
+            string nextTargetWaypointID = currentPath.GetWaypointID(currentPathStartIndex); // Use the saved index
+            Transform nextTargetTransform = WaypointManager.Instance.GetWaypointTransform(nextTargetWaypointID);
 
-             // Log entry, noting that end behavior is defined on the PathSO
-             Debug.Log($"SIM {data.Id}: Entering Basic Path State: {name} for path '{currentPath?.PathID ?? "NULL"}'. End behavior defined on PathSO asset.");
+            if (nextTargetTransform != null)
+            {
+                 data.simulatedTargetPosition = nextTargetTransform.position;
+                 // Simulate rotation towards the target waypoint from the NPC's *current* (saved) position
+                 // data.CurrentWorldPosition was saved by the Runner just before deactivation OR set by previous simulation tick.
+                 Vector3 direction = (data.simulatedTargetPosition.Value - data.CurrentWorldPosition).normalized;
+                 if (direction.sqrMagnitude > 0.001f)
+                 {
+                      data.CurrentWorldRotation = Quaternion.LookRotation(direction);
+                 }
+                 // Debug.Log($"SIM {data.Id}: Continuing path. Set simulated target position to {data.simulatedTargetPosition.Value}.", data.NpcGameObject); // Too noisy
+            }
+            else
+            {
+                 Debug.LogError($"SIM {data.Id}: Saved target waypoint with ID '{nextTargetWaypointID}' (index {currentPathStartIndex}) for path '{currentPath.PathID}' not found via WaypointManager during simulation OnEnter! Cannot continue path. Transitioning to BasicPatrol fallback.", data.NpcGameObject);
+                 // Clear invalid path data on TiNpcData
+                 data.simulatedPathID = null;
+                 data.simulatedWaypointIndex = -1;
+                 data.simulatedFollowReverse = false;
+                 data.isFollowingPathBasic = false;
+                 manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Fallback
+                 return;
+            }
 
+            // Log entry, noting that end behavior is defined on the PathSO
+             Debug.Log($"SIM {data.Id}: Entering Generic Basic Path State: {name} for path '{currentPath?.PathID ?? "NULL"}'. End behavior defined on PathSO asset.");
 
             data.simulatedStateTimer = 0f; // Timer is not used for waiting in this state
-
-
-            // Basic path states don't check timeout while moving.
-            // The timeout logic in BasicNpcStateManager.SimulateTickForNpc checks !data.simulatedTargetPosition.HasValue,
-            // so the timer is implicitly 'paused' while the NPC is moving towards a waypoint.
-            // The timer will only count down when data.simulatedTargetPosition is null,
-            // which happens right after arriving at a waypoint (and before getting the next target).
-            // This means timeout could potentially occur while "waiting" briefly at a waypoint,
-            // if that wait lasted longer than the timeout, or if the state logic explicitly set a target and timer.
-            // For this BasicPathState, the timer should likely remain 0 unless the derived state *specifically* uses it.
-            // The base OnEnter already handles resetting the timer if ShouldUseTimeout is false, which is correct here.
         }
 
         public override void SimulateTick(TiNpcData data, float deltaTime, BasicNpcStateManager manager)
@@ -227,7 +160,7 @@ namespace Game.NPC.BasicStates // Place Basic States in their own namespace
                      {
                           data.simulatedTargetPosition = nextTargetTransform.position;
                           // Simulate rotation towards the next waypoint
-                          SimulateRotationTowardsNextWaypoint(data, currentPath, data.simulatedWaypointIndex, data.simulatedFollowReverse); // <-- Pass data.simulatedFollowReverse
+                          SimulateRotationTowardsNextWaypoint(data, currentPath, data.simulatedWaypointIndex, data.simulatedFollowReverse); // <-- Pass data's state
                           // Debug.Log($"SIM {data.Id}: Reached waypoint. Targeting next waypoint '{nextTargetWaypointID}' (index {data.simulatedWaypointIndex}).", data.NpcGameObject); // Too noisy
                      }
                      else
@@ -259,13 +192,14 @@ namespace Game.NPC.BasicStates // Place Basic States in their own namespace
                            return;
                       }
 
+                      // Get the Active State details from the PathSO
                       PathTransitionDetails transitionDetails = currentPath?.GetNextActiveStateDetails(data, manager.tiNpcManager) ?? new PathTransitionDetails(null); 
 
                       if (transitionDetails.HasValidTransition)
                       {
                           Debug.Log($"SIM {data.Id}: Path '{currentPath.PathID}' end behavior determined next Active State: '{transitionDetails.TargetStateEnum.GetType().Name}.{transitionDetails.TargetStateEnum.ToString() ?? "NULL"}'.", data.NpcGameObject);
 
-                          // Map the chosen Active State Enum to a Basic State Enum
+                          // Map the chosen Active State Enum to a Basic State Enum for simulation
                           System.Enum chosenBasicStateEnum = manager.tiNpcManager.GetBasicStateFromActiveState(transitionDetails.TargetStateEnum);
 
                           if (chosenBasicStateEnum != null)
@@ -273,7 +207,7 @@ namespace Game.NPC.BasicStates // Place Basic States in their own namespace
                               // Need to ensure the chosen state is actually a BasicState or BasicPathState
                               // This check is technically redundant if GetBasicStateFromActiveState works correctly,
                               // but defensive coding is good.
-                              if (manager.IsBasicState(chosenBasicStateEnum) || (chosenBasicStateEnum is BasicPathState && (BasicPathState)chosenBasicStateEnum != BasicPathState.None))
+                              if (manager.IsBasicState(chosenBasicStateEnum) || (chosenBasicStateEnum is BasicPathState && chosenBasicStateEnum.Equals(BasicPathState.BasicFollowPath))) // Explicitly check for BasicPathState.BasicFollowPath
                               {
                                   Debug.Log($"SIM {data.Id}: Mapped to Basic State '{chosenBasicStateEnum.GetType().Name}.{chosenBasicStateEnum.ToString() ?? "NULL"}'. Transitioning.", data.NpcGameObject);
 
@@ -398,7 +332,7 @@ namespace Game.NPC.BasicStates // Place Basic States in their own namespace
              // the path state on data should ideally be preserved for activation.
              // Clearing simulatedTargetPosition here is safe.
              data.simulatedTargetPosition = null;
-             // data.simulatedStateTimer = 0f; // Timer is reset by base OnExit if ShouldUseTimeout is false
+             // data.simulatedStateTimer is reset by base OnExit if ShouldUseTimeout is false, which is correct here.
          }
 
         /// <summary>
@@ -432,26 +366,8 @@ namespace Game.NPC.BasicStates // Place Basic States in their own namespace
          }
 
 
-        // Optional: Add validation in editor
-        #if UNITY_EDITOR
-        private void OnValidate()
-        {
-            if (pathAsset != null)
-            {
-                if (startIndex < 0 || startIndex >= pathAsset.WaypointCount)
-                {
-                    Debug.LogWarning($"BasicPathStateSO '{name}': Start Index ({startIndex}) is out of bounds for Path Asset '{pathAsset.name}' (Waypoint Count: {pathAsset.WaypointCount}).", this);
-                }
-            }
-
-             // Add validation that pathAsset is assigned
-             if (pathAsset == null)
-             {
-                  Debug.LogError($"BasicPathStateSO '{name}': Path Asset is not assigned! This state requires a PathSO.", this);
-             }
-        }
-        #endif
+        // REMOVED: OnValidate method as it only validated the removed serialized fields.
     }
 }
 
-// --- END OF FILE BasicPathStateSO.cs (Final Refactored) ---
+// --- END OF FILE BasicPathStateSO.cs (Refactored Generic) ---

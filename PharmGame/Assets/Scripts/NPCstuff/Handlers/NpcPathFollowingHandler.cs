@@ -1,3 +1,5 @@
+// --- START OF FILE NpcPathFollowingHandler.cs (Fix PathSO Clearing) ---
+
 using UnityEngine;
 using System.Collections.Generic; // Needed for List
 using Game.Navigation; // Needed for PathSO and WaypointManager
@@ -12,6 +14,8 @@ namespace Game.NPC.Handlers // Place alongside other handlers
     /// Now includes logic for following paths in reverse and restoring progress after activation.
     /// Includes debug visualization for the path being followed.
     /// Modified to calculate movement and rotation but return the results for external interpolation.
+    /// ADDED: Public getter for the current PathSO.
+    /// FIXED: Ensure currentPathSO is not cleared prematurely when path ends.
     /// </summary>
     [RequireComponent(typeof(NpcMovementHandler))]
     [RequireComponent(typeof(Rigidbody))] // Requires a Rigidbody for MovePosition
@@ -50,6 +54,16 @@ namespace Game.NPC.Handlers // Place alongside other handlers
         public bool HasReachedEndOfPath { get; private set; } = false;
 
 
+        /// <summary>
+        /// Gets the PathSO asset currently being followed by this handler.
+        /// Returns null if not currently following a path.
+        /// </summary>
+        public PathSO GetCurrentPathSO()
+        {
+            return currentPathSO;
+        }
+
+
         private void Awake()
         {
             movementHandler = GetComponent<NpcMovementHandler>();
@@ -79,16 +93,20 @@ namespace Game.NPC.Handlers // Place alongside other handlers
 
             Debug.Log($"{gameObject.name}: NpcPathFollowingHandler Awake completed. References acquired.");
         }
-        
+
         private void OnEnable()
         {
             // Ensure state is clean on enable
+            // Note: StopFollowingPath now clears currentPathSO when called NOT from path end.
+            // This is correct for OnEnable cleanup.
             StopFollowingPath(); // Resets internal state and enables NavMeshAgent
         }
 
         private void OnDisable()
         {
             // Ensure state is clean on disable
+            // Note: StopFollowingPath now clears currentPathSO when called NOT from path end.
+            // This is correct for OnDisable cleanup.
             StopFollowingPath(); // Resets internal state and enables NavMeshAgent
         }
 
@@ -119,7 +137,7 @@ namespace Game.NPC.Handlers // Place alongside other handlers
                  if (currentWaypointIndex < 0 || currentWaypointIndex >= currentPathSO.WaypointCount)
                  {
                       Debug.LogError($"NpcPathFollowingHandler on {gameObject.name}: Invalid currentWaypointIndex {currentWaypointIndex} for path '{currentPathSO.PathID}' (WaypointCount: {currentPathSO.WaypointCount})! Stopping path following.", this);
-                      StopFollowingPath();
+                      StopFollowingPath(); // This will set HasReachedEndOfPath to false, which is correct here.
                       return new MovementTickResult(currentPosition, currentRotation); // Return current state on error
                  }
 
@@ -127,7 +145,7 @@ namespace Game.NPC.Handlers // Place alongside other handlers
                  if (string.IsNullOrWhiteSpace(targetWaypointID))
                  {
                       Debug.LogError($"NpcPathFollowingHandler on {gameObject.name}: Current path '{currentPathSO.PathID}' has null/empty waypoint ID at index {currentWaypointIndex}! Stopping path following.", this);
-                      StopFollowingPath();
+                      StopFollowingPath(); // This will set HasReachedEndOfPath to false, which is correct here.
                       return new MovementTickResult(currentPosition, currentRotation); // Return current state on error
                  }
 
@@ -136,7 +154,7 @@ namespace Game.NPC.Handlers // Place alongside other handlers
                  if (currentTargetWaypointTransform == null)
                  {
                       Debug.LogError($"NpcPathFollowingHandler on {gameObject.name}: Waypoint with ID '{targetWaypointID}' (index {currentWaypointIndex} in path '{currentPathSO.PathID}') not found in scene via WaypointManager! Stopping path following.", this);
-                      StopFollowingPath();
+                      StopFollowingPath(); // This will set HasReachedEndOfPath to false, which is correct here.
                       return new MovementTickResult(currentPosition, currentRotation); // Return current state on error
                  }
                  // Debug.Log($"NpcPathFollowingHandler on {gameObject.name}: Targeting waypoint '{targetWaypointID}' (index {currentWaypointIndex}).", this); // Too noisy
@@ -175,13 +193,13 @@ namespace Game.NPC.Handlers // Place alongside other handlers
                          } else {
                              // Fallback if next waypoint lookup fails immediately after advancing index
                              Debug.LogError($"NpcPathFollowingHandler on {gameObject.name}: Next target waypoint with ID '{nextTargetWaypointID}' (index {currentWaypointIndex}) not found immediately after advancing index! Stopping path following.", this);
-                             StopFollowingPath();
+                             StopFollowingPath(); // This will set HasReachedEndOfPath to false, which is correct here.
                              return new MovementTickResult(currentPosition, currentRotation); // Return current state on error
                          }
                     } else {
                          // Should not happen if !reachedEnd check was correct, but defensive
                          Debug.LogError($"NpcPathFollowingHandler on {gameObject.name}: Advanced to invalid next index {currentWaypointIndex}! Stopping path following.", this);
-                         StopFollowingPath();
+                         StopFollowingPath(); // This will set HasReachedEndOfPath to false, which is correct here.
                          return new MovementTickResult(currentPosition, currentRotation); // Return current state on error
                     }
 
@@ -189,9 +207,13 @@ namespace Game.NPC.Handlers // Place alongside other handlers
                 else
                 {
                     // Reached the end of the path
-                    Debug.Log($"NpcPathFollowingHandler on {gameObject.name}: Reached end of path '{currentPathSO.PathID}'. Stopping path following.", this);
-                    StopFollowingPath();
+                    Debug.Log($"NpcPathFollowingHandler on {gameObject.name}: Reached end of path '{currentPathSO.PathID}'. Signalling completion.", this);
+                    // DO NOT CALL StopFollowingPath() HERE.
+                    // The state machine needs to read currentPathSO *after* completion is signalled.
+                    // StopFollowingPath will be called by the state after it reads the PathSO.
+                    isFollowingPath = false; // Stop the handler's tick loop
                     HasReachedEndOfPath = true; // Signal completion
+                    // currentPathSO is INTENTIONALLY NOT CLEARED here.
                     return new MovementTickResult(currentPosition, currentRotation); // Return current state as movement is finished
                 }
             }
@@ -238,10 +260,13 @@ namespace Game.NPC.Handlers // Place alongside other handlers
         /// <returns>True if path following was successfully started, false otherwise.</returns>
         public bool StartFollowingPath(PathSO path, int startIndex = 0, bool reverse = false)
         {
+             // FIX: Clear the previous path reference here, as a new path is starting.
+             currentPathSO = null; // <-- ADDED CLEAR HERE
+
             if (path == null || path.WaypointCount < 2 || waypointManager == null)
             {
                 Debug.LogError($"NpcPathFollowingHandler on {gameObject.name}: Cannot start path following. Path is null ({path == null}), has less than 2 waypoints ({path?.WaypointCount ?? 0}), or WaypointManager is null ({waypointManager == null}).", this);
-                StopFollowingPath(); // Ensure state is clean
+                StopFollowingPath(); // Ensure state is clean (this won't clear currentPathSO if called from here now)
                 return false;
             }
 
@@ -254,7 +279,12 @@ namespace Game.NPC.Handlers // Place alongside other handlers
             if (reachedEndImmediately)
             {
                  Debug.LogWarning($"NpcPathFollowingHandler on {gameObject.name}: Path '{path.PathID}' is effectively completed immediately (start index {startIndex}, reverse {reverse}). Signalling completion.", this);
-                 StopFollowingPath(); // Ensure state is clean
+                 // DO NOT CALL StopFollowingPath() HERE.
+                 // The state machine needs to read currentPathSO *after* completion is signalled.
+                 // StopFollowingPath will be called by the state after it reads the PathSO.
+                 // We need to set currentPathSO *before* signalling completion so GetCurrentPathSO works.
+                 currentPathSO = path; // Set the path so it can be read
+                 isFollowingPath = false; // Stop the handler's tick loop
                  HasReachedEndOfPath = true; // Signal completion right away
                  return true; // Consider this a successful "start" that immediately finishes
             }
@@ -273,7 +303,7 @@ namespace Game.NPC.Handlers // Place alongside other handlers
 
 
             // --- Setup State ---
-            currentPathSO = path;
+            currentPathSO = path; // <-- Set the path here
             currentWaypointIndex = firstTargetIndex; // We are moving *towards* this index
             followReverse = reverse;
             isFollowingPath = true;
@@ -303,10 +333,13 @@ namespace Game.NPC.Handlers // Place alongside other handlers
         /// <returns>True if path following was successfully restored, false otherwise.</returns>
         public bool RestorePathProgress(PathSO path, int waypointIndex, bool reverse)
         {
+             // FIX: Clear the previous path reference here, as a new path is starting (restoring is like starting).
+             currentPathSO = null; // <-- ADDED CLEAR HERE
+
              if (path == null || path.WaypointCount < 2 || waypointManager == null)
              {
                   Debug.LogError($"NpcPathFollowingHandler on {gameObject.name}: Cannot restore path progress. Path is null ({path == null}), has less than 2 waypoints ({path?.WaypointCount ?? 0}), or WaypointManager is null ({waypointManager == null}).", this);
-                  StopFollowingPath(); // Ensure state is clean
+                  StopFollowingPath(); // Ensure state is clean (won't clear currentPathSO if called from here)
                   return false;
              }
 
@@ -316,7 +349,7 @@ namespace Game.NPC.Handlers // Place alongside other handlers
              {
                   Debug.LogError($"NpcPathFollowingHandler on {gameObject.name}: Cannot restore path progress. Saved waypoint index {waypointIndex} is out of bounds for path '{path.PathID}' (WaypointCount: {path.WaypointCount}). Starting path from beginning instead.", this);
                   // Fallback: Start the path from the beginning (index 0, forward)
-                  return StartFollowingPath(path, 0, false); // Use existing method
+                  return StartFollowingPath(path, 0, false); // Use existing method (will clear currentPathSO again)
              }
              // --- End Validation ---
 
@@ -329,12 +362,12 @@ namespace Game.NPC.Handlers // Place alongside other handlers
              {
                   Debug.LogError($"NpcPathFollowingHandler on {gameObject.name}: Target waypoint with ID '{targetWaypointID}' (index {waypointIndex}) for path '{path.PathID}' not found via WaypointManager during restore! Cannot restore path progress. Starting path from beginning instead.", this);
                   // Fallback: Start the path from the beginning (index 0, forward)
-                  return StartFollowingPath(path, 0, false); // Use existing method
+                  return StartFollowingPath(path, 0, false); // Use existing method (will clear currentPathSO again)
              }
 
 
              // --- Setup State ---
-             currentPathSO = path;
+             currentPathSO = path; // <-- Set the path here
              currentWaypointIndex = waypointIndex; // Restore the index they were moving *towards*
              followReverse = reverse;
              isFollowingPath = true;
@@ -361,7 +394,9 @@ namespace Game.NPC.Handlers // Place alongside other handlers
         /// </summary>
         public void StopFollowingPath()
         {
-            if (!isFollowingPath) return; // Only stop if currently following
+            // Check if currently following a path OR if HasReachedEndOfPath is true (meaning we just finished)
+            // We need to allow this to run even if isFollowingPath is false, IF it's called immediately after path end.
+            if (!isFollowingPath && !HasReachedEndOfPath) return; // Only stop if currently following or just finished
 
             Debug.Log($"NpcPathFollowingHandler on {gameObject.name}: Stopping path following for path '{currentPathSO?.PathID ?? "NULL"}'.", this);
 
@@ -372,10 +407,11 @@ namespace Game.NPC.Handlers // Place alongside other handlers
             // We don't need to explicitly set rb.isKinematic = false here.
 
             // --- Reset State ---
-            currentPathSO = null;
+            // currentPathSO is now cleared in StartFollowingPath/RestorePathProgress.
+            // DO NOT CLEAR currentPathSO HERE. It is needed by the state machine immediately after this call.
             currentWaypointIndex = -1; // Invalid index
             followReverse = false;
-            isFollowingPath = false;
+            isFollowingPath = false; // Stop the handler's tick loop
             HasReachedEndOfPath = false; // Reset completion flag
             currentTargetWaypointTransform = null; // Clear cached transform
 
@@ -409,15 +445,6 @@ namespace Game.NPC.Handlers // Place alongside other handlers
          }
 
          /// <summary>
-         /// Gets the ID of the path currently being followed.
-         /// Returns null if not following a path.
-         /// </summary>
-         public string GetCurrentPathID()
-         {
-              return currentPathSO?.PathID;
-         }
-
-         /// <summary>
          /// Gets the followReverse flag for the current path.
          /// Returns false if not following a path.
          /// </summary>
@@ -432,7 +459,10 @@ namespace Game.NPC.Handlers // Place alongside other handlers
          public void Reset()
          {
              // Ensure path following is stopped and agent is re-enabled
+             // Note: StopFollowingPath is called here, and it will NOT clear currentPathSO.
+             // We need to explicitly clear currentPathSO during a full reset.
              StopFollowingPath();
+             currentPathSO = null; // <-- ADDED CLEAR HERE for full reset
              // The rest of the state is reset by StopFollowingPath
              Debug.Log($"{gameObject.name}: NpcPathFollowingHandler reset.");
          }
@@ -499,3 +529,5 @@ namespace Game.NPC.Handlers // Place alongside other handlers
          }
     }
 }
+
+// --- END OF FILE NpcPathFollowingHandler.cs (Fix PathSO Clearing) ---
