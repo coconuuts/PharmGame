@@ -222,19 +222,8 @@ namespace Game.NPC.Handlers // Place alongside other handlers
             }
             // --- End Calculate Rotation ---
 
-
-            // --- MODIFIED: Do NOT use Rigidbody.MovePosition here ---
-            // rb.MovePosition(newPosition); // REMOVED
-            // --- END MODIFIED ---
-
-            // --- MODIFIED: Do NOT apply rotation directly ---
-            // transform.rotation = ... // REMOVED
-            // --- END MODIFIED ---
-
-
-            // --- NEW: Return the calculated new position and rotation ---
+            // --- Return the calculated new position and rotation ---
             return new MovementTickResult(newPosition, targetRotation);
-            // --- END NEW ---
         }
 
 
@@ -448,7 +437,7 @@ namespace Game.NPC.Handlers // Place alongside other handlers
              Debug.Log($"{gameObject.name}: NpcPathFollowingHandler reset.");
          }
 
-         // --- NEW DEBUG: Draw gizmos for the path being followed ---
+         // --- Draw gizmos for the path being followed ---
          private void OnDrawGizmosSelected()
          {
              if (!isFollowingPath || currentPathSO == null || waypointManager == null) return;
@@ -508,6 +497,5 @@ namespace Game.NPC.Handlers // Place alongside other handlers
              }
              #endif
          }
-         // --- END NEW DEBUG ---
     }
 }

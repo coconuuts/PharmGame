@@ -1,4 +1,6 @@
-// --- START OF FILE NpcStateContext.cs ---
+// --- START OF FILE NpcStateContext.cs (Modified) ---
+
+// --- START OF FILE NpcStateContext.cs --- // Keep original comment for history
 
 using UnityEngine;
 using CustomerManagement; // Needed for CustomerManager
@@ -11,8 +13,8 @@ using Game.Events; // Needed for publishing events and event args like NpcEntere
 using Game.NPC; // Needed for CustomerState and GeneralState enums
 using Game.NPC.States; // Needed for NpcStateSO
 using Game.Proximity; // Needed for ProximityManager.ProximityZone
-using Game.Navigation; // Needed for PathSO
-using Game.NPC.TI;
+using Game.Navigation; // Needed for PathSO, PathTransitionDetails // <-- Added PathTransitionDetails
+using Game.NPC.TI; // Needed for TiNpcData, TiNpcManager // <-- Added TiNpcManager
 
 namespace Game.NPC.States // Context is closely related to states
 {
@@ -20,6 +22,7 @@ namespace Game.NPC.States // Context is closely related to states
     /// Provides necessary references and helper methods to an NpcStateSO
     /// currently being executed by the NpcStateMachineRunner.
     /// Passed to OnEnter, OnUpdate, OnExit methods.
+    /// MODIFIED: Includes reference to TiNpcManager.
     /// </summary>
     public struct NpcStateContext
     {
@@ -31,14 +34,16 @@ namespace Game.NPC.States // Context is closely related to states
         public NpcInterruptionHandler InterruptionHandler;
         // Reference to the Queue handler
         public NpcQueueHandler QueueHandler;
-        // --- NEW: Reference to the Path Following handler ---
+        // Reference to the Path Following handler
         public NpcPathFollowingHandler PathFollowingHandler;
-        // --- END NEW ---
          public TiNpcData TiData;
 
 
         // --- External References ---
         public CustomerManager Manager;
+        // --- Reference to TiNpcManager ---
+        public TiNpcManager TiNpcManager; 
+
         // Access the cached register via the Runner property
         public CashRegisterInteractable RegisterCached => Runner?.CachedCashRegister;
         public float DeltaTime { get; internal set; }
@@ -61,10 +66,10 @@ namespace Game.NPC.States // Context is closely related to states
         // Public property to check if NPC is currently interrupted
         public bool IsInterrupted => InterruptionHandler?.IsInterrupted() ?? false;
 
-        // --- NEW: Public properties/methods to access Path Following Handler functionality ---
+        // Public properties/methods to access Path Following Handler functionality
         public bool IsFollowingPath => PathFollowingHandler?.IsFollowingPath ?? false;
         public bool HasReachedEndOfPath => PathFollowingHandler?.HasReachedEndOfPath ?? false;
-        
+
 
         /// <summary>
         /// Starts the NPC following a specific waypoint path using the PathFollowingHandler.
@@ -122,8 +127,6 @@ namespace Game.NPC.States // Context is closely related to states
          /// Gets the followReverse flag for the current path via the PathFollowingHandler.
          /// </summary>
          public bool GetFollowReverse() => PathFollowingHandler?.GetFollowReverse() ?? false;
-
-        // --- END NEW ---
 
 
         // --- Helper Methods (Accessing Handlers or Runner functionality) ---
@@ -309,7 +312,7 @@ namespace Game.NPC.States // Context is closely related to states
          {
               InterruptionHandler?.EndInterruption();
          }
-         // --- END NEW ---
     }
 }
-// --- END OF FILE NpcStateContext.cs ---
+
+// --- END OF FILE NpcStateContext.cs (Modified) ---

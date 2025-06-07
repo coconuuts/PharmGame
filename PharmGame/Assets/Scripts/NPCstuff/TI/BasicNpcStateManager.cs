@@ -29,7 +29,7 @@ namespace Game.NPC.BasicStates // Place Basic State Manager in the Basic States 
 
         // Reference to the TiNpcManager (needed for state lookups etc.)
         // This reference will be obtained in Awake/Start
-        private TiNpcManager tiNpcManager;
+        internal TiNpcManager tiNpcManager;
 
         // Reference to GridManager (needed for updating position during simulation)
         // This reference will be obtained in Awake/Start
@@ -254,7 +254,6 @@ namespace Game.NPC.BasicStates // Place Basic State Manager in the Basic States 
                  {
                       // Update the item's position in the grid
                       gridManager.UpdateItemPosition(data, oldPosition, newPosition);
-                      // Debug.Log($"SIM {data.Id}: Position changed from {oldPosition} to {newPosition}. Updated grid.", data.NpcGameObject); // Too noisy
                  } else {
                       Debug.LogWarning($"SIM {data.Id}: GridManager is null! Cannot update grid position after simulation tick.", data.NpcGameObject);
                  }

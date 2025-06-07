@@ -1,3 +1,5 @@
+// --- START OF FILE NpcStateMachineRunner.cs (Modified) ---
+
 using UnityEngine;
 using System.Collections.Generic;
 using System.Collections;
@@ -12,7 +14,7 @@ using System;
 using Game.NPC.TI; // Needed for TiNpcData and TiNpcManager
 using Game.Spatial; // Needed for GridManager
 using Game.Proximity; // Needed for ProximityManager
-using Game.Navigation; // Needed for PathSO (although not directly used here, good practice if states reference it)
+using Game.Navigation; // Needed for PathSO (although not directly used here, good practice if states reference it), PathTransitionDetails // <-- Added PathTransitionDetails
 
 namespace Game.NPC
 {
@@ -21,6 +23,7 @@ namespace Game.NPC
      /// Executes the logic defined in NpcStateSO assets and manages state transitions.
      /// Creates and provides the NpcStateContext to executing states.
      /// Can represent a transient customer or an active True Identity NPC.
+     /// MODIFIED: Populates TiNpcManager reference in NpcStateContext.
      /// </summary>
      [RequireComponent(typeof(NpcMovementHandler))] // Ensure handlers are attached
      [RequireComponent(typeof(NpcAnimationHandler))]
@@ -28,7 +31,7 @@ namespace Game.NPC
      [RequireComponent(typeof(Handlers.NpcEventHandler))] // Required event handler
      [RequireComponent(typeof(Handlers.NpcInterruptionHandler))] // Require the interruption handler
      [RequireComponent(typeof(Game.NPC.Handlers.NpcQueueHandler))] // Required the Queue handler
-     [RequireComponent(typeof(Game.NPC.Handlers.NpcPathFollowingHandler))] // <-- NEW: Require the Path Following handler
+     [RequireComponent(typeof(Game.NPC.Handlers.NpcPathFollowingHandler))] // Require the Path Following handler
      public class NpcStateMachineRunner : MonoBehaviour
      {
           // --- References to Handler Components (Accessed by State SOs via the Context) ---
@@ -42,14 +45,13 @@ namespace Game.NPC
           private NpcQueueHandler queueHandler;
           public NpcQueueHandler QueueHandler { get { return queueHandler; } private set { queueHandler = value; } }
 
-          // --- NEW: Reference to the Path Following handler ---
+          // Reference to the Path Following handler
           private NpcPathFollowingHandler npcPathFollowingHandler;
           public NpcPathFollowingHandler PathFollowingHandler { get { return npcPathFollowingHandler; } private set { npcPathFollowingHandler = value; } }
-          // --- END NEW ---
 
 
           // Reference to the TiNpcManager
-          private TiNpcManager tiNpcManager;
+          private TiNpcManager tiNpcManager; // <-- Added private field
 
           // --- Public methods/properties for external access if needed ---
           public NpcStateSO CurrentStateSO => currentState;
@@ -107,22 +109,13 @@ namespace Game.NPC
                internal set => tiData = value;
           }
 
-          // --- Update Throttling Fields ---
-          // REMOVED: private float timeSinceLastUpdate = 0f;
-          // REMOVED: private float currentUpdateInterval = 0f; // 0 means update every frame (Full)
-          // REMOVED: private float normalUpdateInterval = 0f; // Stores the interval set by ProximityManager
-          // REMOVED: private const float FullUpdateInterval = 0f; // Update every frame
-          [Tooltip("Update rate (in Hz) for NPCs in the Moderate proximity zone.")]
-          [SerializeField] private float moderateUpdateRateHz = 8f; // Example: 8 updates per second
-          // REMOVED: private float moderateUpdateInterval => 1.0f / moderateUpdateRateHz;
-
           // --- Grid Position Tracking for Active NPCs ---
           private Vector3 lastGridPosition;
           private GridManager gridManager; // Need GridManager reference to get cell size
           private float timeSinceLastGridUpdate = 0f; // Separate timer for grid updates
           private const float GridUpdateCheckInterval = 0.5f; // Check grid position every 0.5 seconds
 
-          // --- NEW: Interpolation Fields for Rigidbody Movement ---
+          // --- Interpolation Fields for Rigidbody Movement ---
           private Vector3 visualPositionStart;
           private Vector3 visualPositionEnd;
           private Quaternion visualRotationStart;
@@ -131,8 +124,7 @@ namespace Game.NPC
           private float interpolationDuration;
           private bool isInterpolatingPosition; // Separate flag for position
           private bool isInterpolatingRotation; // Separate flag for rotation
-          // --- END NEW ---
-          
+
           // --- Temporary storage for active path progress when interrupted ---
           internal string interruptedPathID;
           internal int interruptedWaypointIndex = -1;
@@ -148,9 +140,9 @@ namespace Game.NPC
                Shopper = GetComponent<CustomerShopper>();
                interruptionHandler = GetComponent<NpcInterruptionHandler>();
                queueHandler = GetComponent<NpcQueueHandler>();
-               npcPathFollowingHandler = GetComponent<NpcPathFollowingHandler>(); // <-- NEW: Get Path Following handler
+               npcPathFollowingHandler = GetComponent<NpcPathFollowingHandler>();
 
-               if (MovementHandler == null || AnimationHandler == null || Shopper == null || interruptionHandler == null || QueueHandler == null || PathFollowingHandler == null) // <-- Add PathFollowingHandler null check
+               if (MovementHandler == null || AnimationHandler == null || Shopper == null || interruptionHandler == null || QueueHandler == null || PathFollowingHandler == null)
                {
                     Debug.LogError($"NpcStateMachineRunner on {gameObject.name}: Missing required handler components! MovementHandler: {MovementHandler != null}, AnimationHandler: {AnimationHandler != null}, Shopper: {Shopper != null}, InterruptionHandler: {interruptionHandler != null}, QueueHandler: {QueueHandler != null}, PathFollowingHandler: {PathFollowingHandler != null}", this);
                     enabled = false;
@@ -180,13 +172,14 @@ namespace Game.NPC
                     Shopper = Shopper,
                     NpcObject = this.gameObject,
                     Runner = this,
-                    QueueHandler = queueHandler, // <-- Set QueueHandler
-                    PathFollowingHandler = npcPathFollowingHandler // <-- NEW: Set PathFollowingHandler
+                    QueueHandler = queueHandler,
+                    PathFollowingHandler = npcPathFollowingHandler
+                    // TiData and TiNpcManager will be populated in Update/ThrottledTick/TransitionToState
                };
 
                _hasReachedCurrentDestination = true;
 
-               // --- NEW: Initialize interpolation fields ---
+               // --- Initialize interpolation fields ---
                visualPositionStart = transform.position;
                visualPositionEnd = transform.position;
                visualRotationStart = transform.rotation;
@@ -195,8 +188,6 @@ namespace Game.NPC
                interpolationDuration = 0f;
                isInterpolatingPosition = false;
                isInterpolatingRotation = false;
-               // --- END NEW ---
-
 
                Debug.Log($"{gameObject.name}: NpcStateMachineRunner Awake completed.");
           }
@@ -204,10 +195,10 @@ namespace Game.NPC
           private void Start() // <-- Use Start for Manager singletons
           {
                // Get reference to TiNpcManager
-               tiNpcManager = TiNpcManager.Instance;
+               tiNpcManager = TiNpcManager.Instance; // <-- Get TiNpcManager instance
                if (tiNpcManager == null)
                {
-                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): TiNpcManager instance not found! Cannot notify position changes for TI NPCs.", this);
+                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): TiNpcManager instance not found! Cannot notify position changes for TI NPCs or populate context.", this);
                }
 
                // Get reference to GridManager
@@ -286,8 +277,9 @@ namespace Game.NPC
                     _stateContext.Runner = this;
                     _stateContext.InterruptionHandler = interruptionHandler;
                     _stateContext.QueueHandler = QueueHandler;
-                    _stateContext.PathFollowingHandler = PathFollowingHandler; // <-- NEW: Populate PathFollowingHandler
-                    _stateContext.TiData = TiData; // <-- NEW: Populate TiData
+                    _stateContext.PathFollowingHandler = PathFollowingHandler;
+                    _stateContext.TiData = TiData;
+                    _stateContext.TiNpcManager = tiNpcManager; // <-- Populate TiNpcManager in context
                     // Need to populate DeltaTime here too if OnExit logic uses it, but typically it doesn't.
                     // _stateContext.DeltaTime = Time.deltaTime; // Or some default? Let's assume OnExit doesn't need it.
                     currentState.OnExit(_stateContext);
@@ -311,9 +303,9 @@ namespace Game.NPC
                CheckGridPositionUpdate();
 
                // Animation speed update should happen every frame for visual smoothness
-               UpdateAnimationSpeed(); // <-- NEW: Call animation update helper
+               UpdateAnimationSpeed(); // Call animation update helper
 
-               // --- NEW: Handle Visual Interpolation for Rigidbody Movement ---
+               // --- Handle Visual Interpolation for Rigidbody Movement ---
                // This runs every frame regardless of tick frequency
                if (PathFollowingHandler != null && PathFollowingHandler.IsFollowingPath) // Only interpolate if path following is active
                {
@@ -356,8 +348,6 @@ namespace Game.NPC
                        interpolationDuration = 0f;
                    }
                }
-               // --- END NEW ---
-
 
                // --- Determine if this Runner should be ticked this frame ---
                // Query managers to decide how to tick
@@ -385,7 +375,6 @@ namespace Game.NPC
                     // Debug.Log($"DEBUG Runner Update ({gameObject.name}): Ticking every frame (Transient)"); // Too noisy
                     ThrottledTick(Time.deltaTime); // Transient NPCs always get full updates
                }
-               // --- END NEW ---
           }
 
           /// <summary>
@@ -429,23 +418,23 @@ namespace Game.NPC
                     _stateContext.Runner = this;
                     _stateContext.InterruptionHandler = interruptionHandler;
                     _stateContext.QueueHandler = queueHandler;
-                    _stateContext.PathFollowingHandler = npcPathFollowingHandler; // Populate PathFollowingHandler
-                    _stateContext.TiData = TiData; // Populate TiData
-                    _stateContext.DeltaTime = deltaTime; // <-- NEW: Populate DeltaTime
+                    _stateContext.PathFollowingHandler = npcPathFollowingHandler;
+                    _stateContext.TiData = TiData;
+                    _stateContext.TiNpcManager = tiNpcManager; // <-- Populate TiNpcManager in context
+                    _stateContext.DeltaTime = deltaTime;
 
 
                     // --- Handle PathFollowingHandler Tick Movement ---
-                    if (PathFollowingHandler != null && PathFollowingHandler.IsFollowingPath)
+                    if (PathFollowingHandler != null && PathFollowingHandler.IsFollowingPath) // Only interpolate if path following is active
                     {
-                         // --- NEW: Get start position/rotation before tick ---
+                         // --- Get start position/rotation before tick ---
                          visualPositionStart = transform.position;
                          visualRotationStart = transform.rotation;
-                         // --- END NEW ---
 
                          // Call the handler's tick method, which now returns the calculated end position/rotation
                          MovementTickResult tickResult = PathFollowingHandler.TickMovement(deltaTime); // Use the deltaTime parameter
 
-                         // --- NEW: Store end position/rotation and setup interpolation ---
+                         // --- Store end position/rotation and setup interpolation ---
                          visualPositionEnd = tickResult.Position;
                          visualRotationEnd = tickResult.Rotation;
                          interpolationTimer = 0f; // Reset timer
@@ -479,7 +468,8 @@ namespace Game.NPC
                          _stateContext.QueueHandler = queueHandler;
                          _stateContext.PathFollowingHandler = npcPathFollowingHandler;
                          _stateContext.TiData = TiData;
-                         _stateContext.DeltaTime = deltaTime; // <-- NEW: Populate DeltaTime again (defensive)
+                         _stateContext.TiNpcManager = tiNpcManager; // <-- Populate TiNpcManager in context
+                         _stateContext.DeltaTime = deltaTime; // <-- Populate DeltaTime again (defensive)
 
 
                          currentState.OnReachedDestination(_stateContext);
@@ -495,7 +485,8 @@ namespace Game.NPC
                     _stateContext.QueueHandler = queueHandler;
                     _stateContext.PathFollowingHandler = npcPathFollowingHandler;
                     _stateContext.TiData = TiData;
-                    _stateContext.DeltaTime = deltaTime; // <-- NEW: Populate DeltaTime again (defensive)
+                    _stateContext.TiNpcManager = tiNpcManager; // <-- Populate TiNpcManager in context
+                    _stateContext.DeltaTime = deltaTime; // <-- Populate DeltaTime again (defensive)
 
 
                     // --- Call OnUpdate with the provided deltaTime ---
@@ -537,8 +528,8 @@ namespace Game.NPC
                     {
                          Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Warped to {startPosition} using MovementHandler.");
                          // After warp, ensure interpolation is off
-                         isInterpolatingPosition = false; // <-- NEW
-                         isInterpolatingRotation = false; // <-- NEW
+                         isInterpolatingPosition = false; 
+                         isInterpolatingRotation = false;
                     }
                     else
                     {
@@ -561,7 +552,7 @@ namespace Game.NPC
           }
 
           /// <summary>
-          /// PHASE 2: Called by the TiNpcManager to activate a TRUE IDENTITY NPC.
+          /// Called by the TiNpcManager to activate a TRUE IDENTITY NPC.
           /// Configures the Runner and GameObject based on the persistent data.
           /// </summary>
           /// <param name="tiData">The persistent data for this TI NPC.</param>
@@ -606,10 +597,9 @@ namespace Game.NPC
                               lastGridPosition = transform.position;
                               // Note: TiNpcManager.ActivateTiNpc should have already updated the grid with this position
                          }
-                         // --- END NEW ---
                          // After warp, ensure interpolation is off
-                         isInterpolatingPosition = false; // <-- NEW
-                         isInterpolatingRotation = false; // <-- NEW
+                         isInterpolatingPosition = false; 
+                         isInterpolatingRotation = false;
                     }
                     else
                     {
@@ -648,8 +638,9 @@ namespace Game.NPC
                {
                     Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Transitioning TI NPC '{tiData.Id}' to starting state '{startingState.name}'.");
 
-                    // Populate TiData in context BEFORE TransitionToState
-                    _stateContext.TiData = TiData; // <-- NEW: Populate TiData in context
+                    // Populate TiData and TiNpcManager in context BEFORE TransitionToState
+                    _stateContext.TiData = TiData;
+                    _stateContext.TiNpcManager = tiNpcManager; // <-- Populate TiNpcManager in context
 
                     TransitionToState(startingState);
                }
@@ -657,8 +648,9 @@ namespace Game.NPC
                {
                     // This implies GetPrimaryStartingStateSO also failed after override lookup.
                     Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): No valid starting state found after override and primary lookup for TI NPC '{tiData.Id}'. Cannot find any valid starting state. Transitioning to ReturningToPool (for pooling).", this);
-                    // Populate TiData in context BEFORE TransitionToState
-                    _stateContext.TiData = TiData; // <-- NEW: Populate TiData in context
+                    // Populate TiData and TiNpcManager in context BEFORE TransitionToState
+                    _stateContext.TiData = TiData;
+                    _stateContext.TiNpcManager = tiNpcManager; // <-- Populate TiNpcManager in context
                     TransitionToState(GetStateSO(GeneralState.ReturningToPool));
                }
 
@@ -737,7 +729,7 @@ namespace Game.NPC
 
                interruptionHandler?.Reset();
                queueHandler?.Reset();
-               npcPathFollowingHandler?.Reset(); // <-- NEW: Reset Path Following handler (assuming it has a Reset method)
+               npcPathFollowingHandler?.Reset(); 
 
                Debug.Log($"{gameObject.name}: NpcStateMachineRunner transient data reset, including handlers.");
           }
@@ -793,13 +785,14 @@ namespace Game.NPC
                     activeStateCoroutine = null;
 
                     // Populate context before calling OnExit
-                    _stateContext.Manager = Manager; // Populate Manager
+                    _stateContext.Manager = Manager;
                     _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                     _stateContext.Runner = this;
                     _stateContext.InterruptionHandler = interruptionHandler;
                     _stateContext.QueueHandler = queueHandler;
-                    _stateContext.PathFollowingHandler = npcPathFollowingHandler; // <-- NEW: Populate PathFollowingHandler
-                    _stateContext.TiData = TiData; // <-- NEW: Populate TiData
+                    _stateContext.PathFollowingHandler = npcPathFollowingHandler;
+                    _stateContext.TiData = TiData;
+                    _stateContext.TiNpcManager = tiNpcManager; // <-- Populate TiNpcManager in context
                     // DeltaTime is not typically needed in OnExit, but populate defensively if needed
                     // _stateContext.DeltaTime = Time.deltaTime; // Or some default? Let's assume OnExit doesn't need it.
 
@@ -824,13 +817,14 @@ namespace Game.NPC
                _stateContext.QueueHandler = queueHandler;
                _stateContext.PathFollowingHandler = npcPathFollowingHandler;
                _stateContext.TiData = TiData;
+               _stateContext.TiNpcManager = tiNpcManager; // <-- Populate TiNpcManager in context
                // DeltaTime is not typically needed in OnEnter, but populate defensively if needed
                // _stateContext.DeltaTime = Time.deltaTime; // Or some default?
 
                // Call OnEnter for the new state
                currentState.OnEnter(_stateContext);
 
-               // --- NEW: Reset interpolation state on state transition ---
+               // --- Reset interpolation state on state transition ---
                // Any ongoing interpolation should stop when the state changes.
                visualPositionStart = transform.position; // Snap visual to current actual position
                visualPositionEnd = transform.position;
@@ -840,7 +834,6 @@ namespace Game.NPC
                interpolationDuration = 0f;
                isInterpolatingPosition = false;
                isInterpolatingRotation = false;
-               // --- END NEW ---
           }
 
           /// <summary>
@@ -1127,13 +1120,13 @@ namespace Game.NPC
                return false;
           }
 
-          // --- NEW: Helper method for animation speed update (moved from Update) ---
+          // --- Helper method for animation speed update (moved from Update) ---
           private void UpdateAnimationSpeed()
           {
                if (MovementHandler != null && AnimationHandler != null)
                {
                     // Only update animation speed if NavMeshAgent is enabled (standard movement)
-                    if (MovementHandler.IsAgentEnabled) // Use the new helper property
+                    if (MovementHandler.IsAgentEnabled)
                     {
                          float speed = MovementHandler.Agent.velocity.magnitude;
                          AnimationHandler.SetSpeed(speed);
@@ -1145,6 +1138,7 @@ namespace Game.NPC
                     // }
                }
           }
-          // --- END NEW ---
      }
 }
+
+// --- END OF FILE NpcStateMachineRunner.cs (Modified) ---

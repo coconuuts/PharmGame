@@ -1,14 +1,17 @@
-// --- START OF FILE DecisionOption.cs ---
+// --- START OF FILE DecisionOption.cs (Modified) ---
+
+// --- START OF FILE DecisionOption.cs --- // Keep original comment for history
 
 using UnityEngine;
 using System; // Needed for System.Serializable and System.Enum
-using Game.Navigation; // Needed for PathSO
+using Game.Navigation; // Needed for PathSO, PathTransitionDetails // <-- Added PathTransitionDetails
 
 namespace Game.NPC.Decisions // Place in the same namespace as DecisionPointSO
 {
     /// <summary>
     /// Represents a single possible outcome or action an NPC can choose
     /// when reaching a Decision Point.
+    /// MODIFIED: Includes a helper to get PathTransitionDetails.
     /// </summary>
     [System.Serializable]
     public struct DecisionOption
@@ -71,8 +74,40 @@ namespace Game.NPC.Decisions // Place in the same namespace as DecisionPointSO
             }
         }
 
+        /// <summary>
+        /// Gets the PathTransitionDetails for this decision option.
+        /// </summary>
+        public PathTransitionDetails GetTransitionDetails()
+        {
+             System.Enum targetEnum = TargetStateEnum; // Use the property to parse
+
+             if (targetEnum == null)
+             {
+                  // Return invalid details if target state is null
+                  return new PathTransitionDetails(null);
+             }
+
+             // Check if the target state is PathState.FollowPath
+             if (targetEnum.GetType() == typeof(Game.NPC.PathState) && targetEnum.Equals(Game.NPC.PathState.FollowPath))
+             {
+                  // If it's a path state, include the path details
+                  if (pathAsset == null)
+                  {
+                       Debug.LogError($"DecisionOption: Target state is PathState.FollowPath but Path Asset is null! Cannot create valid path transition details.", PathAsset); // Log error with context
+                       // Return details with null path asset, caller should handle
+                       return new PathTransitionDetails(targetEnum, null, startIndex, followReverse);
+                  }
+                  return new PathTransitionDetails(targetEnum, pathAsset, startIndex, followReverse);
+             }
+             else
+             {
+                  // If it's not a path state, return details without path info
+                  return new PathTransitionDetails(targetEnum);
+             }
+        }
+
         // Optional: Add validation in editor (requires MonoBehaviour or ScriptableObject context)
         // This struct itself cannot have OnValidate directly, but the SO containing it can iterate and validate.
     }
 }
-// --- END OF FILE DecisionOption.cs ---
+// --- END OF FILE DecisionOption.cs (Modified) ---

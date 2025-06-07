@@ -1,15 +1,13 @@
-// --- START OF FILE PathStateSO.cs ---
-
-// --- Updated PathStateSO.cs (Phase 4, Substep 2) ---
+// --- START OF FILE PathStateSO.cs (Final Refactored) ---
 
 using UnityEngine;
 using System; // Needed for System.Enum
 using Game.NPC.States; // Needed for NpcStateSO
-using Game.Navigation; // Needed for PathSO and WaypointManager
+using Game.Navigation; // Needed for PathSO and WaypointManager, PathTransitionDetails
 using System.Collections.Generic; // Needed for List
 using System.Linq; // Needed for FirstOrDefault, Contains
-using Game.NPC.TI; // Needed for TiNpcData, TiNpcManager // <-- Added TiNpcManager
-using Game.NPC.Decisions; // Needed for DecisionPointSO, NpcDecisionHelper // <-- Added NpcDecisionHelper
+using Game.NPC.TI; // Needed for TiNpcData, TiNpcManager
+using Game.NPC.Decisions; // Needed for DecisionPointSO, NpcDecisionHelper // Still needed for NpcDecisionHelper via PathSO
 
 namespace Game.NPC.States // Place alongside other active states
 {
@@ -18,6 +16,8 @@ namespace Game.NPC.States // Place alongside other active states
     /// Handles the initial NavMesh leg to the first waypoint, then uses the PathFollowingHandler.
     /// Now supports restoring progress for activated TI NPCs and triggers decision logic
     /// upon reaching a linked Decision Point.
+    /// MODIFIED: End behavior (Decision Point or fixed transition) is now defined on the PathSO asset.
+    /// Uses PathTransitionDetails to handle transitions to other paths.
     /// </summary>
     [CreateAssetMenu(fileName = "PathState_", menuName = "NPC/Path States/Follow Path", order = 50)] // Order appropriately
     public class PathStateSO : NpcStateSO
@@ -31,25 +31,8 @@ namespace Game.NPC.States // Place alongside other active states
         [Tooltip("If true, follow the path in reverse from the start index.")]
         [SerializeField] private bool followReverse = false; // <-- This field is on the SO asset
 
-        // --- NEW: Decision Point Configuration ---
-        [Header("Decision Point")] // <-- NEW HEADER
-        [Tooltip("Optional: If assigned, this path leads to a Decision Point. Upon reaching the end, the NPC will trigger decision logic instead of transitioning to a fixed next state.")]
-        [SerializeField] private DecisionPointSO decisionPoint; // <-- NEW FIELD
-        // --- END NEW ---
-
-
-        [Header("Transitions (Used if NO Decision Point is assigned)")] // <-- Updated Header
-        [Tooltip("The Enum key for the state to transition to upon reaching the end of the path (used if no Decision Point is assigned).")] // <-- Updated Tooltip
-        [SerializeField] private string nextStateEnumKey;
-        [Tooltip("The Type name of the Enum key for the next state (e.g., Game.NPC.CustomerState, Game.NPC.GeneralState) (used if no Decision Point is assigned).")] // <-- Updated Tooltip
-        [SerializeField] private string nextStateEnumType;
-
         // --- NpcStateSO Overrides ---
-        public override System.Enum HandledState => Game.NPC.PathState.FollowPath; // <-- Use the new enum
-
-        // Path following is generally interruptible, but specific path states might override this.
-        public override bool IsInterruptible => true; // <-- Set interruptible flag
-
+        public override System.Enum HandledState => Game.NPC.PathState.FollowPath; 
 
         public override void OnEnter(NpcStateContext context)
         {
@@ -68,38 +51,9 @@ namespace Game.NPC.States // Place alongside other active states
                  context.TransitionToState(GeneralState.Idle); // Fallback
                  return;
              }
-             // --- NEW: Validate Decision Point link if assigned ---
-             if (decisionPoint != null)
-             {
-                 // Check TiNpcManager instance needed for decision logic
-                 if (TiNpcManager.Instance == null)
-                 {
-                     Debug.LogError($"{context.NpcObject.name}: PathStateSO '{name}' links to Decision Point '{decisionPoint.name}', but TiNpcManager.Instance is null! Cannot perform decision logic. Transitioning to fallback.", context.NpcObject);
-                     context.TransitionToState(GeneralState.Idle); // Fallback
-                     return;
-                 }
 
-                 if (string.IsNullOrWhiteSpace(decisionPoint.PointID) || string.IsNullOrWhiteSpace(decisionPoint.WaypointID))
-                 {
-                      Debug.LogError($"{context.NpcObject.name}: PathStateSO '{name}' links to Decision Point '{decisionPoint.name}', but Decision Point SO has invalid PointID ('{decisionPoint.PointID}') or WaypointID ('{decisionPoint.WaypointID}')! Transitioning to fallback.", context.NpcObject);
-                      context.TransitionToState(GeneralState.Idle); // Fallback
-                      return;
-                 }
-                 // Ensure the Decision Point Waypoint exists in the scene
-                 if (WaypointManager.Instance.GetWaypointTransform(decisionPoint.WaypointID) == null)
-                 {
-                     Debug.LogError($"{context.NpcObject.name}: PathStateSO '{name}' links to Decision Point '{decisionPoint.name}' (WaypointID: '{decisionPoint.WaypointID}'), but the waypoint is not found in the scene via WaypointManager! Transitioning to fallback.", context.NpcObject);
-                     context.TransitionToState(GeneralState.Idle); // Fallback
-                     return;
-                 }
-                 // If a Decision Point is assigned, override the default next state logging
-                 Debug.Log($"{context.NpcObject.name}: Entering PathState '{name}' leading to Decision Point '{decisionPoint.PointID}'.");
-
-             } else {
-                // Log the standard next state if no Decision Point is assigned
-                Debug.Log($"{context.NpcObject.name}: Entering PathState '{name}' leading to fixed next state.");
-            }
-            // --- END NEW ---
+             // Log entry, noting that end behavior is defined on the PathSO
+             Debug.Log($"{context.NpcObject.name}: Entering PathState '{name}' for path '{pathAsset.PathID}'. End behavior defined on PathSO asset.");
 
 
             // --- Check if returning from interruption using temporary flag ---
@@ -148,7 +102,6 @@ namespace Game.NPC.States // Place alongside other active states
                                 OnReachedDestination(context); // Call this SO's implementation
                                 return; // Exit OnEnter early, decision/transition handled
                            }
-                           // --- END NEW ---
 
                            // Path following handler is now active and not at the end yet. OnUpdate will monitor it.
                            // Return early, skipping the NavMesh logic below.
@@ -172,7 +125,7 @@ namespace Game.NPC.States // Place alongside other active states
                  }
             }
 
-               // --- NEW: Check if this is a TI NPC activating and should restore path progress ---
+               // --- Check if this is a TI NPC activating and should restore path progress ---
                // This logic is now slightly different: we don't *call* RestorePathProgress here anymore.
                // We check if the data indicates they *were* following this specific path simulation.
                // If so, OnReachedDestination needs to know that the first NavMesh leg was skipped.
@@ -180,8 +133,6 @@ namespace Game.NPC.States // Place alongside other active states
                // The check for isFollowingPathBasic and PathID match is done in TiNpcManager.RequestActivateTiNpc.
                // If that check passes, TiNpcManager sets the target state to PathState.FollowPath and preserves the path data on TiData.
                // PathStateSO.OnEnter is now responsible for *using* that data.
-
-               bool wasActivatingFromPathSim = false; // Flag for OnReachedDestination - this flag is no longer needed as RestorePathProgress is called directly
                if (context.Runner.IsTrueIdentityNpc && context.TiData != null && context.TiData.isFollowingPathBasic)
                {
                     // Check if the saved path ID on data matches the path asset configured for *this* state SO.
@@ -226,7 +177,6 @@ namespace Game.NPC.States // Place alongside other active states
                                    OnReachedDestination(context); // Call this SO's implementation
                                    return; // Exit OnEnter early, decision/transition handled
                               }
-                              // --- END NEW ---
 
                               // Path following handler is now active and not at the end yet. OnUpdate will monitor it.
                               // Return early, skipping the NavMesh logic below.
@@ -251,7 +201,6 @@ namespace Game.NPC.States // Place alongside other active states
                          // Fall through to the standard NavMesh logic below.
                     }
                }
-            // --- END NEW ---
 
 
             // --- Standard Logic: Start NavMesh movement to the first waypoint (only if NOT restoring progress) ---
@@ -309,21 +258,55 @@ namespace Game.NPC.States // Place alongside other active states
                 // Stop the path following handler (this also re-enables the NavMeshAgent and resets HasReachedEndOfPath)
                 context.StopFollowingPath(); // Safe to call multiple times
 
-                // --- Trigger decision logic if Decision Point is assigned, otherwise transition to fixed next state ---
-                 if (decisionPoint != null)
+                // --- Determine next state using PathSO's GetNextActiveStateDetails ---
+                 // Ensure TiNpcManager is available via context
+                 if (context.TiNpcManager == null)
                  {
-                      Debug.Log($"{context.NpcObject.name}: Reached Decision Point '{decisionPoint.PointID}' (via PathFollowingHandler). Triggering decision logic.", context.NpcObject);
-                       // Call the shared decision logic helper
-                       MakeDecisionAndTransition(context, decisionPoint); // Uses context, decisionPoint, and reads from TiData
+                      Debug.LogError($"{context.NpcObject.name}: TiNpcManager is null in context! Cannot determine next state from PathSO end behavior. Transitioning to Idle fallback.", context.NpcObject);
+                      context.TransitionToState(GeneralState.Idle); // Fallback
+                      return;
+                 }
 
+                 PathTransitionDetails transitionDetails = pathAsset?.GetNextActiveStateDetails(context.TiData, context.TiNpcManager) ?? new PathTransitionDetails(null); 
+
+                 if (transitionDetails.HasValidTransition)
+                 {
+                      Debug.Log($"{context.NpcObject.name}: Path '{pathAsset.PathID}' end behavior determined next Active State: '{transitionDetails.TargetStateEnum.GetType().Name}.{transitionDetails.TargetStateEnum.ToString() ?? "NULL"}'.", context.NpcObject);
+
+                      // Check if the target state is PathState.FollowPath
+                      if (transitionDetails.TargetStateEnum.GetType() == typeof(Game.NPC.PathState) && transitionDetails.TargetStateEnum.Equals(Game.NPC.PathState.FollowPath))
+                      {
+                           // If the next state is another path, start following it immediately
+                           if (transitionDetails.PathAsset != null)
+                           {
+                                Debug.Log($"{context.NpcObject.name}: Transitioning to follow next path '{transitionDetails.PathAsset.PathID}' from index {transitionDetails.StartIndex}, reverse: {transitionDetails.FollowReverse}.", context.NpcObject);
+                                // Start following the next path using the handler
+                                bool pathStarted = context.StartFollowingPath(transitionDetails.PathAsset, transitionDetails.StartIndex, transitionDetails.FollowReverse);
+                                if (!pathStarted)
+                                {
+                                     Debug.LogError($"{context.NpcObject.name}: Failed to start next path '{transitionDetails.PathAsset.PathID}'! Transitioning to Idle fallback.", context.NpcObject);
+                                     context.TransitionToState(GeneralState.Idle); // Fallback
+                                }
+                                // Note: The state remains PathState.FollowPath, but the handler is updated.
+                                // No state machine transition is needed here.
+                           } else {
+                                Debug.LogError($"{context.NpcObject.name}: Path '{pathAsset.PathID}' end behavior specified PathState.FollowPath but the next Path Asset is null! Transitioning to Idle fallback.", context.NpcObject);
+                                context.TransitionToState(GeneralState.Idle); // Fallback
+                           }
+                      }
+                      else
+                      {
+                           // If the next state is not a path, transition to that state
+                           Debug.Log($"{context.NpcObject.name}: Transitioning to non-path state '{transitionDetails.TargetStateEnum.GetType().Name}.{transitionDetails.TargetStateEnum.ToString() ?? "NULL"}'.", context.NpcObject);
+                           context.TransitionToState(transitionDetails.TargetStateEnum); // Use the context helper to transition by Enum key
+                      }
                  }
                  else
                  {
-                      // No Decision Point, transition to the configured next state (standard path behavior)
-                      Debug.Log($"{context.NpcObject.name}: Reached end of standard path (via PathFollowingHandler). Transitioning to fixed next state.", context.NpcObject);
-                      TransitionToNextState(context); // Use standard fixed transition
+                      // GetNextActiveStateDetails returned invalid details (invalid config or decision failed)
+                      Debug.LogError($"{context.NpcObject.name}: Path '{pathAsset.PathID}' end behavior returned invalid details or failed to determine next Active State. Transitioning to Idle fallback.", context.NpcObject);
+                      context.TransitionToState(GeneralState.Idle); // Fallback
                  }
-                // --- END NEW ---
             }
             // Note: Animation speed during path following needs to be managed by the PathFollowingHandler or here.
             // If PathFollowingHandler doesn't set animation speed, you might do it here based on context.IsFollowingPath
@@ -343,11 +326,8 @@ namespace Game.NPC.States // Place alongside other active states
             // Ensure NavMesh movement is stopped (Runner already does this before calling OnReachedDestination, but defensive)
             context.MovementHandler?.StopMoving();
 
-            // --- NEW: Check if the first waypoint is the end of the path AND it's a Decision Point ---
-            // This handles the edge case where the path might only have 2 waypoints, and the NPC
-            // reaches the *end* waypoint directly via the initial NavMesh leg, and that waypoint
-            // is also a Decision Point.
-            // First, determine the index of the *intended* end waypoint of the pathAsset based on startIndex and direction
+            // --- Check if the first waypoint is the intended end of the path ---
+            // Determine the index of the *intended* end waypoint of the pathAsset based on startIndex and direction
              int intendedEndIndex = followReverse ? 0 : pathAsset.WaypointCount - 1;
              string intendedEndWaypointID = pathAsset.GetWaypointID(intendedEndIndex);
 
@@ -356,14 +336,62 @@ namespace Game.NPC.States // Place alongside other active states
              // This is the waypoint ID derived from 'startIndex'.
              string reachedWaypointID = pathAsset.GetWaypointID(startIndex); // The waypoint reached via NavMesh leg
 
-            if (decisionPoint != null && !string.IsNullOrWhiteSpace(decisionPoint.WaypointID) && decisionPoint.WaypointID == reachedWaypointID)
+            if (!string.IsNullOrWhiteSpace(intendedEndWaypointID) && intendedEndWaypointID == reachedWaypointID)
             {
-                 // Reached the Decision Point waypoint directly via NavMesh
-                 Debug.Log($"{context.NpcObject.name}: Reached Decision Point '{decisionPoint.PointID}' waypoint ('{reachedWaypointID}') directly via NavMesh. Triggering decision logic immediately.", context.NpcObject);
-                 // Trigger decision logic
-                 MakeDecisionAndTransition(context, decisionPoint); // Use context, decisionPoint
+                 // Reached the intended end waypoint directly via NavMesh (e.g., path had only 2 waypoints, or started at index before end)
+                 Debug.Log($"{context.NpcObject.name}: Reached intended end waypoint ('{reachedWaypointID}') directly via NavMesh.", context.NpcObject);
+
+                 // --- Determine next state using PathSO's GetNextActiveStateDetails ---
+                 // Ensure TiNpcManager is available via context
+                 if (context.TiNpcManager == null)
+                 {
+                      Debug.LogError($"{context.NpcObject.name}: TiNpcManager is null in context! Cannot determine next state from PathSO end behavior. Transitioning to Idle fallback.", context.NpcObject);
+                      context.TransitionToState(GeneralState.Idle); // Fallback
+                      return;
+                 }
+
+                 PathTransitionDetails transitionDetails = pathAsset?.GetNextActiveStateDetails(context.TiData, context.TiNpcManager) ?? new PathTransitionDetails(null); 
+
+                 if (transitionDetails.HasValidTransition)
+                 {
+                      Debug.Log($"{context.NpcObject.name}: Path '{pathAsset.PathID}' end behavior determined next Active State: '{transitionDetails.TargetStateEnum.GetType().Name}.{transitionDetails.TargetStateEnum.ToString() ?? "NULL"}'.", context.NpcObject);
+
+                      // Check if the target state is PathState.FollowPath
+                      if (transitionDetails.TargetStateEnum.GetType() == typeof(Game.NPC.PathState) && transitionDetails.TargetStateEnum.Equals(Game.NPC.PathState.FollowPath))
+                      {
+                           // If the next state is another path, start following it immediately
+                           if (transitionDetails.PathAsset != null)
+                           {
+                                Debug.Log($"{context.NpcObject.name}: Transitioning to follow next path '{transitionDetails.PathAsset.PathID}' from index {transitionDetails.StartIndex}, reverse: {transitionDetails.FollowReverse}.", context.NpcObject);
+                                // Start following the next path using the handler
+                                bool pathStarted = context.StartFollowingPath(transitionDetails.PathAsset, transitionDetails.StartIndex, transitionDetails.FollowReverse);
+                                if (!pathStarted)
+                                {
+                                     Debug.LogError($"{context.NpcObject.name}: Failed to start next path '{transitionDetails.PathAsset.PathID}'! Transitioning to Idle fallback.", context.NpcObject);
+                                     context.TransitionToState(GeneralState.Idle); // Fallback
+                                }
+                                // Note: The state remains PathState.FollowPath, but the handler is updated.
+                                // No state machine transition is needed here.
+                           } else {
+                                Debug.LogError($"{context.NpcObject.name}: Path '{pathAsset.PathID}' end behavior specified PathState.FollowPath but the next Path Asset is null! Transitioning to Idle fallback.", context.NpcObject);
+                                context.TransitionToState(GeneralState.Idle); // Fallback
+                           }
+                      }
+                      else
+                      {
+                           // If the next state is not a path, transition to that state
+                           Debug.Log($"{context.NpcObject.name}: Transitioning to non-path state '{transitionDetails.TargetStateEnum.GetType().Name}.{transitionDetails.TargetStateEnum.ToString() ?? "NULL"}'.", context.NpcObject);
+                           context.TransitionToState(transitionDetails.TargetStateEnum); // Use the context helper to transition by Enum key
+                      }
+                 }
+                 else
+                 {
+                      // GetNextActiveStateDetails returned invalid details (invalid config or decision failed)
+                      Debug.LogError($"{context.NpcObject.name}: Path '{pathAsset.PathID}' end behavior returned invalid details or failed to determine next Active State. Transitioning to Idle fallback.", context.NpcObject);
+                      context.TransitionToState(GeneralState.Idle); // Fallback
+                 }
             }
-            else // Not at the end of the path (via initial NavMesh), or not a Decision Point path end
+            else // Not at the intended end of the path (via initial NavMesh)
             {
                 // --- Start Path Following using the handler ---
                 // The handler will disable the NavMeshAgent and start Rigidbody movement.
@@ -383,7 +411,6 @@ namespace Game.NPC.States // Place alongside other active states
                 // Or a fixed walk speed animation:
                 // context.PlayAnimation("Walk"); // Assuming walk animation is appropriate for path speed
             }
-             // --- END NEW ---
         }
 
         public override void OnExit(NpcStateContext context)
@@ -397,78 +424,6 @@ namespace Game.NPC.States // Place alongside other active states
             // context.PlayAnimation("Idle"); // Assuming idle is the default after movement
         }
 
-        /// <summary>
-        /// Handles the transition to the next state upon path completion IF no Decision Point is assigned.
-        /// </summary>
-        private void TransitionToNextState(NpcStateContext context)
-        {
-             // This method is only called if decisionPoint is null
-             if (string.IsNullOrEmpty(nextStateEnumKey) || string.IsNullOrEmpty(nextStateEnumType))
-             {
-                  Debug.LogWarning($"{context.NpcObject.name}: PathState '{name}' has no next state configured AND no Decision Point assigned. Transitioning to Idle fallback.", context.NpcObject);
-                  context.TransitionToState(GeneralState.Idle); // Default fallback if no next state is set
-                  return;
-             }
-
-             // Use the context helper to transition by string key/type
-             context.TransitionToState(nextStateEnumKey, nextStateEnumType);
-        }
-
-        /// <summary>
-        /// Triggers the data-driven decision logic and transitions to the chosen state.
-        /// This is called when the NPC reaches the end of a path linked to a Decision Point.
-        /// </summary>
-        private void MakeDecisionAndTransition(NpcStateContext context, DecisionPointSO decisionPoint)
-        {
-             if (context.TiData == null)
-             {
-                  Debug.LogError($"{context.NpcObject.name}: Cannot make decision at point '{decisionPoint?.PointID ?? "NULL"}' - TiNpcData is null! Transitioning to fallback.", context.NpcObject);
-                  context.TransitionToState(GeneralState.Idle); // Fallback
-                  return;
-             }
-             if (decisionPoint == null) // Should not happen due to calling context, but defensive
-             {
-                  Debug.LogError($"{context.NpcObject.name}: Cannot make decision - DecisionPointSO is null! Transitioning to fallback.", context.NpcObject);
-                  context.TransitionToState(GeneralState.Idle); // Fallback
-                  return;
-             }
-             // Check TiNpcManager dependency
-             if (TiNpcManager.Instance == null)
-             {
-                  Debug.LogError($"{context.NpcObject.name}: TiNpcManager.Instance is null! Cannot perform decision logic.", context.NpcObject);
-                   context.TransitionToState(GeneralState.Idle); // Fallback
-                   return;
-             }
-
-             // --- NEW: Check endDay flag before making decision (Already added in Substep 3.1, keeping here) ---
-             // If it's time to go home, override the decision and go straight to ReturningToPool
-             if (context.TiData.isEndingDay)
-             {
-                  Debug.Log($"{context.NpcObject.name}: Reached Decision Point '{decisionPoint.PointID}' but is in endDay schedule ({context.TiData.endDay}). Transitioning to ReturningToPool instead of making decision.", context.NpcObject);
-                  context.TransitionToState(GeneralState.ReturningToPool);
-                  return; // Exit early
-             }
-             // --- END NEW ---
-
-
-             // --- Call the shared Decision Logic helper ---
-             // Call the MakeDecision helper from the static helper class
-             System.Enum chosenStateEnum = NpcDecisionHelper.MakeDecision(context.TiData, decisionPoint, TiNpcManager.Instance);
-
-             if (chosenStateEnum != null)
-             {
-                  Debug.Log($"{context.NpcObject.name}: Decision made at '{decisionPoint.PointID}'. Transitioning to chosen state '{chosenStateEnum.GetType().Name}.{chosenStateEnum.ToString() ?? "NULL"}'.", context.NpcObject);
-                  context.TransitionToState(chosenStateEnum); // Use the context helper to transition by Enum key
-             }
-             else
-             {
-                  Debug.LogError($"{context.NpcObject.name}: Decision logic at '{decisionPoint.PointID}' returned a null state or no valid options! Transitioning to fallback.", context.NpcObject);
-                  context.TransitionToState(GeneralState.Idle); // Fallback
-             }
-             // --- END Call ---
-        }
-
-
         // Optional: Add validation in editor
         #if UNITY_EDITOR
         private void OnValidate()
@@ -481,71 +436,14 @@ namespace Game.NPC.States // Place alongside other active states
                 }
             }
 
-            // Validate Decision Point link
-            if (decisionPoint != null)
-            {
-                 if (string.IsNullOrWhiteSpace(decisionPoint.PointID))
-                 {
-                      Debug.LogError($"PathStateSO '{name}': Decision Point '{decisionPoint.name}' has an empty Point ID.", this);
-                 }
-                 if (string.IsNullOrWhiteSpace(decisionPoint.WaypointID))
-                 {
-                      Debug.LogError($"PathStateSO '{name}': Decision Point '{decisionPoint.name}' has an empty Waypoint ID.", this);
-                 }
-                 // Warn if standard transitions are also configured when a Decision Point is linked
-                 if (!string.IsNullOrEmpty(nextStateEnumKey) || !string.IsNullOrEmpty(nextStateEnumType))
-                 {
-                      Debug.LogWarning($"PathStateSO '{name}': A Decision Point is assigned, but standard Next State ('{nextStateEnumKey}' of type '{nextStateEnumType}') is also configured. The standard Next State will be ignored when the Decision Point is reached.", this);
-                 }
-                 // TODO: Add validation that the Decision Point WaypointID is actually the LAST waypoint in the pathAsset
-                 // This is a crucial constraint for Decision Point paths.
-                 // Requires WaypointManager access in OnValidate, or ensuring this in the workflow.
-                 // For now, rely on manual setup and runtime checks.
-                 // A simple check: get the last waypoint of the path based on direction
-                 if (pathAsset != null && pathAsset.WaypointCount > 0)
-                 {
-                      int expectedEndIndex = followReverse ? 0 : pathAsset.WaypointCount - 1;
-                      string expectedEndWaypointID = pathAsset.GetWaypointID(expectedEndIndex);
-                      if (decisionPoint.WaypointID != expectedEndWaypointID)
-                      {
-                           Debug.LogError($"PathStateSO '{name}': Decision Point '{decisionPoint.PointID}' (Waypoint ID '{decisionPoint.WaypointID}') is NOT the end waypoint of the assigned Path Asset '{pathAsset.name}' (Expected Waypoint ID '{expectedEndWaypointID}' at index {expectedEndIndex} with reverse={followReverse})! This Decision Point path will likely not work correctly.", this);
-                      }
-                 } else if (pathAsset != null)
-                 {
-                      Debug.LogWarning($"PathStateSO '{name}': Path Asset '{pathAsset.name}' has fewer than 1 waypoint. Cannot validate Decision Point waypoint.", this);
-                 }
-            }
-             else // No Decision Point assigned, validate standard next state configuration
+             // Add validation that pathAsset is assigned
+             if (pathAsset == null)
              {
-                if (!string.IsNullOrEmpty(nextStateEnumKey) && !string.IsNullOrEmpty(nextStateEnumType))
-                {
-                     try
-                     {
-                          Type type = Type.GetType(nextStateEnumType);
-                          if (type == null || !type.IsEnum)
-                          {
-                               Debug.LogError($"PathStateSO '{name}': Invalid Next State Enum Type string '{nextStateEnumType}' configured.", this);
-                          } else
-                          {
-                               // Optional: Check if the key exists in the enum
-                               if (!Enum.GetNames(type).Contains(nextStateEnumKey))
-                               {
-                                    Debug.LogError($"PathStateSO '{name}': Next State Enum Type '{nextStateEnumType}' is valid, but key '{nextStateEnumKey}' does not exist in that enum.", this);
-                               }
-                          }
-                     }
-                     catch (Exception e)
-                     {
-                          Debug.LogError($"PathStateSO '{name}': Error parsing Next State config: {e.Message}", this);
-                     }
-                }
-                 else // Neither Decision Point nor standard next state is configured
-                 {
-                      Debug.LogWarning($"PathStateSO '{name}': Neither a Decision Point nor a standard Next State is configured. This state will transition to Idle fallback upon path completion.", this);
-                 }
+                  Debug.LogError($"PathStateSO '{name}': Path Asset is not assigned! This state requires a PathSO.", this);
              }
         }
         #endif
     }
 }
-// --- END OF FILE PathStateSO.cs ---
+
+// --- END OF FILE PathStateSO.cs (Final Refactored) ---

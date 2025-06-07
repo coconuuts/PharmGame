@@ -48,7 +48,6 @@ namespace Game.NPC.TI // Keep in the TI namespace
         [SerializeField] public Game.Utilities.TimeRange startDay;
         [Tooltip("The time range during the day when this NPC should begin exiting/returning home.")]
         [SerializeField] public Game.Utilities.TimeRange endDay;
-        // --- END NEW ---
 
         // --- Decision Point Settings ---
         [Header("Decision Point Settings")]
@@ -60,10 +59,9 @@ namespace Game.NPC.TI // Keep in the TI namespace
 
         // Public getter returns a runtime Dictionary derived from the serialized list
         public Dictionary<string, DecisionOption> UniqueDecisionOptions => uniqueDecisionOptions.ToDictionary();
-        // --- END NEW ---
 
 
-        // --- PHASE 4, SUBSTEP 1: Add Simulation Data Fields ---
+        // --- Add Simulation Data Fields ---
         [Header("Simulation Data (Managed Off-screen)")]
         [Tooltip("The target position for off-screen movement simulation (e.g., patrol point, exit, waypoint). Null if no target.")]
         [SerializeField] public Vector3? simulatedTargetPosition; // Made public for direct access by simulation logic
@@ -71,7 +69,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
         [Tooltip("A timer used for off-screen simulation of states like waiting, browsing, etc.")]
         [SerializeField] public float simulatedStateTimer; // Made public for direct access by simulation logic
 
-        // --- NEW: Path Following Simulation Data (Phase 3) ---
+        // --- Path Following Simulation Data ---
         [Tooltip("The ID of the path currently being followed in simulation.")]
         [SerializeField] public string simulatedPathID; // Public for direct access by simulation logic
         [Tooltip("The index of the waypoint the NPC is currently moving *towards* in simulation.")]
@@ -80,16 +78,14 @@ namespace Game.NPC.TI // Keep in the TI namespace
         [SerializeField] public bool simulatedFollowReverse; // Public for direct access by simulation logic
         [Tooltip("True if the NPC is currently following a path in simulation.")]
         [SerializeField] public bool isFollowingPathBasic; // Public flag for simulation logic
-        // --- END NEW ---
 
-        // --- NEW: Schedule Runtime Flags (Phase 1, Substep 1.5) ---
+        // --- Schedule Runtime Flags ---
         [System.NonSerialized] public bool isEndingDay; // Flag set by ProximityManager when within endDay range
-        // --- END NEW ---
 
-        // --- NEW: Intended Day Start Behavior Fields (Step 2) ---
+        // --- Intended Day Start Behavior Fields ---
         [Header("Day Start Behavior")]
         [Tooltip("If true, the NPC will follow a path when its day starts. If false, it will transition to a specific state.")]
-        [SerializeField] public bool usePathForDayStart = false; // <-- NEW Toggle Field
+        [SerializeField] public bool usePathForDayStart = false;
 
         [Tooltip("The string name of the NPC's intended *Active* state enum value when its day starts (e.g., TestState.Patrol, CustomerState.LookingToShop). Only used if 'Use Path For Day Start' is false.")]
         [SerializeField] internal string dayStartActiveStateEnumKey;
@@ -102,12 +98,8 @@ namespace Game.NPC.TI // Keep in the TI namespace
         [SerializeField] internal int dayStartStartIndex;
         [Tooltip("Optional: If true, follow the path in reverse from the start index if the day start behavior is path following.")]
         [SerializeField] internal bool dayStartFollowReverse;
-        // --- END NEW ---
-
 
         [System.NonSerialized] public GameObject NpcGameObject; // Runtime reference to the active GameObject
-        // --- END PHASE 4 Fields ---
-
 
         [Header("Runtime Data (Not Saved Persistently)")]
         [Tooltip("True if this NPC currently has an active GameObject representation in the scene.")]
@@ -130,18 +122,15 @@ namespace Game.NPC.TI // Keep in the TI namespace
         // Activation status is writable
         public bool IsActiveGameObject { get => isActiveGameObject; set => isActiveGameObject = value; }
 
-        // --- NEW: Public Getters for Day Start Behavior (Step 2) ---
+        // --- Public Getters for Day Start Behavior ---
         public string DayStartActiveStateEnumKey => dayStartActiveStateEnumKey;
         public string DayStartActiveStateEnumType => dayStartActiveStateEnumType;
         public string DayStartPathID => dayStartPathID;
         public int DayStartStartIndex => dayStartStartIndex;
         public bool DayStartFollowReverse => dayStartFollowReverse;
-        // --- END NEW ---
 
-        // --- NEW: Public Getter for the toggle (Step 2) ---
+        // --- Public Getter for the toggle ---
         public bool UsePathForDayStart => usePathForDayStart;
-        // --- END NEW ---
-
 
         /// <summary>
         /// Attempts to parse the stored state strings into a runtime System.Enum value.
@@ -222,7 +211,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
             this.uniqueDecisionOptions = new SerializableDecisionOptionDictionary(); // <-- Initialize dictionary wrapper
 
             // Initialize day start behavior fields (will be populated on load)
-            this.usePathForDayStart = false; // <-- NEW: Initialize toggle
+            this.usePathForDayStart = false; 
             this.dayStartActiveStateEnumKey = null;
             this.dayStartActiveStateEnumType = null;
             this.dayStartPathID = null;
@@ -245,7 +234,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
             this.isFollowingPathBasic = false;
 
             // Initialize schedule runtime flag
-            this.isEndingDay = false; // <-- NEW: Initialize flag
+            this.isEndingDay = false; 
         }
 
         /// <summary>
@@ -359,7 +348,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
          }
     }
 
-    // --- NEW: Serializable Dictionary Wrapper for Unique Decision Options ---
+    // --- Serializable Dictionary Wrapper for Unique Decision Options ---
     // Unity cannot directly serialize Dictionaries, so we use a wrapper with a List of KeyValuePair structs.
     [System.Serializable]
     public class SerializableDecisionOptionDictionary
@@ -412,6 +401,5 @@ namespace Game.NPC.TI // Keep in the TI namespace
         //     }
         // }
     }
-    // --- END NEW ---
 }
 // --- END OF FILE TiNpcData.cs ---

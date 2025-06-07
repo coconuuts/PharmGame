@@ -19,10 +19,8 @@ namespace Game.NPC.Handlers
 
         private Coroutine currentRotationCoroutine;
 
-        // --- NEW: Public property to check if agent is enabled ---
+        // --- Public property to check if agent is enabled ---
         public bool IsAgentEnabled => Agent != null && Agent.enabled;
-        // --- END NEW ---
-
 
         private void Awake()
         {
@@ -46,9 +44,8 @@ namespace Game.NPC.Handlers
              // Future: Unsubscriptions
              StopMoving();
              StopRotation();
-             // --- NEW: Ensure agent is disabled on disable ---
+             // --- Ensure agent is disabled on disable ---
              DisableAgent(); // This calls the modified DisableAgent
-             // --- END NEW ---
         }
 
         private void Update()
@@ -74,7 +71,7 @@ namespace Game.NPC.Handlers
             // --- END ADD ---
         }
 
-        // --- NEW: Public methods to control Agent enabled state ---
+        // --- Public methods to control Agent enabled state ---
         /// <summary>
         /// Explicitly enables the NavMeshAgent.
         /// </summary>
@@ -100,8 +97,6 @@ namespace Game.NPC.Handlers
                 // Debug.Log($"NpcMovementHandler on {gameObject.name}: NavMeshAgent disabled and path reset.", this); // Too noisy
             }
         }
-        // --- END NEW ---
-
 
         // Public API for Movement
         public bool SetDestination(Vector3 position)

@@ -1,15 +1,13 @@
-// --- START OF FILE BasicPathStateSO.cs ---
-
-// --- Updated BasicPathStateSO.cs (Step 6.1) ---
+// --- START OF FILE BasicPathStateSO.cs (Final Refactored) ---
 
 using UnityEngine;
 using System; // Needed for System.Enum
 using Game.NPC.TI; // Needed for TiNpcData, TiNpcManager
 using Game.NPC.BasicStates; // Needed for BasicState enum, BasicPathState enum, BasicNpcStateSO, BasicNpcStateManager
-using Game.Navigation; // Needed for PathSO and WaypointManager
+using Game.Navigation; // Needed for PathSO and WaypointManager, PathTransitionDetails
 using Random = UnityEngine.Random; // Specify UnityEngine.Random
 using System.Linq; // Needed for Contains
-using Game.NPC.Decisions; // Needed for DecisionPointSO, NpcDecisionHelper
+using Game.NPC.Decisions; // Needed for DecisionPointSO, NpcDecisionHelper // Still needed for NpcDecisionHelper via PathSO
 
 namespace Game.NPC.BasicStates // Place Basic States in their own namespace
 {
@@ -18,6 +16,8 @@ namespace Game.NPC.BasicStates // Place Basic States in their own namespace
     /// Operates directly on TiNpcData.
     /// Now supports restoring progress for activated TI NPCs and triggers decision logic
     /// upon simulating reaching a linked Decision Point.
+    /// MODIFIED: End behavior (Decision Point or fixed transition) is now defined on the PathSO asset.
+    /// Uses PathTransitionDetails to handle transitions to other paths.
     /// </summary>
     [CreateAssetMenu(fileName = "BasicPathState_", menuName = "NPC/Basic States/Basic Follow Path", order = 50)] // Order appropriately
     public class BasicPathStateSO : BasicNpcStateSO
@@ -31,22 +31,8 @@ namespace Game.NPC.BasicStates // Place Basic States in their own namespace
         [Tooltip("If true, simulate following the path in reverse from the start index.")]
         [SerializeField] private bool followReverse = false; // <-- This field is on the SO asset
 
-         // --- Decision Point Configuration ---
-        [Header("Decision Point")] // <-- NEW HEADER
-        [Tooltip("Optional: If assigned, this path leads to a Decision Point. Upon simulating reaching the end, the NPC will trigger decision logic instead of transitioning to a fixed next state.")]
-        [SerializeField] private DecisionPointSO decisionPoint; // <-- NEW FIELD
-        // --- END NEW ---
-
-
-        [Header("Transitions (Used if NO Decision Point is assigned)")] // <-- Updated Header
-        [Tooltip("The Enum key for the basic state to transition to upon reaching the end of the path simulation (used if no Decision Point is assigned).")] // <-- Updated Tooltip
-        [SerializeField] private string nextBasicStateEnumKey;
-        [Tooltip("The Type name of the Enum key for the next basic state (e.NPC.BasicStates.BasicState, Game.NPC.BasicStates.BasicPathState) (used if no Decision Point is assigned).")] // <-- Updated Tooltip
-        [SerializeField] private string nextBasicStateEnumType;
-
-
         // --- BasicNpcStateSO Overrides ---
-        public override System.Enum HandledBasicState => BasicPathState.BasicFollowPath; // <-- Use the new enum
+        public override System.Enum HandledBasicState => BasicPathState.BasicFollowPath;
 
         // Basic Path states do not use the standard timeout; their 'timeout' is reaching the end of the path.
         // However, they still need to decrement the *general* simulation timer on TiNpcData
@@ -77,7 +63,7 @@ namespace Game.NPC.BasicStates // Place Basic States in their own namespace
             int currentPathStartIndex;
             bool currentPathFollowReverse;
 
-            // --- NEW: Determine path data source: TiNpcData (if continuing) or SO Asset (if starting new) ---
+            // --- Determine path data source: TiNpcData (if continuing) or SO Asset (if starting new) ---
             if (data.isFollowingPathBasic) // Check if TiNpcData indicates continuing a path simulation
             {
                  // Continuing an existing path simulation (e.g., transitioned from BasicIdleAtHome or another BasicPathState)
@@ -178,37 +164,8 @@ namespace Game.NPC.BasicStates // Place Basic States in their own namespace
             // --- END Determine path data source ---
 
 
-             // --- NEW: Validate Decision Point link if assigned (Moved here) ---
-             if (decisionPoint != null)
-             {
-                 // Check TiNpcManager instance needed for decision logic
-                 if (TiNpcManager.Instance == null)
-                 {
-                     Debug.LogError($"SIM {data.Id}: BasicPathStateSO '{name}' links to Decision Point '{decisionPoint.name}', but TiNpcManager.Instance is null! Cannot perform decision logic. Transitioning to BasicPatrol fallback.", data.NpcGameObject);
-                     manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Fallback
-                     return;
-                 }
-
-                 if (string.IsNullOrWhiteSpace(decisionPoint.PointID) || string.IsNullOrWhiteSpace(decisionPoint.WaypointID))
-                 {
-                      Debug.LogError($"SIM {data.Id}: BasicPathStateSO '{name}' links to Decision Point '{decisionPoint.name}', but Decision Point SO has invalid PointID ('{decisionPoint.PointID}') or WaypointID ('{decisionPoint.WaypointID}')! Transitioning to BasicPatrol fallback.", data.NpcGameObject);
-                      manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Fallback
-                      return;
-                 }
-                 // Ensure the Decision Point Waypoint exists in the scene for simulation target lookup
-                 if (WaypointManager.Instance.GetWaypointTransform(decisionPoint.WaypointID) == null)
-                 {
-                      Debug.LogError($"SIM {data.Id}: BasicPathStateSO '{name}' links to Decision Point '{decisionPoint.name}' (WaypointID: '{decisionPoint.WaypointID}'), but the waypoint is not found in the scene via WaypointManager! Transitioning to BasicPatrol fallback.", data.NpcGameObject);
-                      manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Fallback
-                      return;
-                 }
-                  // If a Decision Point is assigned, override the default next state logging
-                  Debug.Log($"SIM {data.Id}: Entering Basic Path State: {name} leading to Decision Point '{decisionPoint.PointID}'.");
-             } else {
-                 // Log the standard next state if no Decision Point is assigned
-                 Debug.Log($"SIM {data.Id}: Entering Basic Path State: {name} leading to fixed next basic state.");
-             }
-             // --- END NEW ---
+             // Log entry, noting that end behavior is defined on the PathSO
+             Debug.Log($"SIM {data.Id}: Entering Basic Path State: {name} for path '{currentPath?.PathID ?? "NULL"}'. End behavior defined on PathSO asset.");
 
 
             data.simulatedStateTimer = 0f; // Timer is not used for waiting in this state
@@ -285,7 +242,7 @@ namespace Game.NPC.BasicStates // Place Basic States in their own namespace
                      // Reached the end of the path simulation
                      Debug.Log($"SIM {data.Id}: Reached end of path simulation '{currentPath.PathID}'.", data.NpcGameObject);
 
-                     // Reset path state on data
+                     // Reset path state on data (will be re-primed if the next state is a path)
                      data.simulatedPathID = null;
                      data.simulatedWaypointIndex = -1; // Invalid index
                      data.simulatedFollowReverse = false;
@@ -293,23 +250,100 @@ namespace Game.NPC.BasicStates // Place Basic States in their own namespace
                      data.simulatedTargetPosition = null; // Clear final target
                      data.simulatedStateTimer = 0f; // Ensure timer is zeroed
 
-                     // --- NEW: Trigger decision logic if Decision Point is assigned, otherwise transition to fixed next basic state ---
-                      if (decisionPoint != null)
+                     // --- Determine next state using PathSO's GetNextActiveStateDetails ---
+                      // Ensure TiNpcManager is available via manager
+                      if (manager?.tiNpcManager == null)
                       {
-                           Debug.Log($"SIM {data.Id}: Reached Decision Point '{decisionPoint.PointID}' (via simulation). Triggering decision logic.", data.NpcGameObject);
-                           // Call the shared decision logic helper for simulation
-                           MakeBasicDecisionAndTransition(data, decisionPoint, manager); // Uses data, decisionPoint, and manager
+                           Debug.LogError($"SIM {data.Id}: TiNpcManager is null in BasicNpcStateManager! Cannot determine next state from PathSO end behavior. Transitioning to BasicPatrol fallback.", data.NpcGameObject);
+                           manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Fallback
+                           return;
+                      }
 
+                      PathTransitionDetails transitionDetails = currentPath?.GetNextActiveStateDetails(data, manager.tiNpcManager) ?? new PathTransitionDetails(null); 
+
+                      if (transitionDetails.HasValidTransition)
+                      {
+                          Debug.Log($"SIM {data.Id}: Path '{currentPath.PathID}' end behavior determined next Active State: '{transitionDetails.TargetStateEnum.GetType().Name}.{transitionDetails.TargetStateEnum.ToString() ?? "NULL"}'.", data.NpcGameObject);
+
+                          // Map the chosen Active State Enum to a Basic State Enum
+                          System.Enum chosenBasicStateEnum = manager.tiNpcManager.GetBasicStateFromActiveState(transitionDetails.TargetStateEnum);
+
+                          if (chosenBasicStateEnum != null)
+                          {
+                              // Need to ensure the chosen state is actually a BasicState or BasicPathState
+                              // This check is technically redundant if GetBasicStateFromActiveState works correctly,
+                              // but defensive coding is good.
+                              if (manager.IsBasicState(chosenBasicStateEnum) || (chosenBasicStateEnum is BasicPathState && (BasicPathState)chosenBasicStateEnum != BasicPathState.None))
+                              {
+                                  Debug.Log($"SIM {data.Id}: Mapped to Basic State '{chosenBasicStateEnum.GetType().Name}.{chosenBasicStateEnum.ToString() ?? "NULL"}'. Transitioning.", data.NpcGameObject);
+
+                                   // --- If the chosen basic state is BasicPathState, prime the simulation path data ---
+                                   if (chosenBasicStateEnum.Equals(BasicPathState.BasicFollowPath))
+                                   {
+                                        if (transitionDetails.PathAsset != null)
+                                        {
+                                             // Use the path details from the transitionDetails struct to initialize the simulated path data
+                                             data.simulatedPathID = transitionDetails.PathAsset.PathID;
+                                             data.simulatedWaypointIndex = transitionDetails.StartIndex; // Start *at* this index, the BasicPathStateSO.OnEnter will target the next one
+                                             data.simulatedFollowReverse = transitionDetails.FollowReverse;
+                                             data.isFollowingPathBasic = true; // Flag as following a path simulation
+                                             Debug.Log($"SIM {data.Id}: Priming path simulation data for BasicPathState transition: PathID='{data.simulatedPathID}', Index={data.simulatedWaypointIndex}, Reverse={data.simulatedFollowReverse}.", data.NpcGameObject);
+
+                                             // Set the NPC's position to the start waypoint of the *new* path
+                                             string startWaypointID = transitionDetails.PathAsset.GetWaypointID(transitionDetails.StartIndex);
+                                             Transform startWaypointTransform = WaypointManager.Instance.GetWaypointTransform(startWaypointID);
+                                             if (startWaypointTransform != null)
+                                             {
+                                                  data.CurrentWorldPosition = startWaypointTransform.position;
+                                                  // Simulate initial rotation towards the next waypoint of the new path
+                                                  SimulateRotationTowardsNextWaypoint(data, transitionDetails.PathAsset, transitionDetails.StartIndex, transitionDetails.FollowReverse);
+                                                  Debug.Log($"SIM {data.Id}: Initialized position for new path to {data.CurrentWorldPosition}.", data.NpcGameObject);
+                                             } else {
+                                                  Debug.LogError($"SIM {data.Id}: Start waypoint '{startWaypointID}' for next path '{transitionDetails.PathAsset.PathID}' not found during simulation transition! Cannot initialize position. Transitioning to BasicPatrol fallback.", data.NpcGameObject);
+                                                  manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Fallback
+                                                  return; // Exit tick processing
+                                             }
+                                        } else {
+                                             Debug.LogError($"SIM {data.Id}: Path '{currentPath.PathID}' end behavior specified PathState.FollowPath but the next Path Asset is null in transition details! Transitioning to BasicPatrol fallback.", data.NpcGameObject);
+                                             manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Fallback
+                                             return; // Exit tick processing
+                                        }
+                                   }
+                                   // If the chosen basic state is NOT BasicPathState, the path simulation data is already cleared above.
+                                   // The new state's OnEnter will handle its own initialization (timer, target, etc.).
+
+                                   // Trigger the state transition
+                                   manager.TransitionToBasicState(data, chosenBasicStateEnum);
+
+                                   // Note: If transitioning to BasicPathState, the OnEnter of BasicPathState will run *after* this block,
+                                   // but it will detect data.isFollowingPathBasic is true and use the data we just primed.
+                                   // If transitioning to a non-path state, the new state's OnEnter will run.
+
+                                   return; // Stop processing simulation for this tick after transition
+                              }
+                              else
+                              {
+                                   // Mapping returned something unexpected (not a BasicState or BasicPathState)
+                                   Debug.LogError($"SIM {data.Id}: Path '{currentPath.PathID}' end behavior returned Active State '{transitionDetails.TargetStateEnum.GetType().Name}.{transitionDetails.TargetStateEnum.ToString() ?? "NULL"}', which mapped to non-Basic Enum '{chosenBasicStateEnum.GetType().Name}.{chosenBasicStateEnum.ToString() ?? "NULL"}' for simulation! Transitioning to BasicPatrol fallback.", data.NpcGameObject);
+                                   manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Fallback
+                                   return; // Exit tick processing
+                              }
+                          }
+                          else
+                          {
+                               // Mapping failed
+                               Debug.LogError($"SIM {data.Id}: Path '{currentPath.PathID}' end behavior returned Active State '{transitionDetails.TargetStateEnum.GetType().Name}.{transitionDetails.TargetStateEnum.ToString() ?? "NULL"}', but mapping to Basic State failed! Transitioning to BasicPatrol fallback.", data.NpcGameObject);
+                               manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Fallback
+                               return; // Exit tick processing
+                          }
                       }
                       else
                       {
-                           // No Decision Point, transition to the configured next basic state (standard path behavior)
-                           Debug.Log($"SIM {data.Id}: Reached end of standard path (via simulation). Transitioning to fixed next basic state.", data.NpcGameObject);
-                           TransitionToNextBasicState(data, manager); // Use standard fixed transition
+                           // GetNextActiveStateDetails returned invalid details (invalid config or decision failed)
+                           Debug.LogError($"SIM {data.Id}: Path '{currentPath.PathID}' end behavior returned invalid details or failed to determine next Active State. Transitioning to BasicPatrol fallback.", data.NpcGameObject);
+                           manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Fallback
+                           return; // Exit tick processing
                       }
-                     // --- END NEW ---
-
-                     return; // Stop processing simulation for this tick
                  }
             }
             // --- End Determine Next Target Waypoint ---
@@ -368,124 +402,6 @@ namespace Game.NPC.BasicStates // Place Basic States in their own namespace
          }
 
         /// <summary>
-        /// Handles the transition to the next basic state upon path simulation completion
-        /// IF no Decision Point is assigned.
-        /// </summary>
-        private void TransitionToNextBasicState(TiNpcData data, BasicNpcStateManager manager)
-        {
-             // This method is only called if decisionPoint is null
-             if (string.IsNullOrEmpty(nextBasicStateEnumKey) || string.IsNullOrEmpty(nextBasicStateEnumType))
-             {
-                  Debug.LogWarning($"SIM {data.Id}: BasicPathState '{name}' has no next basic state configured AND no Decision Point assigned. Transitioning to BasicPatrol fallback.", data.NpcGameObject);
-                  manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Default fallback
-                  return;
-             }
-
-             // Use the manager to transition by string key/type
-             System.Enum targetEnum = null;
-             try
-             {
-                  Type type = Type.GetType(nextBasicStateEnumType);
-                  if (type == null || !type.IsEnum)
-                  {
-                       Debug.LogError($"SIM {data.Id}: Invalid Next Basic State Enum Type string '{nextBasicStateEnumType}' configured in BasicPathState '{name}'. Transitioning to BasicPatrol fallback.", data.NpcGameObject);
-                       manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Fallback
-                       return;
-                  }
-                  // Attempt to parse the string key into an enum value
-                  targetEnum = (System.Enum)Enum.Parse(type, nextBasicStateEnumKey);
-             }
-             catch (Exception e)
-             {
-                  Debug.LogError($"SIM {data.Id}: Error parsing Next Basic State config '{nextBasicStateEnumKey}' of type '{nextBasicStateEnumType}' in BasicPathState '{name}': {e.Message}. Transitioning to BasicPatrol fallback.", data.NpcGameObject);
-                  manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Fallback
-                  return;
-             }
-
-             manager.TransitionToBasicState(data, targetEnum); // Transition using the parsed enum
-        }
-
-         /// <summary>
-         /// Triggers the data-driven decision logic and transitions to the chosen basic state (simulation).
-         /// This is called when the NPC simulates reaching the end of a path linked to a Decision Point.
-         /// </summary>
-         private void MakeBasicDecisionAndTransition(TiNpcData data, DecisionPointSO decisionPoint, BasicNpcStateManager manager)
-         {
-             if (data == null)
-             {
-                  Debug.LogError($"SIM Cannot make basic decision at point '{decisionPoint?.PointID ?? "NULL"}' - TiNpcData is null! Transitioning to BasicPatrol fallback.", data?.NpcGameObject);
-                  manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Fallback
-                  return;
-             }
-             if (decisionPoint == null) // Should not happen due to calling context, but defensive
-             {
-                  Debug.LogError($"SIM {data.Id}: Cannot make basic decision - DecisionPointSO is null! Transitioning to BasicPatrol fallback.", data.NpcGameObject);
-                  manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Fallback
-                  return;
-             }
-             // Check TiNpcManager dependency
-             if (TiNpcManager.Instance == null)
-             {
-                  Debug.LogError($"SIM {data.Id}: TiNpcManager.Instance is null! Cannot perform decision logic.", data.NpcGameObject);
-                   manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Fallback
-                   return;
-             }
-
-             // --- NEW: Check endDay flag before making decision (Already added in Substep 3.2, keeping here) ---
-             // If it's time to go home, override the decision and go straight to BasicExitingStore
-             if (data.isEndingDay)
-             {
-                  Debug.Log($"SIM {data.Id}: Reached Decision Point '{decisionPoint.PointID}' but is in endDay schedule ({data.endDay}). Transitioning to BasicExitingStore instead of making decision.", data.NpcGameObject);
-                  manager.TransitionToBasicState(data, BasicState.BasicExitingStore);
-                  return; // Exit early
-             }
-             // --- END NEW ---
-
-
-             // --- Call the shared Decision Logic helper ---
-             // Call the MakeDecision helper from the static helper class. It returns an Active State Enum.
-             System.Enum chosenActiveStateEnum = NpcDecisionHelper.MakeDecision(data, decisionPoint, TiNpcManager.Instance);
-
-             if (chosenActiveStateEnum != null)
-             {
-                 // --- NEW: Map the chosen Active State Enum to a Basic State Enum ---
-                 System.Enum chosenBasicStateEnum = TiNpcManager.Instance.GetBasicStateFromActiveState(chosenActiveStateEnum);
-
-                 if (chosenBasicStateEnum != null)
-                 {
-                     // Need to ensure the chosen state is actually a BasicState or BasicPathState
-                     // This check is technically redundant if GetBasicStateFromActiveState works correctly,
-                     // but defensive coding is good.
-                     if (manager.IsBasicState(chosenBasicStateEnum) || (chosenBasicStateEnum is BasicPathState && (BasicPathState)chosenBasicStateEnum != BasicPathState.None))
-                     {
-                         Debug.Log($"SIM {data.Id}: Decision made at '{decisionPoint.PointID}'. Chosen Active State '{chosenActiveStateEnum.GetType().Name}.{chosenActiveStateEnum.ToString() ?? "NULL"}' maps to chosen Basic State '{chosenBasicStateEnum.GetType().Name}.{chosenBasicStateEnum.ToString() ?? "NULL"}'. Transitioning.", data.NpcGameObject);
-                         manager.TransitionToBasicState(data, chosenBasicStateEnum); // Transition using the mapped Basic Enum key
-                     }
-                     else
-                     {
-                          // Mapping returned something unexpected (not a BasicState or BasicPathState)
-                          Debug.LogError($"SIM {data.Id}: Decision logic at '{decisionPoint.PointID}' returned Active State '{chosenActiveStateEnum.GetType().Name}.{chosenActiveStateEnum.ToString() ?? "NULL"}', which mapped to non-Basic Enum '{chosenBasicStateEnum.GetType().Name}.{chosenBasicStateEnum.ToString() ?? "NULL"}' for simulation! Transitioning to BasicPatrol fallback.", data.NpcGameObject);
-                          manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Fallback
-                     }
-                 }
-                 else
-                 {
-                      // Mapping failed
-                      Debug.LogError($"SIM {data.Id}: Decision logic at '{decisionPoint.PointID}' returned Active State '{chosenActiveStateEnum.GetType().Name}.{chosenActiveStateEnum.ToString() ?? "NULL"}', but mapping to Basic State failed! Transitioning to BasicPatrol fallback.", data.NpcGameObject);
-                      manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Fallback
-                 }
-                 // --- END NEW ---
-             }
-             else
-             {
-                  Debug.LogError($"SIM {data.Id}: Decision logic at '{decisionPoint.PointID}' returned a null state or no valid options! Transitioning to BasicPatrol fallback.", data.NpcGameObject);
-                  manager.TransitionToBasicState(data, BasicState.BasicPatrol); // Fallback
-             }
-             // --- END Call ---
-         }
-
-
-        /// <summary>
          /// Simulates rotation towards the next waypoint when starting a path or reaching a waypoint.
          /// </summary>
          private void SimulateRotationTowardsNextWaypoint(TiNpcData data, PathSO path, int currentWaypointIndex, bool followReverse)
@@ -528,77 +444,14 @@ namespace Game.NPC.BasicStates // Place Basic States in their own namespace
                 }
             }
 
-             // Validate Decision Point link
-            if (decisionPoint != null)
-            {
-                 if (string.IsNullOrWhiteSpace(decisionPoint.PointID))
-                 {
-                      Debug.LogError($"BasicPathStateSO '{name}': Decision Point '{decisionPoint.name}' has an empty Point ID.", this);
-                 }
-                 if (string.IsNullOrWhiteSpace(decisionPoint.WaypointID))
-                 {
-                      Debug.LogError($"BasicPathStateSO '{name}': Decision Point '{decisionPoint.name}' has an empty Waypoint ID.", this);
-                 }
-                 // Warn if standard transitions are also configured when a Decision Point is linked
-                 if (!string.IsNullOrEmpty(nextBasicStateEnumKey) || !string.IsNullOrEmpty(nextBasicStateEnumType))
-                 {
-                      Debug.LogWarning($"BasicPathStateSO '{name}': A Decision Point is assigned, but standard Next Basic State ('{nextBasicStateEnumKey}' of type '{nextBasicStateEnumType}') is also configured. The standard Next Basic State will be ignored when the Decision Point is reached.", this);
-                 }
-                  // TODO: Add validation that the Decision Point WaypointID is actually the LAST waypoint in the pathAsset
-                  // This is a crucial constraint for Decision Point paths.
-                  // Requires WaypointManager access in OnValidate, or ensuring this in the workflow.
-                  // For now, rely on manual setup and runtime checks.
-                  // A simple check: get the last waypoint of the path based on direction
-                 if (pathAsset != null && pathAsset.WaypointCount > 0)
-                 {
-                      int expectedEndIndex = followReverse ? 0 : pathAsset.WaypointCount - 1;
-                      string expectedEndWaypointID = pathAsset.GetWaypointID(expectedEndIndex);
-                      if (decisionPoint.WaypointID != expectedEndWaypointID)
-                      {
-                           Debug.LogError($"BasicPathStateSO '{name}': Decision Point '{decisionPoint.PointID}' (Waypoint ID '{decisionPoint.WaypointID}') is NOT the end waypoint of the assigned Path Asset '{pathAsset.name}' (Expected Waypoint ID '{expectedEndWaypointID}' at index {expectedEndIndex} with reverse={followReverse})! This Decision Point path will likely not work correctly.", this);
-                      }
-                 } else if (pathAsset != null)
-                 {
-                      Debug.LogWarning($"BasicPathStateSO '{name}': Path Asset '{pathAsset.name}' has fewer than 1 waypoint. Cannot validate Decision Point waypoint.", this);
-                 }
-            }
-             else // No Decision Point assigned, validate standard next state configuration
+             // Add validation that pathAsset is assigned
+             if (pathAsset == null)
              {
-                 if (!string.IsNullOrEmpty(nextBasicStateEnumKey) || !string.IsNullOrEmpty(nextBasicStateEnumType))
-                 {
-                      try
-                      {
-                           Type type = Type.GetType(nextBasicStateEnumType);
-                           if (type == null || !type.IsEnum)
-                           {
-                                Debug.LogError($"BasicPathStateSO '{name}': Invalid Next Basic State Enum Type string '{nextBasicStateEnumType}' configured.", this);
-                           } else
-                           {
-                                // Optional: Check if the key exists in the enum
-                                if (!Enum.GetNames(type).Contains(nextBasicStateEnumKey))
-                                {
-                                     Debug.LogError($"BasicPathStateSO '{name}': Next Basic State Enum Type '{nextBasicStateEnumType}' is valid, but key '{nextBasicStateEnumKey}' does not exist in that enum.", this);
-                                }
-                                // Optional: Check if the enum type is actually a BasicState or BasicPathState
-                                if (type != typeof(BasicState) && type != typeof(BasicPathState))
-                                {
-                                     Debug.LogWarning($"BasicPathStateSO '{name}': Next Basic State Enum Type '{nextBasicStateEnumType}' is configured, but it's not a BasicState or BasicPathState enum. Ensure this is intended.", this);
-                                }
-                           }
-                      }
-                      catch (Exception e)
-                      {
-                           Debug.LogError($"BasicPathStateSO '{name}': Error parsing Next Basic State config: {e.Message}", this);
-                      }
-                 }
-                  else // Neither Decision Point nor standard next state is configured
-                 {
-                      Debug.LogWarning($"BasicPathStateSO '{name}': Neither a Decision Point nor a standard Next Basic State is configured. This state will transition to BasicPatrol fallback upon path completion.", this);
-                 }
+                  Debug.LogError($"BasicPathStateSO '{name}': Path Asset is not assigned! This state requires a PathSO.", this);
              }
         }
         #endif
     }
 }
 
-// --- END OF FILE BasicPathStateSO.cs ---
+// --- END OF FILE BasicPathStateSO.cs (Final Refactored) ---

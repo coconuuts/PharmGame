@@ -29,7 +29,7 @@ namespace Game.NPC.Handlers // Placing handlers together
         // Making InteractorObject public internal for NpcStateContext access
         public GameObject InteractorObject { get; internal set; }
 
-        // --- NEW: Flag to indicate if currently in an interruption state ---
+        // --- Flag to indicate if currently in an interruption state ---
         private bool isInterrupted = false;
         public bool IsInterrupted() => isInterrupted;
         // --- END Moved Data ---
@@ -56,7 +56,7 @@ namespace Game.NPC.Handlers // Placing handlers together
 
             // Initialize the state stack here
             stateStack = new Stack<NpcStateSO>();
-            isInterrupted = false; // Initialize flag <-- NEW
+            isInterrupted = false; // Initialize flag
 
             Debug.Log($"{gameObject.name}: NpcInterruptionHandler Awake completed. Runner reference acquired, state stack initialized.", this); // Updated log
         }
@@ -69,9 +69,6 @@ namespace Game.NPC.Handlers // Placing handlers together
         private void OnDisable()
         {
             // Event unsubscriptions are handled by NpcEventHandler.
-            // stateStack.Clear(); // Reset is called by Runner.ResetRunnerTransientData
-            // InteractorObject = null; // Reset is called by Runner.ResetRunnerTransientData
-            // isInterrupted = false; // Reset is called by Runner.ResetRunnerTransientData <-- NEW
         }
 
          /// <summary>
@@ -82,7 +79,7 @@ namespace Game.NPC.Handlers // Placing handlers together
          {
              stateStack.Clear();
              InteractorObject = null;
-             isInterrupted = false; // Reset flag <-- NEW
+             isInterrupted = false; // Reset flag 
              Debug.Log($"{gameObject.name}: NpcInterruptionHandler reset.");
          }
 
@@ -98,7 +95,7 @@ namespace Game.NPC.Handlers // Placing handlers together
              if (runner == null) { Debug.LogError($"InterruptionHandler on {gameObject.name}: Runner is null during TryInterrupt!", this); return false; }
              NpcStateSO currentStateSO = runner.GetCurrentState();
 
-             // --- NEW: Check if already in an interruption state ---
+             // --- Check if already in an interruption state ---
              // Prevent pushing onto the stack if already interrupted.
              // This simplifies logic by only allowing one level of interruption.
              if (isInterrupted)
@@ -106,8 +103,6 @@ namespace Game.NPC.Handlers // Placing handlers together
                   Debug.Log($"{runner.gameObject.name}: Already in an interrupted state. Ignoring new interruption trigger.", runner.gameObject);
                   return false;
              }
-             // --- END NEW ---
-
 
              if (currentStateSO != null && currentStateSO.IsInterruptible)
              {
@@ -124,20 +119,13 @@ namespace Game.NPC.Handlers // Placing handlers together
                     Debug.Log($"{runner.gameObject.name}: Current state '{currentStateSO.name}' is interruptible. Pushing to stack and attempting transition to {interruptStateEnum.GetType().Name}.{interruptStateEnum.ToString()}.", runner.gameObject);
                  stateStack.Push(currentStateSO);
                  InteractorObject = interactor; // Store the interactor on this handler
-                 isInterrupted = true; // Set interruption flag <-- NEW
+                 isInterrupted = true; // Set interruption flag 
 
                  NpcStateSO interruptStateSO = runner.GetStateSO(interruptStateEnum);
                  if (interruptStateSO != null)
                  {
-                     // --- NEW: Tell the Runner to enter full update mode ---
-                     // MODIFIED: This call is now handled by ProximityManager
-                     // runner.EnterInterruptionMode();
-                     // --- END NEW ---
-
-                     // --- NEW: Notify ProximityManager of interruption start ---
+                     // --- Notify ProximityManager of interruption start ---
                      ProximityManager.Instance?.EnterInterruptionMode(runner); // Pass the runner
-                     // --- END NEW ---
-
 
                      runner.TransitionToState(interruptStateSO); // Transition via the Runner
                      return true;
@@ -147,16 +135,10 @@ namespace Game.NPC.Handlers // Placing handlers together
                       Debug.LogError($"InterruptionHandler ({runner.gameObject.name}): Interruption state SO not found for enum '{interruptStateEnum.GetType().Name}.{interruptStateEnum.ToString()}'! Cannot transition. State stack inconsistency likely. Clearing stack.", runner.gameObject);
                       stateStack.Clear(); // Clear stack on failure to prevent permanent block
                       InteractorObject = null; // Clear interactor
-                      isInterrupted = false; // Clear interruption flag on failure <-- NEW
-                      // --- NEW: Tell the Runner to exit full update mode ---
-                      // MODIFIED: This call is now handled by ProximityManager
-                      // runner.ExitInterruptionMode();
-                      // --- END NEW ---
+                      isInterrupted = false; // Clear interruption flag on failure
 
-                      // --- NEW: Notify ProximityManager of interruption end (due to failure) ---
+                      // --- Notify ProximityManager of interruption end (due to failure) ---
                       ProximityManager.Instance?.ExitInterruptionMode(runner); // Pass the runner
-                      // --- END NEW ---
-
 
                       // Transition to a safe state - use Runner's GetStateSO for Idle/ReturningToPool
                       NpcStateSO fallbackState = runner.GetStateSO(GeneralState.Idle);
@@ -188,7 +170,7 @@ namespace Game.NPC.Handlers // Placing handlers together
               if (runner.Manager == null) { Debug.LogError($"InterruptionHandler on {gameObject.name}: Runner's Manager is null during EndInterruption! Cannot check queue/register status. Transitioning to fallback.", this);
                  InteractorObject = null; // Clear interactor
                  stateStack.Clear(); // Clear stack as we cannot reliably return
-                 isInterrupted = false; // Clear interruption flag <-- NEW
+                 isInterrupted = false; // Clear interruption flag 
                  ProximityManager.Instance?.ExitInterruptionMode(runner); // Pass the runner
 
                  // Transition to a safe state - use Runner's GetStateSO for Idle/ReturningToPool
@@ -199,7 +181,7 @@ namespace Game.NPC.Handlers // Placing handlers together
                  return; // Exit
              }
 
-             // --- NEW: Check if we are actually in an interrupted state to end ---
+             // --- Check if we are actually in an interrupted state to end ---
              if (!isInterrupted)
              {
                   Debug.LogWarning($"{runner.gameObject.name}: EndInterruption called but the NPC was not flagged as interrupted! Ignoring return logic, ensuring update mode is normal.", runner.gameObject);
@@ -208,15 +190,12 @@ namespace Game.NPC.Handlers // Placing handlers together
                   // MODIFIED: This call is now handled by ProximityManager
                   // runner.ExitInterruptionMode(); // This will restore to normalUpdateInterval
 
-                  // --- NEW: Notify ProximityManager of interruption end (defensive call) ---
+                  // --- Notify ProximityManager of interruption end (defensive call) ---
                   ProximityManager.Instance?.ExitInterruptionMode(runner); // Pass the runner
-                  // --- END NEW ---
-
                   return;
              }
-             // --- END NEW ---
 
-             isInterrupted = false; // Clear the interruption flag BEFORE returning <-- NEW
+             isInterrupted = false; // Clear the interruption flag BEFORE returning
 
              ProximityManager.Instance?.ExitInterruptionMode(runner); // Pass the runner
 
@@ -321,7 +300,7 @@ namespace Game.NPC.Handlers // Placing handlers together
                        else if (poppedStateEnum.Equals(CustomerState.SecondaryQueue))
                        {
                            Debug.Log($"{runner.gameObject.name}: Interruption ended. Previous state was Secondary Queue. Checking if Secondary Queue is full.", runner.gameObject);
-                            if (runner.Manager.IsSecondaryQueueFull()) // Use the new method
+                            if (runner.Manager.IsSecondaryQueueFull()) 
                            {
                                 // Secondary queue is now full, cannot rejoin their spot. Give up and exit.
                                 Debug.LogWarning($"{runner.gameObject.name}: Secondary Queue is now full! Cannot rejoin after interruption from Secondary Queue. Transitioning to Exiting.", runner.gameObject);
@@ -384,10 +363,8 @@ namespace Game.NPC.Handlers // Placing handlers together
                   // MODIFIED: This call is now handled by ProximityManager
                   // runner.ExitInterruptionMode(); // This will restore to normalUpdateInterval
 
-                  // --- NEW: Notify ProximityManager of interruption end (defensive call) ---
+                  // --- Notify ProximityManager of interruption end (defensive call) ---
                   ProximityManager.Instance?.ExitInterruptionMode(runner); // Pass the runner
-                  // --- END NEW ---
-
 
                   // Transition to a safe state - use Runner's GetStateSO for Idle/ReturningToPool
                   NpcStateSO idleState = runner.GetStateSO(GeneralState.Idle);
