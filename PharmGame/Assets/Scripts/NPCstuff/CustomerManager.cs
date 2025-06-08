@@ -555,6 +555,12 @@ namespace CustomerManagement
             QueueType type = eventArgs.Type;
             int spotIndex = eventArgs.SpotIndex; // The index that was just vacated
 
+            if (type == QueueType.Prescription)
+            {
+                // Debug.Log($"CustomerManager: Ignoring QueueSpotFreedEvent for Prescription queue spot {spotIndex}.", this); // Optional debug
+                return; // Exit handler immediately for Prescription queue events
+            }
+
             if (spotIndex < 0)
             {
                 Debug.LogWarning($"CustomerManager: Received QueueSpotFreedEvent with invalid negative spot index {spotIndex}. Ignoring.", this);

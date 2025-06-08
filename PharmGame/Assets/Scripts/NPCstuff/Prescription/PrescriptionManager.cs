@@ -168,17 +168,11 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
                 // Assuming TimeManager has an OnSunrise event to signal day start
                 timeManager.OnSunrise += HandleSunrise; // <-- SUBSCRIBED TO ON SUNRISE
             }
-
-            // Subscribe to new prescription events
-            EventManager.Subscribe<ClaimPrescriptionSpotEvent>(HandleClaimPrescriptionSpot); // <-- NEW Subscription
-            EventManager.Subscribe<FreePrescriptionClaimSpotEvent>(HandleFreePrescriptionClaimSpot); // <-- NEW Subscription
-            EventManager.Subscribe<QueueSpotFreedEvent>(HandlePrescriptionQueueSpotFreed); // <-- NEW Subscription (for prescription queue)
-
-
+            
             // Start the coroutine for timed TI assignments - REMOVED FROM START()
-            // tiAssignmentCoroutine = StartCoroutine(TimedTIAssignmentRoutine());
+               // tiAssignmentCoroutine = StartCoroutine(TimedTIAssignmentRoutine());
 
-            Debug.Log("PrescriptionManager: Start completed. Manager references acquired.");
+               Debug.Log("PrescriptionManager: Start completed. Manager references acquired.");
         }
 
         private void Update()
