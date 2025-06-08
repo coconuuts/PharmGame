@@ -1,4 +1,4 @@
-// --- Updated CustomerAI.cs (Final Streamlining for Phase 4) ---
+// --- CustomerAI.cs ---
 using UnityEngine;
 using UnityEngine.AI; // Still needed because NavMeshAgent is a RequireComponent of MovementHandler
 using System; // Needed for Enum if HandledState or other enum lookups were exposed

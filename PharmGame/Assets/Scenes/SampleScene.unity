@@ -6016,6 +6016,40 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 591414396}
   m_Mesh: {fileID: 6566777498039324609, guid: db791c32d89fb14458385613cc32469e, type: 3}
+--- !u!1 &594763888
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 594763889}
+  m_Layer: 0
+  m_Name: Prescription
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &594763889
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 594763888}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 1597858024}
+  - {fileID: 1101951916}
+  - {fileID: 1392961450}
+  m_Father: {fileID: 1263039298}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &598989202
 GameObject:
   m_ObjectHideFlags: 0
@@ -7588,6 +7622,7 @@ GameObject:
   - component: {fileID: 763258585}
   - component: {fileID: 763258584}
   - component: {fileID: 763258586}
+  - component: {fileID: 763258587}
   m_Layer: 0
   m_Name: NPCmanager
   m_TagString: Untagged
@@ -7610,8 +7645,8 @@ MonoBehaviour:
   npcPrefabs:
   - {fileID: 4394407753789290286, guid: 488534cc76898354d8320c55d1770728, type: 3}
   maxCustomersInStore: 7
-  minSpawnInterval: 50
-  maxSpawnInterval: 60
+  minSpawnInterval: 4
+  maxSpawnInterval: 5
   spawnPoints:
   - {fileID: 600981058}
   BrowseLocations:
@@ -7669,7 +7704,7 @@ MonoBehaviour:
   simulationTickInterval: 0.25
   maxNpcsToSimulatePerTick: 10
   dummyNpcData:
-  - id: TEST1
+  - id: Patient_10
     homePosition: {x: 3, y: 0, z: 3}
     homeRotation: {x: 0, y: 0, z: 0, w: 0}
     usePathForDayStart: 1
@@ -7697,6 +7732,13 @@ MonoBehaviour:
           pathAsset: {fileID: 11400000, guid: eb4044d295a495c4d9e4becc20f0a80c, type: 2}
           startIndex: 0
           followReverse: 0
+    startWithPendingPrescription: 0
+    initialAssignedOrder:
+      patientName: Dummy Patient
+      prescribedDrug: Dummy Drug
+      dosePerDay: 1
+      lengthOfTreatmentDays: 7
+      illegalOrder: 0
   drawInactiveNpcsGizmos: 1
   inactiveGizmoColor: {r: 0.3254717, g: 1, b: 0.5974937, a: 1}
   inactiveGizmoRadius: 0.3
@@ -7721,6 +7763,8 @@ MonoBehaviour:
   - {fileID: 11400000, guid: a5e2d468e5c87554a924f00e44ac6a10, type: 2}
   - {fileID: 11400000, guid: f90a6eec035d44945a3068a963db0bff, type: 2}
   - {fileID: 11400000, guid: 9f15021f92d28c145a809bebd7e111b8, type: 2}
+  - {fileID: 11400000, guid: f88d7fdfc429d2a40bfaab65980f5d4a, type: 2}
+  - {fileID: 11400000, guid: 5e2ffe2096e5d394cb731a15d536e636, type: 2}
 --- !u!114 &763258584
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7776,9 +7820,48 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   pathAssets:
   - {fileID: 11400000, guid: eb4044d295a495c4d9e4becc20f0a80c, type: 2}
+  - {fileID: 11400000, guid: eb0d4e77aee27d143a8d9eb5d17b5a63, type: 2}
   decisionPointAssets:
   - {fileID: 11400000, guid: 6618bfb237a71b7418269a31a67a4727, type: 2}
   waypointTag: Waypoint
+--- !u!114 &763258587
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 763258579}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ee9f089b83ac2124b9193c38e898f348, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  timeManager: {fileID: 99645958}
+  tiNpcManager: {fileID: 763258582}
+  customerManager: {fileID: 763258580}
+  poolingManager: {fileID: 99645952}
+  waypointManager: {fileID: 763258586}
+  orderGenerationTime:
+    startHour: 6
+    startMinute: 0
+    endHour: 7
+    endMinute: 0
+  ordersToGeneratePerDay: 50
+  minOrderGenerationInterval: 0.1
+  maxOrderGenerationInterval: 0.3
+  maxAssignedTransientOrders: 4
+  tiAssignmentTime:
+    startHour: 7
+    startMinute: 0
+    endHour: 17
+    endMinute: 0
+  minTiAssignmentInterval: 30
+  maxTiAssignmentInterval: 60
+  transientAssignmentChance: 1
+  prescriptionClaimPoint: {fileID: 1597858024}
+  prescriptionQueuePoints:
+  - {fileID: 1101951916}
+  - {fileID: 1392961450}
 --- !u!1 &765084589
 GameObject:
   m_ObjectHideFlags: 0
@@ -12342,6 +12425,37 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   rowIndex: 1
   columnIndex: 8
+--- !u!1 &1101951915
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1101951916}
+  m_Layer: 0
+  m_Name: Queue1
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1101951916
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1101951915}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: 1, z: -0, w: 0}
+  m_LocalPosition: {x: -6.77, y: 0, z: -2.237}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 594763889}
+  m_LocalEulerAnglesHint: {x: 0, y: 180, z: 0}
 --- !u!1 &1102411032
 GameObject:
   m_ObjectHideFlags: 0
@@ -14008,6 +14122,7 @@ Transform:
   - {fileID: 1156834204}
   - {fileID: 1015165644}
   - {fileID: 1837450462}
+  - {fileID: 594763889}
   m_Father: {fileID: 763258581}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1263836069
@@ -15445,6 +15560,37 @@ Transform:
   - {fileID: 6634186}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1392961449
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1392961450}
+  m_Layer: 0
+  m_Name: Queue2
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1392961450
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1392961449}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: 1, z: -0, w: 0}
+  m_LocalPosition: {x: -6.77, y: 0, z: -1.704}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 594763889}
+  m_LocalEulerAnglesHint: {x: 0, y: 180, z: 0}
 --- !u!1 &1396761696
 GameObject:
   m_ObjectHideFlags: 0
@@ -17423,6 +17569,37 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!1 &1597858023
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1597858024}
+  m_Layer: 0
+  m_Name: Main
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1597858024
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1597858023}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: 1, z: -0, w: 0}
+  m_LocalPosition: {x: -6.77, y: 0, z: -2.799}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 594763889}
+  m_LocalEulerAnglesHint: {x: 0, y: 180, z: 0}
 --- !u!1 &1600163893
 GameObject:
   m_ObjectHideFlags: 0

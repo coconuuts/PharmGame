@@ -1,18 +1,20 @@
 // --- START OF FILE InitializingSO.cs ---
 
-// --- Updated InitializingSO.cs (Phase 3, Substep 4 - Refinement) ---
+// --- Updated InitializingSO.cs (Phase 2, Substep 4) ---
 
 using UnityEngine;
 using System;
 using System.Collections;
 using Game.NPC; // Needed for GeneralState and CustomerState enums
 using Game.NPC.States; // Needed for NpcStateSO and NpcStateContext
+using Game.Prescriptions; // Needed for PrescriptionManager // <-- NEW: Added using directive
 
 namespace Game.NPC.States
 {
     /// <summary>
     /// A generic state representing the moment after an NPC is activated/initialized and warped.
     /// Its primary job is to immediately transition to the NPC's determined starting state.
+    /// For Transient NPCs, this state now checks for pending prescription assignments.
     /// This is intended to be a very short-lived state.
     /// Corresponds to GeneralState.Initializing.
     /// </summary>
@@ -26,10 +28,8 @@ namespace Game.NPC.States
         {
             base.OnEnter(context); // Call base OnEnter (logs entry, enables Agent)
 
-            // Logic: Immediately decide the *real* starting state based on NPC type configuration or loaded TI data
-            // The Runner's GetPrimaryStartingStateSO method is responsible for this determination,
-            // potentially considering loaded TI data state first, then the TypeDefinition's primary state,
-            // and finally falling back to a safe state like ReturningToPool or Idle if none are valid/found.
+            // Logic: Immediately decide the *real* starting state based on NPC type configuration,
+            // loaded TI data, OR a pending transient prescription.
 
             if (context.Runner == null)
             {
@@ -39,9 +39,40 @@ namespace Game.NPC.States
                  return; // Exit OnEnter early
             }
 
-            // --- Use the Runner's method to get the determined primary starting state ---
+            // --- NEW LOGIC: Check for Transient Prescription Assignment ---
+            // This check only applies to Transient NPCs.
+            if (!context.Runner.IsTrueIdentityNpc)
+            {
+                 PrescriptionManager prescriptionManager = PrescriptionManager.Instance; // Get manager instance
+
+                 if (prescriptionManager != null)
+                 {
+                      // Attempt to assign a transient prescription order
+                      // This method will set the hasPendingPrescriptionTransient flag and assignedOrderTransient on the Runner if successful.
+                      if (prescriptionManager.TryAssignTransientPrescription(context.Runner)) // Placeholder method, implemented in Phase 1
+                      {
+                           // Successfully assigned a transient prescription.
+                           // Transition to the prescription flow starting state.
+                           Debug.Log($"{context.NpcObject.name}: Assigned transient prescription. Transitioning to LookToPrescription.", context.NpcObject);
+                           context.TransitionToState(CustomerState.LookToPrescription); // Transition to the new prescription state
+                           return; // Exit OnEnter early, transition is handled
+                      }
+                      // If TryAssignTransientPrescription returns false, it means no order was assigned (either none available, limit reached, or chance failed).
+                      // The NPC should proceed with the normal flow.
+                 }
+                 else
+                 {
+                      Debug.LogWarning($"{context.NpcObject.name}: PrescriptionManager.Instance is null! Cannot check for transient prescription assignment. Proceeding with normal flow.", context.NpcObject);
+                      // Proceed with normal flow if manager is missing
+                 }
+            }
+            // --- END NEW LOGIC ---
+
+
+            // --- Existing Logic: Determine the primary starting state (for TI or Transient without prescription) ---
+            // This logic runs if the NPC is TI OR if it's Transient and TryAssignTransientPrescription returned false.
             NpcStateSO primaryStartingState = context.Runner.GetPrimaryStartingStateSO(); // This method handles fallbacks internally if needed
-            // --- END ---
+            // --- END Existing Logic ---
 
             if (primaryStartingState != null)
             {
@@ -69,3 +100,4 @@ namespace Game.NPC.States
         }
     }
 }
+// --- END OF FILE InitializingSO.cs ---

@@ -1,5 +1,6 @@
 public enum QueueType
 {
     Main,
-    Secondary
+    Secondary,
+    Prescription 
 }

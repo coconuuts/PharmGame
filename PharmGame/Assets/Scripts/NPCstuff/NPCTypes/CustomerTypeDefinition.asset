@@ -45,5 +45,17 @@ MonoBehaviour:
     - stateEnumName: WaitingInLine
       stateEnumType: Game.NPC.CustomerState
       stateSO: {fileID: 11400000, guid: 6db7ecddc1fb4cf4194d11aa14dbb3aa, type: 2}
+    - stateEnumName: LookToPrescription
+      stateEnumType: Game.NPC.CustomerState
+      stateSO: {fileID: 11400000, guid: 60f9ad3b2dd553a4fbb183c286259e47, type: 2}
+    - stateEnumName: PrescriptionEntering
+      stateEnumType: Game.NPC.CustomerState
+      stateSO: {fileID: 11400000, guid: 99ad74106b914e747ac234e6b38ed7e8, type: 2}
+    - stateEnumName: WaitingForPrescription
+      stateEnumType: Game.NPC.CustomerState
+      stateSO: {fileID: 11400000, guid: ba5d1742b7b56904fac895a4af5411e2, type: 2}
+    - stateEnumName: PrescriptionQueue
+      stateEnumType: Game.NPC.CustomerState
+      stateSO: {fileID: 11400000, guid: a75da74ceb121b246a649e998c62aeec, type: 2}
   primaryStartingStateEnumKey: LookingToShop
   primaryStartingStateEnumType: Game.NPC.CustomerState

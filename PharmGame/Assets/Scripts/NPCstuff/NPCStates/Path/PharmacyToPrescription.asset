@@ -18,8 +18,8 @@ MonoBehaviour:
   - P2P
   leadsToDecisionPoint: 0
   decisionPoint: {fileID: 0}
-  nextStateEnumKey: 
-  nextStateEnumType: 
+  nextStateEnumKey: LookToPrescription
+  nextStateEnumType: Game.NPC.CustomerState
   fixedTransitionPathAsset: {fileID: 0}
   fixedTransitionStartIndex: 0
   fixedTransitionFollowReverse: 0

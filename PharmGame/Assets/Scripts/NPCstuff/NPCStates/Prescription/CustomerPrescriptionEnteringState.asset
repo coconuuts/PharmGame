@@ -9,10 +9,10 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 771dbd815af778b4a85e41aa8b05ef83, type: 3}
-  m_Name: TimeSettings
+  m_Script: {fileID: 11500000, guid: 5a37baccd374518498b647b3f0d3119c, type: 3}
+  m_Name: CustomerPrescriptionEnteringState
   m_EditorClassIdentifier: 
-  timeMultiplier: 60
-  startHour: 6
-  sunriseHour: 7
-  sunsetHour: 20
+  stateID: 
+  isInterruptible: 1
+  checkMovementArrival: 1
+  tiQueueFullSuppressionDuration: 60

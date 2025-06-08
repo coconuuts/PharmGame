@@ -1,6 +1,6 @@
 namespace Game.NPC
 {
-    /// <summary>
+    /// <summary>s
     /// Defines the possible states for a customer NPC (primarily for CustomerManager/Event compatibility during migration).
     /// 
     public enum CustomerState
@@ -17,5 +17,10 @@ namespace Game.NPC
         TransactionActive,
         Exiting,
         ReturningToPool,
+
+        LookToPrescription,
+        PrescriptionEntering, 
+        WaitingForPrescription, 
+        PrescriptionQueue,
     }
 }

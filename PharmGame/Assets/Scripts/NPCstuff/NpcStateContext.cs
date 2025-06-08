@@ -1,4 +1,4 @@
-// --- START OF FILE NpcStateContext.cs (Modified) ---
+// --- START OF FILE NpcStateContext.cs (Modified for PrescriptionManager) ---
 
 // --- START OF FILE NpcStateContext.cs --- // Keep original comment for history
 
@@ -13,8 +13,9 @@ using Game.Events; // Needed for publishing events and event args like NpcEntere
 using Game.NPC; // Needed for CustomerState and GeneralState enums
 using Game.NPC.States; // Needed for NpcStateSO
 using Game.Proximity; // Needed for ProximityManager.ProximityZone
-using Game.Navigation; // Needed for PathSO, PathTransitionDetails // <-- Added PathTransitionDetails
-using Game.NPC.TI; // Needed for TiNpcData, TiNpcManager // <-- Added TiNpcManager
+using Game.Navigation; // Needed for PathSO, PathTransitionDetails
+using Game.NPC.TI; // Needed for TiNpcData, TiNpcManager
+using Game.Prescriptions; // Needed for PrescriptionManager // <-- NEW: Added using directive
 
 namespace Game.NPC.States // Context is closely related to states
 {
@@ -22,9 +23,9 @@ namespace Game.NPC.States // Context is closely related to states
     /// Provides necessary references and helper methods to an NpcStateSO
     /// currently being executed by the NpcStateMachineRunner.
     /// Passed to OnEnter, OnUpdate, OnExit methods.
-    /// MODIFIED: Includes reference to TiNpcManager.
+    /// MODIFIED: Includes references to TiNpcManager and PrescriptionManager.
     /// </summary>
-    public struct NpcStateContext
+    public class NpcStateContext
     {
         // --- References to Handlers (Component on the NPC GameObject) ---
         public NpcMovementHandler MovementHandler;
@@ -42,7 +43,9 @@ namespace Game.NPC.States // Context is closely related to states
         // --- External References ---
         public CustomerManager Manager;
         // --- Reference to TiNpcManager ---
-        public TiNpcManager TiNpcManager; 
+        public TiNpcManager TiNpcManager;
+        // --- Reference to PrescriptionManager --- // <-- NEW Reference
+        public PrescriptionManager PrescriptionManager;
 
         // Access the cached register via the Runner property
         public CashRegisterInteractable RegisterCached => Runner?.CachedCashRegister;
@@ -73,8 +76,8 @@ namespace Game.NPC.States // Context is closely related to states
 
 
         /// <summary>
-        /// Starts the NPC following a specific waypoint path using the PathFollowingHandler.
-        /// </summary>
+         /// Starts the NPC following a specific waypoint path using the PathFollowingHandler.
+         /// </summary>
         public bool StartFollowingPath(PathSO path, int startIndex = 0, bool reverse = false)
         {
             if (PathFollowingHandler != null)
@@ -115,9 +118,9 @@ namespace Game.NPC.States // Context is closely related to states
         public string GetCurrentPathID() => PathFollowingHandler?.GetCurrentPathSO()?.PathID;
 
         /// <summary>
-        /// Gets the ID of the waypoint the NPC is currently moving towards via the PathFollowingHandler.
-        /// </summary>
-        public string GetCurrentTargetWaypointID() => PathFollowingHandler?.GetCurrentTargetWaypointID();
+         /// Gets the ID of the waypoint the NPC is currently moving towards via the PathFollowingHandler.
+         /// </summary>
+         public string GetCurrentTargetWaypointID() => PathFollowingHandler?.GetCurrentTargetWaypointID();
 
          /// <summary>
          /// Gets the index of the waypoint the NPC is currently moving towards via the PathFollowingHandler.
@@ -262,6 +265,42 @@ namespace Game.NPC.States // Context is closely related to states
              Manager?.SignalCustomerAtRegister(Runner); // Pass context.Runner
         }
 
+        // --- Access to PrescriptionManager methods via context --- // <-- NEW Accessors
+        public Transform GetPrescriptionClaimPoint() => PrescriptionManager?.GetPrescriptionClaimPoint();
+        public bool IsPrescriptionClaimSpotOccupied() => PrescriptionManager != null && PrescriptionManager.IsPrescriptionClaimSpotOccupied();
+        public bool IsPrescriptionQueueFull() => PrescriptionManager != null && PrescriptionManager.IsPrescriptionQueueFull();
+        public bool TryJoinPrescriptionQueue(out Transform assignedSpot, out int spotIndex)
+         {
+            // Let's add a super-early debug here
+             bool isPmNull = PrescriptionManager == null;
+            Debug.Log($"[DEBUG {NpcObject.name}] CONTEXT_TRY_JOIN_TOP: Entering context.TryJoinPrescriptionQueue. Context.PrescriptionManager is null: {isPmNull}", NpcObject);
+
+             assignedSpot = null;
+             spotIndex = -1;
+             
+             Debug.Log($"[DEBUG {NpcObject.name}] CONTEXT_TRY_JOIN_BEFORE_IF: Just before if check.", NpcObject);
+
+             if (PrescriptionManager != null)
+            {
+                // User's previous log was likely here: Debug.Log("NpcStateContext: calling TryJoinPrescriptionQueue in PrescriptionManager");
+                Debug.Log($"[DEBUG {NpcObject.name}] CONTEXT_TRY_JOIN_PM_CHECK: PrescriptionManager is NOT null.", NpcObject); // <-- Add this
+                return PrescriptionManager.TryJoinPrescriptionQueue(Runner, out assignedSpot, out spotIndex); // Pass context.Runner
+            }
+            else
+            {
+                // This log was expected but didn't show up
+                Debug.LogWarning($"NpcStateContext: PrescriptionManager reference is null when calling TryJoinPrescriptionQueue!", NpcObject);
+                assignedSpot = null;
+                spotIndex = -1;
+                return false; // <-- Returns false if PM is null
+            }
+         }
+        public Transform GetPrescriptionQueuePoint(int index) => PrescriptionManager?.GetPrescriptionQueuePoint(index);
+        // Add other PrescriptionManager methods as needed by states...
+        // public void StartPrescriptionSuppressionCoroutine(TiNpcData data, float duration) => PrescriptionManager?.StartPrescriptionSuppressionCoroutine(data, duration); // This is the method causing the error, needs to be called on PM, not TiNpcManager
+        // The call site in PrescriptionEnteringSO will be fixed to use context.PrescriptionManager directly.
+        // --- END NEW ---
+
 
         // Access to AnimationHandler methods
         public void SetAnimationSpeed(float speed) => AnimationHandler?.SetSpeed(speed);
@@ -316,4 +355,4 @@ namespace Game.NPC.States // Context is closely related to states
     }
 }
 
-// --- END OF FILE NpcStateContext.cs (Modified) ---
+// --- END OF FILE NpcStateContext.cs (Modified for PrescriptionManager) ---

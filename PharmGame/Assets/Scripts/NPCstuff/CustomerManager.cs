@@ -1,7 +1,4 @@
 // --- START OF FILE CustomerManager.cs ---
-
-// --- Updated CustomerManager.cs (Phase 1, Substeps 1.2 & 1.3) ---
-
 using UnityEngine;
 using System.Collections.Generic;
 using Utils.Pooling; // Required for PoolingManager
@@ -61,9 +58,8 @@ namespace CustomerManagement
         // The activeCustomers list will now represent *Transient* customers inside the store.
         private List<Game.NPC.NpcStateMachineRunner> activeCustomers = new List<Game.NPC.NpcStateMachineRunner>(); // Track Transient customers *inside the store*
 
-        // --- NEW: Track TI NPCs inside the store by their persistent data ---
+        // --- Track TI NPCs inside the store by their persistent data ---
         private HashSet<TiNpcData> tiNpcsInsideStore; // Track TI customers *inside the store* by data
-        // --- END NEW ---
 
         private List<QueueSpot> mainQueueSpots;
         private List<QueueSpot> secondaryQueueSpots;
@@ -151,10 +147,8 @@ namespace CustomerManagement
                 Debug.Log($"CustomerManager: Initialized secondary queue with {secondaryQueueSpots.Count} spots.");
             }
 
-            // --- NEW: Initialize the new collection ---
+            // --- Initialize the new collection ---
             tiNpcsInsideStore = new HashSet<TiNpcData>();
-            // --- END NEW ---
-
 
             Debug.Log("CustomerManager: Awake completed.");
         }
@@ -325,7 +319,7 @@ namespace CustomerManagement
                 return; // Exit handling
             }
 
-            // --- PHASE 2, SUBSTEP 2: Differentiate between TI and Transient NPCs ---
+            // --- Differentiate between TI and Transient NPCs ---
             if (runner.IsTrueIdentityNpc)
             {
                 Debug.Log($"CustomerManager: Handling NpcReturningToPoolEvent for TI NPC '{runner.TiData?.Id ?? "Unknown TI NPC"}'. Handing off to TiNpcManager.", npcObject);
@@ -337,7 +331,7 @@ namespace CustomerManagement
                     // The Runner's Deactivate() should have already been called by TransitionToState(ReturningToPool)
                     // Here, we just need to tell the TiNpcManager that this GameObject is ready for pooling.
                     // We need a method on TiNpcManager to receive the GameObject.
-                    tiManager.HandleTiNpcReturnToPool(npcObject); // <-- Call the new method on TiNpcManager
+                    tiManager.HandleTiNpcReturnToPool(npcObject); 
                 }
                 else
                 {
@@ -349,7 +343,7 @@ namespace CustomerManagement
                 // Regardless of TiNpcManager outcome, we are done with this event in CustomerManager
                 // for this specific NPC type. Do NOT proceed with the transient pooling logic below.
                 // Also ensure it's removed from activeCustomers list if it somehow remained (should be removed by Exited state).
-                // NOTE: TI NPCs are NOT added to activeCustomers in the new logic (Phase 1, Substep 1.2),
+                // NOTE: TI NPCs are NOT added to activeCustomers in the new logic,
                 // so this defensive check for activeCustomers.Contains(runner) for TI NPCs is no longer strictly necessary
                 // but doesn't hurt. The check for tiNpcsInsideStore is also not needed here, as removal from that
                 // happens via NpcExitedStoreEvent.
@@ -359,7 +353,7 @@ namespace CustomerManagement
                     activeCustomers.Remove(runner);
                 }
 
-                // --- Phase 5: Add cleanup for potentially occupied queue spots for TI NPCs ---
+                // --- Add cleanup for potentially occupied queue spots for TI NPCs ---
                 // If the Runner was assigned to a queue spot when it was pooled,
                 // ensure that spot's currentOccupant reference is cleared.
                 // This is defensive; Runner.Deactivate() should clear its AssignedQueueSpotIndex
@@ -383,27 +377,22 @@ namespace CustomerManagement
                     }
                     runner.QueueHandler.AssignedQueueSpotIndex = -1; // Clear index on runner defensively
                 }
-                // --- END Phase 5 defensive cleanup for TI ---
-
-
                 return; // Exit the method, let TiNpcManager handle pooling for TI NPCs
             }
-            // --- END PHASE 2, SUBSTEP 2 ---
-
 
             // --- Existing Transient NPC Pooling Logic ---
             // This else block contains the original logic for transient customers
             Debug.Log($"CustomerManager: Handling NpcReturningToPoolEvent for Transient NPC '{npcObject.name}'. Returning to pool.", npcObject);
 
             // Remove from active list (should be removed by NpcExitedStoreEvent, but defensive)
-            // NOTE: This list now ONLY contains Transient NPCs (Phase 1, Substep 1.2)
+            // NOTE: This list ONLY contains Transient NPCs 
             if (activeCustomers.Contains(runner))
             {
                 Debug.LogWarning($"CustomerManager: Transient NPC '{npcObject.name}' was still in activeCustomers list! Removing defensively.", this);
                 activeCustomers.Remove(runner);
             }
 
-            // Phase 5: Add cleanup for potentially occupied queue spots for Transient NPCs
+            // Add cleanup for potentially occupied queue spots for Transient NPCs
             // If the Runner was assigned to a queue spot when it was pooled,
             // ensure that spot's currentOccupant reference is cleared.
             // This is defensive; states should publish QueueSpotFreedEvent on exit.
@@ -426,9 +415,6 @@ namespace CustomerManagement
                 }
                 runner.QueueHandler.AssignedQueueSpotIndex = -1; // Clear index on runner defensively
             }
-            // --- END Phase 5 defensive cleanup for Transient ---
-
-
             // Return the transient NPC object to the pool
             if (poolingManager != null)
             {
@@ -459,7 +445,7 @@ namespace CustomerManagement
                 return;
             }
 
-            // --- NEW LOGIC: Differentiate tracking based on NPC type ---
+            // --- Differentiate tracking based on NPC type ---
             if (customerRunner.IsTrueIdentityNpc)
             {
                 // Ensure TiData is available for TI NPCs
@@ -495,8 +481,6 @@ namespace CustomerManagement
                     Debug.LogWarning($"CustomerManager: Received NpcEnteredStoreEvent for Transient NPC '{customerRunner.gameObject.name}' but it was already in the activeCustomers list. Duplicate event?", eventArgs.NpcObject);
                 }
             }
-            // --- END NEW LOGIC ---
-
 
             // Now that a customer has successfully entered the store (decrementing external queue pressure),
             // check if we can release someone from the secondary queue if capacity allows.
@@ -517,7 +501,7 @@ namespace CustomerManagement
                 return;
             }
 
-            // --- NEW LOGIC: Differentiate tracking based on NPC type ---
+            // --- Differentiate tracking based on NPC type ---
             if (customerRunner.IsTrueIdentityNpc)
             {
                 // Ensure TiData is available for TI NPCs
@@ -553,8 +537,6 @@ namespace CustomerManagement
                     Debug.LogWarning($"CustomerManager: Received NpcExitedStoreEvent for Transient NPC '{eventArgs.NpcObject.name}' but it was not in the activeCustomers list. State inconsistency?", eventArgs.NpcObject);
                 }
             }
-            // --- END NEW LOGIC ---
-
 
             // Now that a customer has successfully exited the store (increasing external queue pressure),
             // check if we can release someone from the secondary queue if capacity allows.
@@ -758,9 +740,8 @@ namespace CustomerManagement
         /// </summary>
         private void CheckStoreCapacityAndReleaseSecondaryCustomer()
         {
-            // --- NEW: Use the combined count for store capacity ---
+            // --- Use the combined count for store capacity ---
             int currentCustomersInside = activeCustomers.Count + (tiNpcsInsideStore?.Count ?? 0);
-            // --- END NEW ---
 
             // Release condition: Total active customers inside the store must be less than maxCustomersInStore.
             if (currentCustomersInside >= maxCustomersInStore)
@@ -920,7 +901,7 @@ namespace CustomerManagement
                     // Call the public method on the QueueHandler to receive the assignment
                     if (customerRunner.QueueHandler != null)
                     {
-                        customerRunner.QueueHandler.ReceiveQueueAssignment(spotIndex, QueueType.Main); // <-- NEW CALL
+                        customerRunner.QueueHandler.ReceiveQueueAssignment(spotIndex, QueueType.Main); 
                     }
                     else
                     {
@@ -974,7 +955,7 @@ namespace CustomerManagement
         /// </summary>
         public bool IsRegisterOccupied()
         {
-            // --- NEW: Only check the activeCustomers list (which now only contains Transient or currently active TI) ---
+            // --- Only check the activeCustomers list (which now only contains Transient or currently active TI) ---
             foreach (var activeRunner in activeCustomers) // Check only customers currently 'inside' the store AND have an active GameObject
             {
                 if (activeRunner != null && activeRunner.GetCurrentState() != null)
@@ -986,7 +967,6 @@ namespace CustomerManagement
                     }
                 }
             }
-            // --- END NEW ---
             return false;
         }
 
@@ -1017,7 +997,7 @@ namespace CustomerManagement
                     // Call the public method on the QueueHandler to receive the assignment
                     if (customerRunner.QueueHandler != null)
                     {
-                        customerRunner.QueueHandler.ReceiveQueueAssignment(spotIndex, QueueType.Secondary); // <-- NEW CALL
+                        customerRunner.QueueHandler.ReceiveQueueAssignment(spotIndex, QueueType.Secondary); 
                     }
                     else
                     {
@@ -1057,7 +1037,7 @@ namespace CustomerManagement
             return mainQueueSpots[mainQueueSpots.Count - 1].IsOccupied;
         }
 
-        public bool IsSecondaryQueueFull() // <-- NEW METHOD
+        public bool IsSecondaryQueueFull() 
         {
             if (secondaryQueueSpots == null || secondaryQueueSpots.Count == 0) return false;
 

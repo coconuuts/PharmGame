@@ -17,6 +17,9 @@ namespace Game.NPC.BasicStates
         BasicWaitForCashier,    // Simulates waiting in a queue or at the register
         BasicExitingStore,       // Simulates movement towards an exit point
         BasicIdleAtHome,
+        BasicLookToPrescription,
+        BasicWaitForPrescription,
+        
         // Add other basic states as needed in the future
     }
 }

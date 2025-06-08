@@ -14,8 +14,8 @@ namespace Game.NPC.Handlers // Place alongside other handlers
     /// Now includes logic for following paths in reverse and restoring progress after activation.
     /// Includes debug visualization for the path being followed.
     /// Modified to calculate movement and rotation but return the results for external interpolation.
-    /// ADDED: Public getter for the current PathSO.
-    /// FIXED: Ensure currentPathSO is not cleared prematurely when path ends.
+    /// Public getter for the current PathSO.
+    /// Ensure currentPathSO is not cleared prematurely when path ends.
     /// </summary>
     [RequireComponent(typeof(NpcMovementHandler))]
     [RequireComponent(typeof(Rigidbody))] // Requires a Rigidbody for MovePosition
@@ -261,7 +261,7 @@ namespace Game.NPC.Handlers // Place alongside other handlers
         public bool StartFollowingPath(PathSO path, int startIndex = 0, bool reverse = false)
         {
              // FIX: Clear the previous path reference here, as a new path is starting.
-             currentPathSO = null; // <-- ADDED CLEAR HERE
+             currentPathSO = null;
 
             if (path == null || path.WaypointCount < 2 || waypointManager == null)
             {
@@ -334,7 +334,7 @@ namespace Game.NPC.Handlers // Place alongside other handlers
         public bool RestorePathProgress(PathSO path, int waypointIndex, bool reverse)
         {
              // FIX: Clear the previous path reference here, as a new path is starting (restoring is like starting).
-             currentPathSO = null; // <-- ADDED CLEAR HERE
+             currentPathSO = null; 
 
              if (path == null || path.WaypointCount < 2 || waypointManager == null)
              {
@@ -462,7 +462,7 @@ namespace Game.NPC.Handlers // Place alongside other handlers
              // Note: StopFollowingPath is called here, and it will NOT clear currentPathSO.
              // We need to explicitly clear currentPathSO during a full reset.
              StopFollowingPath();
-             currentPathSO = null; // <-- ADDED CLEAR HERE for full reset
+             currentPathSO = null; 
              // The rest of the state is reset by StopFollowingPath
              Debug.Log($"{gameObject.name}: NpcPathFollowingHandler reset.");
          }

@@ -86,9 +86,9 @@ namespace Game.NPC.States // Place alongside other active states
             {
                  Debug.Log($"{context.NpcObject.name}: PathState OnEnter: Starting a NEW path. Reading path data from Runner's temporary fields.", context.NpcObject);
                  // Read the path data from the Runner's temporary fields
-                 pathToFollow = context.Runner.tempPathSO; // <-- Read from new temporary field
-                 startWaypointIndex = context.Runner.tempStartIndex; // <-- Read from new temporary field
-                 followReverseDirection = context.Runner.tempFollowReverse; // <-- Read from new temporary field
+                 pathToFollow = context.Runner.tempPathSO; 
+                 startWaypointIndex = context.Runner.tempStartIndex; 
+                 followReverseDirection = context.Runner.tempFollowReverse; 
 
                  // Clear the Runner's temporary fields *after* reading them
                  context.Runner.tempPathSO = null;

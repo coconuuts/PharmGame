@@ -1,4 +1,4 @@
-// --- START OF FILE NpcStateMachineRunner.cs (Modified for Generic Path) ---
+// --- START OF FILE NpcStateMachineRunner.cs (Modified for PrescriptionManager Context) ---
 
 using UnityEngine;
 using System.Collections.Generic;
@@ -14,7 +14,9 @@ using System;
 using Game.NPC.TI; // Needed for TiNpcData and TiNpcManager
 using Game.Spatial; // Needed for GridManager
 using Game.Proximity; // Needed for ProximityManager
-using Game.Navigation; // Needed for PathSO (although not directly used here, good practice if states reference it), PathTransitionDetails // <-- Added PathTransitionDetails
+using Game.Navigation; // Needed for PathSO (although not directly used here, good practice if states reference it), PathTransitionDetails
+using Game.Prescriptions; // Needed for PrescriptionOrder, PrescriptionManager // <-- Added PrescriptionManager
+
 
 namespace Game.NPC
 {
@@ -23,8 +25,7 @@ namespace Game.NPC
      /// Executes the logic defined in NpcStateSO assets and manages state transitions.
      /// Creates and provides the NpcStateContext to executing states.
      /// Can represent a transient customer or an active True Identity NPC.
-     /// MODIFIED: Populates TiNpcManager reference in NpcStateContext.
-     /// ADDED: Temporary fields and method to pass path data to the generic PathStateSO.
+     /// MODIFIED: Added temporary fields for transient prescription data and populates PrescriptionManager in context.
      /// </summary>
      [RequireComponent(typeof(NpcMovementHandler))] // Ensure handlers are attached
      [RequireComponent(typeof(NpcAnimationHandler))]
@@ -53,6 +54,9 @@ namespace Game.NPC
 
           // Reference to the TiNpcManager
           private TiNpcManager tiNpcManager; // <-- Added private field
+          // Reference to the PrescriptionManager // <-- NEW Reference
+          private PrescriptionManager prescriptionManager;
+
 
           // --- Public methods/properties for external access if needed ---
           public NpcStateSO CurrentStateSO => currentState;
@@ -110,6 +114,15 @@ namespace Game.NPC
                internal set => tiData = value;
           }
 
+          // --- Transient Prescription Fields --- // <-- NEW HEADER
+          [Header("Transient Prescription Data")]
+          [Tooltip("True if this transient NPC has been assigned a pending prescription order.")]
+          public bool hasPendingPrescriptionTransient; // <-- NEW FIELD
+
+          [Tooltip("The prescription order assigned to this transient NPC.")]
+          public PrescriptionOrder assignedOrderTransient; // <-- NEW FIELD
+
+
           // --- Grid Position Tracking for Active NPCs ---
           private Vector3 lastGridPosition;
           private GridManager gridManager; // Need GridManager reference to get cell size
@@ -139,9 +152,9 @@ namespace Game.NPC
           // These fields are set by the caller (e.g., another state, TiNpcManager)
           // just before requesting a transition to PathState.FollowPath.
           // The generic PathStateSO.OnEnter reads these fields.
-          internal PathSO tempPathSO; // <-- NEW FIELD
-          internal int tempStartIndex; // <-- NEW FIELD
-          internal bool tempFollowReverse; // <-- NEW FIELD
+          internal PathSO tempPathSO;
+          internal int tempStartIndex;
+          internal bool tempFollowReverse;
           // --- END Temporary storage for generic path transition ---
 
 
@@ -153,6 +166,7 @@ namespace Game.NPC
                Shopper = GetComponent<CustomerShopper>();
                interruptionHandler = GetComponent<NpcInterruptionHandler>();
                queueHandler = GetComponent<NpcQueueHandler>();
+               Debug.Log($"[DEBUG {gameObject.name}] Runner Awake: GetComponent<NpcQueueHandler>() returned: {queueHandler != null}", this); // <-- Add this log
                npcPathFollowingHandler = GetComponent<NpcPathFollowingHandler>();
 
                if (MovementHandler == null || AnimationHandler == null || Shopper == null || interruptionHandler == null || QueueHandler == null || PathFollowingHandler == null)
@@ -176,8 +190,7 @@ namespace Game.NPC
                if (MovementHandler?.Agent != null) MovementHandler.Agent.enabled = false;
 
                // --- Initialize the State Context struct (partially) ---
-               // Handlers are set here. Manager and InterruptionHandler are set later when available/in Update/TransitionToState.
-               // QueueHandler and PathFollowingHandler will be set in Update/TransitionToState before context is passed.
+               // Handlers are set here. Managers are set later when available/in Start/Update/TransitionToState.
                _stateContext = new NpcStateContext
                {
                     MovementHandler = MovementHandler,
@@ -185,9 +198,10 @@ namespace Game.NPC
                     Shopper = Shopper,
                     NpcObject = this.gameObject,
                     Runner = this,
+                    InterruptionHandler = interruptionHandler, // InterruptionHandler is available in Awake
                     QueueHandler = queueHandler,
                     PathFollowingHandler = npcPathFollowingHandler
-                    // TiData and TiNpcManager will be populated in Update/ThrottledTick/TransitionToState
+                    // Managers (Customer, TI, Prescription) and TiData will be populated in Start/Update/TransitionToState
                };
 
                _hasReachedCurrentDestination = true;
@@ -208,18 +222,27 @@ namespace Game.NPC
                tempFollowReverse = false; // <-- Initialize
                // --- END Initialize temporary path fields ---
 
+               // --- Initialize transient prescription fields --- // <-- NEW INITIALIZATION
+               hasPendingPrescriptionTransient = false;
+               assignedOrderTransient = new PrescriptionOrder(); // Initialize with default struct values
+               // --- END NEW INITIALIZATION ---
+
 
                Debug.Log($"{gameObject.name}: NpcStateMachineRunner Awake completed.");
           }
 
           private void Start() // <-- Use Start for Manager singletons
           {
-               // Get reference to TiNpcManager
-               tiNpcManager = TiNpcManager.Instance; // <-- Get TiNpcManager instance
-               if (tiNpcManager == null)
-               {
-                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): TiNpcManager instance not found! Cannot notify position changes for TI NPCs or populate context.", this);
-               }
+               // Get references to managers
+               Manager = CustomerManagement.CustomerManager.Instance; // CustomerManager
+               if (Manager == null) Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): CustomerManager instance not found!", this);
+
+               tiNpcManager = TiNpcManager.Instance; // TiNpcManager
+               if (tiNpcManager == null) Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): TiNpcManager instance not found!", this);
+
+               prescriptionManager = PrescriptionManager.Instance; // <-- NEW: Get PrescriptionManager instance
+               if (prescriptionManager == null) Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): PrescriptionManager instance not found!", this);
+
 
                // Get reference to GridManager
                gridManager = GridManager.Instance;
@@ -293,13 +316,14 @@ namespace Game.NPC
                {
                     // Ensure context is populated before calling OnExit
                     _stateContext.Manager = Manager; // Populate Manager
+                    _stateContext.TiNpcManager = tiNpcManager; // Populate TiNpcManager
+                    _stateContext.PrescriptionManager = prescriptionManager; // <-- NEW: Populate PrescriptionManager
                     _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                     _stateContext.Runner = this;
                     _stateContext.InterruptionHandler = interruptionHandler;
                     _stateContext.QueueHandler = QueueHandler;
                     _stateContext.PathFollowingHandler = PathFollowingHandler;
                     _stateContext.TiData = TiData;
-                    _stateContext.TiNpcManager = tiNpcManager; // <-- Populate TiNpcManager in context
                     // Need to populate DeltaTime here too if OnExit logic uses it, but typically it doesn't.
                     // _stateContext.DeltaTime = Time.deltaTime; // Or some default? Let's assume OnExit doesn't need it.
                     currentState.OnExit(_stateContext);
@@ -433,14 +457,15 @@ namespace Game.NPC
                if (currentState != null)
                {
                     // Populate context with current data before passing to state methods
-                    _stateContext.Manager = Manager; // Populate Manager
+                    _stateContext.Manager = Manager; // Populate CustomerManager
+                    _stateContext.TiNpcManager = tiNpcManager; // Populate TiNpcManager
+                    _stateContext.PrescriptionManager = prescriptionManager; // <-- NEW: Populate PrescriptionManager
                     _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                     _stateContext.Runner = this;
                     _stateContext.InterruptionHandler = interruptionHandler;
                     _stateContext.QueueHandler = queueHandler;
                     _stateContext.PathFollowingHandler = npcPathFollowingHandler;
                     _stateContext.TiData = TiData;
-                    _stateContext.TiNpcManager = tiNpcManager; // <-- Populate TiNpcManager in context
                     _stateContext.DeltaTime = deltaTime;
 
 
@@ -481,14 +506,15 @@ namespace Game.NPC
                          _hasReachedCurrentDestination = true;
 
                          // Re-populate context just in case Update loop took time (defensive)
-                         _stateContext.Manager = Manager;
+                         _stateContext.Manager = Manager; // Populate CustomerManager
+                         _stateContext.TiNpcManager = tiNpcManager; // Populate TiNpcManager
+                         _stateContext.PrescriptionManager = prescriptionManager; // <-- NEW: Populate PrescriptionManager
                          _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                          _stateContext.Runner = this;
                          _stateContext.InterruptionHandler = interruptionHandler;
                          _stateContext.QueueHandler = queueHandler;
                          _stateContext.PathFollowingHandler = npcPathFollowingHandler;
                          _stateContext.TiData = TiData;
-                         _stateContext.TiNpcManager = tiNpcManager; // <-- Populate TiNpcManager in context
                          _stateContext.DeltaTime = deltaTime; // <-- Populate DeltaTime again (defensive)
 
 
@@ -496,16 +522,16 @@ namespace Game.NPC
                     }
                     // --- End NavMesh Arrival Check ---
 
-
                      // Re-populate context just in case Update loop took time (defensive)
-                    _stateContext.Manager = Manager;
+                    _stateContext.Manager = Manager; // Populate CustomerManager
+                    _stateContext.TiNpcManager = tiNpcManager; // Populate TiNpcManager
+                    _stateContext.PrescriptionManager = prescriptionManager; // <-- NEW: Populate PrescriptionManager
                     _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                     _stateContext.Runner = this;
                     _stateContext.InterruptionHandler = interruptionHandler;
                     _stateContext.QueueHandler = queueHandler;
                     _stateContext.PathFollowingHandler = npcPathFollowingHandler;
                     _stateContext.TiData = TiData;
-                    _stateContext.TiNpcManager = tiNpcManager; // <-- Populate TiNpcManager in context
                     _stateContext.DeltaTime = deltaTime; // <-- Populate DeltaTime again (defensive)
 
 
@@ -528,15 +554,13 @@ namespace Game.NPC
                     return;
                }
 
-               this.Manager = manager;
-               // Context Manager will be set in Update/TransitionToState before use
+               this.Manager = manager; // Set Manager reference
+               // Other manager references (TI, Prescription) are obtained in Start
 
                ResetRunnerTransientData(); // Resets handlers and temporary path fields
 
-               // Transient NPCs are always Near/Full update mode initially
-               // REMOVED: SetUpdateMode(ProximityManager.ProximityZone.Near); // Set initial mode for transient
-
-               queueHandler?.Initialize(this.Manager);
+               Debug.Log($"[DEBUG {gameObject.name}] Runner Initialize: Calling queueHandler?.Initialize(). queueHandler is null: {queueHandler == null}", this);
+               queueHandler?.Initialize(this.Manager); // Initialize QueueHandler with CustomerManager
                // PathFollowingHandler doesn't need Initialize with Manager currently
 
 
@@ -594,11 +618,12 @@ namespace Game.NPC
                IsTrueIdentityNpc = true; // <-- This flag is set TRUE here
                TiData = tiData; // <-- Data link is set here
                this.Manager = customerManager; // <-- Manager link is set here
+               // Other manager references (TI, Prescription) are obtained in Start
                // --- END Set TI identity ---
 
                Debug.Log($"DEBUG Runner Activate ({gameObject.name}): IsTrueIdentityNpc={IsTrueIdentityNpc}, TiData is null={ (TiData == null) }, TiData ID={TiData?.Id}");
 
-               queueHandler?.Initialize(this.Manager); // Re-initialize QueueHandler with Manager
+               queueHandler?.Initialize(this.Manager); // Re-initialize QueueHandler with CustomerManager
                // PathFollowingHandler doesn't need Initialize with Manager currently
 
 
@@ -661,7 +686,8 @@ namespace Game.NPC
 
                     // Populate TiData and TiNpcManager in context BEFORE TransitionToState
                     _stateContext.TiData = TiData;
-                    _stateContext.TiNpcManager = tiNpcManager; // <-- Populate TiNpcManager in context
+                    _stateContext.TiNpcManager = tiNpcManager; // Populate TiNpcManager
+                    _stateContext.PrescriptionManager = prescriptionManager; // <-- NEW: Populate PrescriptionManager
 
                     // Note: If the startingState is PathState.FollowPath, TiNpcManager.RequestActivateTiNpc
                     // should have already primed the tiData.simulated... fields if resuming a path sim,
@@ -678,7 +704,8 @@ namespace Game.NPC
                     Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): No valid starting state found after override and primary lookup for TI NPC '{tiData.Id}'. Cannot find any valid starting state. Transitioning to ReturningToPool (for pooling).", this);
                     // Populate TiData and TiNpcManager in context BEFORE TransitionToState
                     _stateContext.TiData = TiData;
-                    _stateContext.TiNpcManager = tiNpcManager; // <-- Populate TiNpcManager in context
+                    _stateContext.TiNpcManager = tiNpcManager; // Populate TiNpcManager
+                    _stateContext.PrescriptionManager = prescriptionManager; // <-- NEW: Populate PrescriptionManager
                     TransitionToState(GetStateSO(GeneralState.ReturningToPool));
                }
 
@@ -755,6 +782,11 @@ namespace Game.NPC
                tempFollowReverse = false; // <-- Reset
                // --- END Reset temporary path fields ---
 
+               // --- Reset transient prescription fields --- // <-- NEW RESET
+               hasPendingPrescriptionTransient = false;
+               assignedOrderTransient = new PrescriptionOrder(); // Reset to default struct values
+               // --- END NEW RESET ---
+
 
                if (!IsTrueIdentityNpc)
                {
@@ -819,14 +851,15 @@ namespace Game.NPC
                     activeStateCoroutine = null;
 
                     // Populate context before calling OnExit
-                    _stateContext.Manager = Manager;
+                    _stateContext.Manager = Manager; // Populate CustomerManager
+                    _stateContext.TiNpcManager = tiNpcManager; // Populate TiNpcManager
+                    _stateContext.PrescriptionManager = prescriptionManager; // <-- NEW: Populate PrescriptionManager
                     _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                     _stateContext.Runner = this;
                     _stateContext.InterruptionHandler = interruptionHandler;
                     _stateContext.QueueHandler = queueHandler;
                     _stateContext.PathFollowingHandler = npcPathFollowingHandler;
                     _stateContext.TiData = TiData;
-                    _stateContext.TiNpcManager = tiNpcManager; // <-- Populate TiNpcManager in context
                     // DeltaTime is not typically needed in OnExit, but populate defensively if needed
                     // _stateContext.DeltaTime = Time.deltaTime; // Or some default? Let's assume OnExit doesn't need it.
 
@@ -844,14 +877,15 @@ namespace Game.NPC
                currentState = nextState;
 
                // Populate context before calling OnEnter
-               _stateContext.Manager = Manager;
+               _stateContext.Manager = Manager; // Populate CustomerManager
+               _stateContext.TiNpcManager = tiNpcManager; // Populate TiNpcManager
+               _stateContext.PrescriptionManager = prescriptionManager; // <-- NEW: Populate PrescriptionManager
                _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                _stateContext.Runner = this;
                _stateContext.InterruptionHandler = interruptionHandler;
                _stateContext.QueueHandler = queueHandler;
                _stateContext.PathFollowingHandler = npcPathFollowingHandler;
                _stateContext.TiData = TiData;
-               _stateContext.TiNpcManager = tiNpcManager; // <-- Populate TiNpcManager in context
                // DeltaTime is not typically needed in OnEnter, but populate defensively if needed
                // _stateContext.DeltaTime = Time.deltaTime; // Or some default?
 
@@ -913,7 +947,7 @@ namespace Game.NPC
           /// <param name="path">The PathSO to follow.</param>
           /// <param name="startIndex">The index of the waypoint to start from.</param>
           /// <param name="reverse">Whether to follow the path in reverse.</param>
-          public void PreparePathTransition(PathSO path, int startIndex, bool reverse) // <-- NEW METHOD
+          public void PreparePathTransition(PathSO path, int startIndex, bool reverse)
           {
                if (path == null)
                {
@@ -1210,4 +1244,4 @@ namespace Game.NPC
      }
 }
 
-// --- END OF FILE NpcStateMachineRunner.cs (Modified for Generic Path) ---
+// --- END OF FILE NpcStateMachineRunner.cs (Modified for PrescriptionManager Context) ---

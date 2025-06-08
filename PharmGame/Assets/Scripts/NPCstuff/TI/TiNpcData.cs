@@ -10,13 +10,15 @@ using Game.NPC.BasicStates; // Needed for BasicState enum, BasicPathState enum
 using Game.Utilities; // Needed for TimeRange
 using Game.NPC.Decisions; // Needed for DecisionOption
 using System.Linq; // Needed for accessing PathState enum
+using Game.Prescriptions; // Needed for PrescriptionOrder // <-- NEW: Added using directive
 
 namespace Game.NPC.TI // Keep in the TI namespace
 {
     /// <summary>
     /// Represents the persistent data for a True Identity NPC, independent of their GameObject.
     /// Includes fields needed for off-screen simulation, including path following.
-    /// Now includes schedule time ranges, unique decision options, and intended day start behavior.
+    /// Now includes schedule time ranges, unique decision options, intended day start behavior,
+    /// and prescription order data.
     /// </summary>
     [System.Serializable]
     public class TiNpcData
@@ -98,6 +100,15 @@ namespace Game.NPC.TI // Keep in the TI namespace
         [SerializeField] internal int dayStartStartIndex;
         [Tooltip("Optional: If true, follow the path in reverse from the start index if the day start behavior is path following.")]
         [SerializeField] internal bool dayStartFollowReverse;
+
+        // --- Prescription Data --- // <-- NEW HEADER
+        [Header("Prescription Data")]
+        [Tooltip("True if this TI NPC has a pending prescription order assigned.")]
+        [SerializeField] public bool pendingPrescription; // <-- NEW FIELD
+
+        [Tooltip("The prescription order assigned to this TI NPC.")]
+        [SerializeField] public PrescriptionOrder assignedOrder; // <-- NEW FIELD (struct is serializable)
+
 
         [System.NonSerialized] public GameObject NpcGameObject; // Runtime reference to the active GameObject
 
@@ -211,12 +222,17 @@ namespace Game.NPC.TI // Keep in the TI namespace
             this.uniqueDecisionOptions = new SerializableDecisionOptionDictionary(); // <-- Initialize dictionary wrapper
 
             // Initialize day start behavior fields (will be populated on load)
-            this.usePathForDayStart = false; 
+            this.usePathForDayStart = false;
             this.dayStartActiveStateEnumKey = null;
             this.dayStartActiveStateEnumType = null;
             this.dayStartPathID = null;
             this.dayStartStartIndex = 0;
             this.dayStartFollowReverse = false;
+
+            // Initialize prescription data fields // <-- NEW INITIALIZATION
+            this.pendingPrescription = false;
+            this.assignedOrder = new PrescriptionOrder(); // Initialize with default struct values
+            // --- END NEW INITIALIZATION ---
 
 
             // Debug.Log($"DEBUG TiNpcData ({id}): Constructor called (InstanceID: {this.GetHashCode()}). Initializing isActiveGameObject=false, NpcGameObject=null.", NpcGameObject); // Too verbose
@@ -234,7 +250,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
             this.isFollowingPathBasic = false;
 
             // Initialize schedule runtime flag
-            this.isEndingDay = false; 
+            this.isEndingDay = false;
         }
 
         /// <summary>

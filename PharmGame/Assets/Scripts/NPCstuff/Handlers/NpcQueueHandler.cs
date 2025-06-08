@@ -1,17 +1,19 @@
-// --- START OF FILE NpcQueueHandler.cs (Corrected Logic) ---
+// --- START OF FILE NpcQueueHandler.cs (Modified for Cleanup) ---
 
 using UnityEngine;
 using CustomerManagement; // Needed for CustomerManager and QueueType
 using Game.NPC; // Needed for NpcStateMachineRunner, CustomerState
 using Game.NPC.Handlers; // Needed for NpcMovementHandler
-using Game.NPC.States; // <-- Ensure this is present. Needed for NpcStateSO and CustomerState.
+using Game.NPC.States; // Needed for NpcStateSO and CustomerState.
+using Game.Prescriptions; // Needed for PrescriptionManager // <-- NEW: Added using directive
 
 namespace Game.NPC.Handlers // Placing handlers together
 {
     /// <summary>
     /// Handles the queue-specific logic and data for an NPC.
     /// Manages the NPC's assigned queue spot and communicates queue movement signals.
-    /// This logic was refactored from NpcStateMachineRunner.
+    /// Now supports multiple queue types (Main, Secondary, Prescription).
+    /// Includes method to clear queue assignment.
     /// </summary>
     [RequireComponent(typeof(NpcStateMachineRunner))]
     [RequireComponent(typeof(NpcMovementHandler))]
@@ -21,10 +23,11 @@ namespace Game.NPC.Handlers // Placing handlers together
         private NpcStateMachineRunner runner;
         private NpcMovementHandler movementHandler;
 
-        // --- External Reference (Provided by Runner Initialization) ---
-        // We need the CustomerManager to interact with the global queue data.
-        // This will be assigned via an Initialize method.
-        private CustomerManagement.CustomerManager manager;
+        // --- External References (Provided by Runner Initialization) ---
+        // We need the CustomerManager and PrescriptionManager to interact with global queue data.
+        // These will be assigned via an Initialize method.
+        private CustomerManagement.CustomerManager customerManager; // Renamed for clarity
+        private Game.Prescriptions.PrescriptionManager prescriptionManager; // <-- NEW: Reference to PrescriptionManager
 
 
         // --- Queue Data (Moved from NpcStateMachineRunner) ---
@@ -62,14 +65,23 @@ namespace Game.NPC.Handlers // Placing handlers together
         /// Initializes the Queue Handler with necessary external references.
         /// Called by the NpcStateMachineRunner during its Initialize or Activate process.
         /// </summary>
-        public void Initialize(CustomerManagement.CustomerManager manager)
+        public void Initialize(CustomerManagement.CustomerManager customerManager) // Accepts CustomerManager
         {
-            if (manager == null)
+            Debug.Log($"[DEBUG {gameObject.name}] NpcQueueHandler Initialize called.", this);
+            if (customerManager == null)
             {
-                Debug.LogError($"NpcQueueHandler ({gameObject.name}): Initialized with a null CustomerManager reference! Queue logic will fail.", this);
+                Debug.LogError($"NpcQueueHandler ({gameObject.name}): Initialized with a null CustomerManager reference! Standard queue logic will fail.", this);
             }
-            this.manager = manager;
-            Debug.Log($"NpcQueueHandler ({gameObject.name}): Initialized with CustomerManager reference.");
+            this.customerManager = customerManager; // Assign CustomerManager
+
+            // Get PrescriptionManager instance here as well
+            prescriptionManager = Game.Prescriptions.PrescriptionManager.Instance;
+            if (prescriptionManager == null)
+            {
+                 Debug.LogError($"NpcQueueHandler ({gameObject.name}): PrescriptionManager instance not found! Prescription queue logic will fail.", this);
+            }
+
+            Debug.Log($"NpcQueueHandler ({gameObject.name}): Initialized with Manager references.");
         }
 
         // --- Reset Method (Called by NpcStateMachineRunner) ---
@@ -81,10 +93,21 @@ namespace Game.NPC.Handlers // Placing handlers together
         {
             _isMovingToQueueSpot = false;
             _previousQueueSpotIndex = -1;
-            _currentQueueMoveType = QueueType.Main; // This is where it's reset on Runner Init/Activate/Deactivate
-            AssignedQueueSpotIndex = -1;
-            // Do NOT reset 'manager' reference here.
+            // _currentQueueMoveType and AssignedQueueSpotIndex are reset by ClearQueueAssignment
+            ClearQueueAssignment(); // Use the new method for reset
+            // Do NOT reset 'customerManager' or 'prescriptionManager' references here.
             Debug.Log($"NpcQueueHandler ({gameObject.name}): Transient queue data reset.");
+        }
+
+        /// <summary>
+        /// Clears the NPC's assigned queue spot index and type.
+        /// Called when the NPC successfully leaves a queue state.
+        /// </summary>
+        public void ClearQueueAssignment() // <-- NEW METHOD Implementation
+        {
+             AssignedQueueSpotIndex = -1;
+             _currentQueueMoveType = QueueType.Main; // Reset to a default/invalid type (Main as default)
+             Debug.Log($"NpcQueueHandler ({gameObject.name}): Queue assignment cleared.");
         }
 
 
@@ -106,6 +129,8 @@ namespace Game.NPC.Handlers // Placing handlers together
                   if (nextState != null)
                   {
                       runner.TransitionToState(nextState);
+                      // Clear queue assignment immediately upon leaving the queue state
+                      ClearQueueAssignment(); // <-- Clear assignment here
                   }
                   else
                   {
@@ -114,6 +139,8 @@ namespace Game.NPC.Handlers // Placing handlers together
                       NpcStateSO exitState = runner.GetStateSO(CustomerState.Exiting);
                        if(exitState != null) runner.TransitionToState(exitState);
                        else Debug.LogError($"NpcQueueHandler ({gameObject.name}): Neither MovingToRegister nor Exiting fallback states found!", this);
+                       // Clear assignment on fallback as well
+                       ClearQueueAssignment(); // <-- Clear assignment here
                   }
              }
              else
@@ -124,20 +151,56 @@ namespace Game.NPC.Handlers // Placing handlers together
         }
 
         /// <summary>
+        /// Signals this NPC to transition to the state for moving to the prescription claim spot.
+        /// Called by the PrescriptionManager when this NPC reaches the front of the prescription queue.
+        /// </summary>
+        public void GoToPrescriptionClaimSpotFromQueue() // <-- NEW METHOD Implementation
+        {
+             Debug.Log($"{gameObject.name}: NpcQueueHandler received GoToPrescriptionClaimSpotFromQueue signal. Transitioning to PrescriptionEntering.");
+
+             // Need to transition state via the Runner
+             if (runner != null)
+             {
+                  // Use runner's method to get the state SO by Enum key
+                  NpcStateSO nextState = runner.GetStateSO(CustomerState.PrescriptionEntering);
+                  if (nextState != null)
+                  {
+                      runner.TransitionToState(nextState);
+                      // Clear queue assignment immediately upon leaving the queue state
+                      ClearQueueAssignment(); // <-- Clear assignment here
+                  }
+                  else
+                  {
+                      Debug.LogError($"NpcQueueHandler ({gameObject.name}): Failed to get PrescriptionEntering state SO! Cannot transition. Transitioning to Exiting (fallback).", this);
+                       // Fallback to Exiting if PrescriptionEntering is missing
+                      NpcStateSO exitState = runner.GetStateSO(CustomerState.Exiting);
+                       if(exitState != null) runner.TransitionToState(exitState);
+                       else Debug.LogError($"NpcQueueHandler ({gameObject.name}): Neither PrescriptionEntering nor Exiting fallback states found!", this);
+                       // Clear assignment on fallback as well
+                       ClearQueueAssignment(); // <-- Clear assignment here
+                  }
+             }
+             else
+             {
+                  Debug.LogError($"NpcQueueHandler ({gameObject.name}): Runner reference is null! Cannot transition state for GoToPrescriptionClaimSpotFromQueue.", this);
+                  // No runner, no state machine. Cannot do anything.
+             }
+        }
+
+
+        /// <summary>
         /// Signals this NPC to move to a new spot in a queue line (used for moving up).
-        /// Called by the CustomerManager during the queue cascade.
+        /// Called by the CustomerManager or PrescriptionManager during the queue cascade.
         /// </summary>
         /// <param name="nextSpotTransform">The Transform of the spot to move to.</param>
         /// <param name="newSpotIndex">The index of the spot to move to.</param>
-        /// <param name="queueType">The type of queue (Main or Secondary).</param>
+        /// <param name="queueType">The type of queue (Main, Secondary, or Prescription).</param>
         public void MoveToQueueSpot(Transform nextSpotTransform, int newSpotIndex, QueueType queueType)
         {
              // Check if required references are valid
-             if (runner == null || movementHandler == null || manager == null)
+             if (runner == null || movementHandler == null || (queueType != QueueType.Prescription && customerManager == null) || (queueType == QueueType.Prescription && prescriptionManager == null)) // Check manager based on queue type
              {
-                  Debug.LogError($"NpcQueueHandler ({gameObject.name}): Cannot move to queue spot - missing Runner({runner != null}), MovementHandler({movementHandler != null}), or Manager({manager != null}).", this);
-                  // Fallback: Transition to exiting? Or let the current state handle it?
-                  // If called by manager, the state should already be Queue/SecondaryQueue.
+                  Debug.LogError($"NpcQueueHandler ({gameObject.name}): Cannot move to queue spot - missing Runner({runner != null}), MovementHandler({movementHandler != null}), or Manager for type {queueType}.", this);
                   // Failure to move here is critical. Let's transition to Exiting.
                   if (runner != null) runner.TransitionToState(runner.GetStateSO(CustomerState.Exiting));
                   return;
@@ -152,60 +215,65 @@ namespace Game.NPC.Handlers // Placing handlers together
              QueueType_Internal(queueType); // Use internal helper method
              // Update the Runner's target location field - this field is used by state SOs.
              // We keep this field on the Runner as it's used by ALL movement states.
-             runner.CurrentTargetLocation = new BrowseLocation { browsePoint = nextSpotTransform, inventory = null };
+             runner.CurrentTargetLocation = new BrowseLocation { browsePoint = nextSpotTransform, inventory = null }; // Still using BrowseLocation struct, but the transform is the key part
 
 
              // Ensure the current state is one where a queue move is expected
              // Check runner's current state using its method
-             CustomerState currentStateEnum = CustomerState.Inactive; // Default
-             NpcStateSO currentStateSO = runner.GetCurrentState();
-             if (currentStateSO != null)
+             System.Enum currentStateEnum = runner.GetCurrentState()?.HandledState;
+
+             bool isInCorrectQueueState = false;
+             if (currentStateEnum != null)
              {
-                 // Attempt to cast the HandledState enum to CustomerState
-                 if (currentStateSO.HandledState is CustomerState customerEnum)
-                 {
-                     currentStateEnum = customerEnum;
-                 }
-                 // Add check for GeneralState.Idle or other states if queue moves are allowed from them?
-                 // For now, stick to only allowing moves from Queue states.
-                 // else if (currentStateSO.HandledState is GeneralState generalEnum) { /* Handle if needed */ }
+                 if (queueType == QueueType.Main && currentStateEnum.Equals(CustomerState.Queue)) isInCorrectQueueState = true;
+                 else if (queueType == QueueType.Secondary && currentStateEnum.Equals(CustomerState.SecondaryQueue)) isInCorrectQueueState = true;
+                 else if (queueType == QueueType.Prescription && currentStateEnum.Equals(CustomerState.PrescriptionQueue)) isInCorrectQueueState = true;
              }
 
 
-             if ((currentStateEnum == CustomerState.Queue && queueType == QueueType.Main) ||
-                 (currentStateEnum == CustomerState.SecondaryQueue && queueType == QueueType.Secondary))
+             if (isInCorrectQueueState)
              {
                   // This flag is managed by the handler now
                   _isMovingToQueueSpot = true; // Use this handler's field
                   _previousQueueSpotIndex = tempPreviousSpotIndex; // Use this handler's field
 
-                  if (manager != null && _previousQueueSpotIndex != -1) // Use this handler's manager reference and previous index
+                  // --- Signal Manager to Free Previous Spot --- // <-- MODIFIED LOGIC
+                  // Call the correct manager based on the queue type
+                  bool signaledManager = false;
+                  if (_previousQueueSpotIndex != -1) // Only signal if there was a previous spot
                   {
-                       Debug.Log($"{gameObject.name}: Starting move to queue spot {newSpotIndex} from {_previousQueueSpotIndex} in {_currentQueueMoveType} queue. Signalling Manager to free previous spot {_previousQueueSpotIndex} immediately.", this); // Use this handler's fields
-
-                       // Call the Manager method directly using this handler's manager reference
-                       if (manager.FreePreviousQueueSpotOnArrival(_currentQueueMoveType, _previousQueueSpotIndex)) // Use this handler's fields
+                       if (queueType == QueueType.Main || queueType == QueueType.Secondary)
                        {
-                            Debug.Log($"{gameObject.name}: Successfully signaled Manager to free previous spot {_currentQueueMoveType} queue spot {_previousQueueSpotIndex} upon starting move."); // Use this handler's fields
+                            if (customerManager != null)
+                            {
+                                 Debug.Log($"{gameObject.name}: Starting move to queue spot {newSpotIndex} from {_previousQueueSpotIndex} in {queueType} queue. Signalling CustomerManager to free previous spot {_previousQueueSpotIndex} immediately.", this);
+                                 signaledManager = customerManager.FreePreviousQueueSpotOnArrival(queueType, _previousQueueSpotIndex);
+                            } else { Debug.LogWarning($"{gameObject.name}: CustomerManager is null! Cannot signal freeing previous spot {queueType} queue spot {_previousQueueSpotIndex}.", this); }
+                       }
+                       else if (queueType == QueueType.Prescription)
+                       {
+                            if (prescriptionManager != null)
+                            {
+                                 Debug.Log($"{gameObject.name}: Starting move to queue spot {newSpotIndex} from {_previousQueueSpotIndex} in {queueType} queue. Signalling PrescriptionManager to free previous spot {_previousQueueSpotIndex} immediately.", this);
+                                 signaledManager = prescriptionManager.FreePreviousPrescriptionQueueSpotOnArrival(queueType, _previousQueueSpotIndex); // Use PrescriptionManager
+                            } else { Debug.LogWarning($"{gameObject.name}: PrescriptionManager is null! Cannot signal freeing previous spot {queueType} queue spot {_previousQueueSpotIndex}.", this); }
+                       }
+
+                       if (signaledManager)
+                       {
+                            Debug.Log($"{gameObject.name}: Successfully signaled Manager to free previous spot {queueType} queue spot {_previousQueueSpotIndex} upon starting move.");
                             // Reset *some* move flags immediately as the Manager has been notified
                             _isMovingToQueueSpot = false; // Use this handler's field
                             _previousQueueSpotIndex = -1; // Use this handler's field
-                            // --- REMOVED: DO NOT reset _currentQueueMoveType here! ---
-                            // _currentQueueMoveType = QueueType.Main; // Use this handler's field (Reset to default) <-- REMOVE THIS LINE
-                            // --- END REMOVED ---
+                            // _currentQueueMoveType is NOT reset here, it holds the type of the queue they are *in*.
                        }
                        else
                        {
-                            Debug.LogWarning($"{gameObject.name}: Failed to signal Manager to free previous spot {_currentQueueMoveType} queue spot {_previousQueueSpotIndex} upon starting move.", this); // Use this handler's fields
-                            // Decide error handling: Should we still move? Yes. Should we try signaling again on arrival? No, Manager expects signal on *start* of move.
-                            // Just log the warning, the Manager state might be inconsistent.
+                            Debug.LogWarning($"{gameObject.name}: Failed to signal Manager to free previous spot {queueType} queue spot {_previousQueueSpotIndex} upon starting move. Manager state might be inconsistent.", this);
                        }
                   }
-                  else if (_previousQueueSpotIndex != -1) // Use this handler's previous index
-                  {
-                       // This shouldn't happen if the Runner came from a queue state and was correctly assigned.
-                       Debug.LogWarning($"{gameObject.name}: Starting move to queue spot {newSpotIndex} from {_previousQueueSpotIndex}, but Manager is null! Cannot free previous spot.", this); // Use this handler's previous index
-                  }
+                  // --- END MODIFIED LOGIC ---
+
 
                   // Initiate the physical movement to the new spot using this handler's movementHandler
                   // Note: The Context helper method MoveToDestination is NOT available here.
@@ -232,8 +300,9 @@ namespace Game.NPC.Handlers // Placing handlers together
                              // Reset move flags on failure using this handler's fields
                              _isMovingToQueueSpot = false;
                              _previousQueueSpotIndex = -1;
-                             // Keep _currentQueueMoveType as is, transition to Exiting handles cleanup
-                             // _currentQueueMoveType = QueueType.Main; // Reset to default <-- DO NOT RESET HERE
+                             // _currentQueueMoveType is NOT reset here.
+                             // Clear assignment as the move failed and they are leaving the queue flow.
+                             ClearQueueAssignment(); // <-- Clear assignment here
 
                              // Transition via the runner
                             if (runner != null) runner.TransitionToState(runner.GetStateSO(CustomerState.Exiting));
@@ -251,14 +320,18 @@ namespace Game.NPC.Handlers // Placing handlers together
              else
              {
                   // Received a move command while not in the correct queue state. Log warning and ignore.
-                  Debug.LogWarning($"NpcQueueHandler ({gameObject.name}): Received MoveToQueueSpot signal for {queueType} queue but not in a matching Queue state ({currentStateEnum})! Current State SO: {currentStateSO?.name ?? "NULL"}. Ignoring move command.", this);
-                  AssignedQueueIndex_Internal(tempPreviousSpotIndex); // Use internal helper (Restore previous index if move was ignored)
-                  // Also clear runner's target as this move was ignored.
-                  runner.CurrentTargetLocation = null;
-                  runner.SetCurrentDestinationPosition(null);
+                  Debug.LogWarning($"NpcQueueHandler ({gameObject.name}): Received MoveToQueueSpot signal for {queueType} queue but not in a matching Queue state ({currentStateEnum})! Current State SO: {runner.GetCurrentState()?.name ?? "NULL"}. Ignoring move command.", this);
+                  // Do NOT restore previous index/type here, the assignment was already received and stored.
+                  // The NPC is just in the wrong state to *act* on the move command.
+                  // The Manager thinks the spot is assigned and the NPC is moving.
+                  // This is an inconsistency that needs state logic to prevent, or robust error handling.
+                  // For now, just log and ignore the move command. The NPC will likely get stuck.
+                  // Clearing the Runner's target position might be appropriate here?
+                  // runner.CurrentTargetLocation = null; // Maybe clear? Let's leave it for now.
+                  // runner.SetCurrentDestinationPosition(null);
              }
         }
-        
+
         /// <summary>
         /// Called externally (e.g., by TiNpcManager) to manually set the NPC's assigned queue spot and type,
         /// and update the Runner's target. Used for NPCs activating directly into a queue spot.
@@ -272,8 +345,7 @@ namespace Game.NPC.Handlers // Placing handlers together
              if (runner == null || spotTransform == null)
              {
                   Debug.LogError($"NpcQueueHandler ({gameObject.name}): Cannot setup queue spot - missing Runner({runner != null}) or spotTransform is null.", this);
-                  AssignedQueueSpotIndex = -1; // Ensure clean state on error
-                  _currentQueueMoveType = QueueType.Main; // Ensure clean state on error
+                  ClearQueueAssignment(); // Ensure clean state on error
                   runner.CurrentTargetLocation = null; // Ensure clean state on error
                   runner.SetCurrentDestinationPosition(null); // Ensure clean state on error
                   return;
@@ -287,7 +359,7 @@ namespace Game.NPC.Handlers // Placing handlers together
 
              // Update the Runner's target location and destination position fields.
              // This is the target the NPC needs to reach when it becomes active and enters the state.
-             runner.CurrentTargetLocation = new BrowseLocation { browsePoint = spotTransform, inventory = null };
+             runner.CurrentTargetLocation = new BrowseLocation { browsePoint = spotTransform, inventory = null }; // Still using BrowseLocation struct
              runner.SetCurrentDestinationPosition(spotTransform.position); // Set the destination position
 
              // Do NOT set runner._hasReachedCurrentDestination = false here.
@@ -296,11 +368,11 @@ namespace Game.NPC.Handlers // Placing handlers together
         }
 
         /// <summary>
-        /// Called by a manager (like CustomerManager) to assign this NPC to a queue spot.
+        /// Called by a manager (like CustomerManager or PrescriptionManager) to assign this NPC to a queue spot.
         /// Updates the internal queue data fields.
         /// </summary>
         /// <param name="index">The index of the assigned spot.</param>
-        /// <param name="type">The type of queue (Main or Secondary).</param>
+        /// <param name="type">The type of queue (Main, Secondary, or Prescription).</param>
         public void ReceiveQueueAssignment(int index, QueueType type)
         {
             // Basic validation
@@ -331,4 +403,4 @@ namespace Game.NPC.Handlers // Placing handlers together
     }
 }
 
-// --- END OF FILE NpcQueueHandler.cs ---
+// --- END OF FILE NpcQueueHandler.cs (Modified for Cleanup) ---

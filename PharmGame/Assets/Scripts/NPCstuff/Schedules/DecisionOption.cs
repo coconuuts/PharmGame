@@ -29,14 +29,6 @@ namespace Game.NPC.Decisions // Place in the same namespace as DecisionPointSO
         [Tooltip("Optional: If true, follow the path in reverse from the start index.")]
         [SerializeField] private bool followReverse;
 
-        // Optional: Add weight, criteria, etc. here in the future
-        // [Header("Selection Criteria")]
-        // [Tooltip("Weight for random selection (higher = more likely).")]
-        // [SerializeField] private float selectionWeight;
-        // [Tooltip("Optional: Specific NPC types this option is available for.")]
-        // [SerializeField] private List<string> allowedNpcTypeIDs;
-
-
         // --- Public Properties ---
         public string TargetStateEnumKey => targetStateEnumKey;
         public string TargetStateEnumType => targetStateEnumType;
