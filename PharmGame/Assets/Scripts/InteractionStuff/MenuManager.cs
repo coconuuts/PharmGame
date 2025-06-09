@@ -27,8 +27,8 @@ namespace Systems.GameStates
             InInventory,
             InPauseMenu,
             InComputer,
-            InMinigame, // This state will now be used for crafting minigames too
-            InCrafting  // This state represents the crafting *UI* state
+            InMinigame, // This state is generic for ALL minigames 
+            InCrafting  // This state represents the crafting *UI* state, NOT the crafting minigame
         }
 
         public GameState currentState = GameState.Playing;
@@ -74,15 +74,12 @@ namespace Systems.GameStates
         // Reference to the Simple Action Dispatcher
         private SimpleActionDispatcher simpleActionDispatcher = new SimpleActionDispatcher();
 
-        // --- MODIFIED: References to the Minigame Managers are now serialized fields ---
         [Header("Manager References")]
         [Tooltip("Drag the General MinigameManager GameObject here.")]
         [SerializeField] private MinigameManager generalMinigameManagerInstance; // Reference to the general MinigameManager
 
         [Tooltip("Drag the CraftingMinigameManager GameObject here.")]
         [SerializeField] private CraftingMinigameManager craftingMinigameManagerInstance; // Reference to the CraftingMinigameManager
-        // -----------------------------------------------------------------------------
-
 
         private void Awake()
         {
@@ -188,7 +185,7 @@ namespace Systems.GameStates
                  if (currentState != GameState.Playing)
                 {
                     // The Exit actions for the current state (including InMinigame) will handle cleanup.
-                    SetState(GameState.Playing, null); // Exiting via Escape (no specific response)
+                    SetState(GameState.Playing, null);
                 }
                  else // current state IS Playing
                  {
@@ -235,34 +232,41 @@ namespace Systems.GameStates
                 oldStateConfig.ExecuteExitActions(response, this); // Pass the response to exit actions
             }
 
+            // If a drag is currently in progress and we are changing state, abort the drag.
+            // This handles scenarios like pressing Escape while dragging.
+            if (DragAndDropManager.Instance != null && DragAndDropManager.Instance.IsDragging)
+            {
+                // Check if the state we are entering is one where dragging should not persist.
+                Debug.Log($"MenuManager: Drag is active ({DragAndDropManager.Instance.IsDragging}). Aborting drag due to state change from {oldState} to {newState}.");
+                DragAndDropManager.Instance.AbortDrag();
+            }
+
             // --- Handle Specific Exit Logic Here Before Event ---
             // This is where we trigger manager-level cleanup based on *what state we are leaving*.
             // This happens BEFORE the OnStateChanged event, so UIManager and others react correctly.
             // Critically, this happens *after* StateActionSO Exit Actions.
 
-            // If exiting InMinigame TO Playing (e.g., via Escape)
+            // If exiting InMinigame TO Playing 
             if (oldState == GameState.InMinigame && newState == GameState.Playing)
             {
                 Debug.Log("MenuManager: Explicitly handling exit from InMinigame to Playing (likely via Escape). Triggering minigame managers to abort.");
                 // Tell both crafting and general minigame managers to end their current session, marking it as aborted.
-                 if (craftingMinigameManagerInstance != null)
-                 {
-                     craftingMinigameManagerInstance.EndCurrentMinigame(true); // Call EndCurrentMinigame with ABORT=true
-                 }
-                 else Debug.LogWarning("MenuManager: CraftingMinigameManagerInstance is null when exiting InMinigame. Cannot signal abort for crafting minigame.");
+                if (craftingMinigameManagerInstance != null)
+                {
+                    craftingMinigameManagerInstance.EndCurrentMinigame(true); // Call EndCurrentMinigame with ABORT=true
+                }
+                else Debug.LogWarning("MenuManager: CraftingMinigameManagerInstance is null when exiting InMinigame. Cannot signal abort for crafting minigame.");
 
                 if (generalMinigameManagerInstance != null)
                 {
-                     generalMinigameManagerInstance.EndCurrentMinigame(true); // Need this method in general MinigameManager
+                    generalMinigameManagerInstance.EndCurrentMinigame(true); // Need this method in general MinigameManager
                 }
-                 else Debug.LogWarning("MenuManager: GeneralMinigameManagerInstance is null when exiting InMinigame. Cannot signal abort for general minigame.");
+                else Debug.LogWarning("MenuManager: GeneralMinigameManagerInstance is null when exiting InMinigame. Cannot signal abort for general minigame.");
 
-                 // Clear the minigame references held by MenuManager when explicitly exiting InMinigame
-                 currentActiveCraftingMinigame_internal = null;
-                 currentActiveGeneralMinigame_internal = null; // Assume general manager also clears its instance
+                // Clear the minigame references held by MenuManager when explicitly exiting InMinigame
+                currentActiveCraftingMinigame_internal = null;
+                currentActiveGeneralMinigame_internal = null;
             }
-            // No other explicit exit logic needed here for now.
-
 
             // --- Trigger the OnStateChanged event AFTER exit actions and specific exit logic ---
             OnStateChanged?.Invoke(newState, oldState, response);
@@ -434,10 +438,9 @@ namespace Systems.GameStates
                  // Call the general minigame manager to start the minigame.
                  // The general manager is responsible for instantiating, setting up,
                  // and transitioning MenuManager.GameState to InMinigame.
-                 // --- MODIFIED: Use the stored manager instance reference ---
                  if (generalMinigameManagerInstance != null)
                  {
-                     generalMinigameManagerInstance.StartMinigame(startMinigameResponse); // Assuming StartMinigame method takes the response
+                     generalMinigameManagerInstance.StartMinigame(startMinigameResponse); 
                  }
                  else
                  {
@@ -463,14 +466,14 @@ namespace Systems.GameStates
         {
              if (inventory != null)
              {
-                  Visualizer visualizer = inventory.GetComponent<Visualizer>(); // Assuming Visualizer exists
-                  if (visualizer != null && visualizer.SlotUIComponents != null) // Assuming SlotUIComponents is a public list
+                  Visualizer visualizer = inventory.GetComponent<Visualizer>(); 
+                  if (visualizer != null && visualizer.SlotUIComponents != null) 
                   {
                        foreach (var slotUI in visualizer.SlotUIComponents)
                        {
                             if (slotUI != null) // Ensure the slotUI is not null in the list
                             {
-                                 slotUI.RemoveHoverHighlight(); // Assuming RemoveHoverHighlight exists on SlotUI component
+                                 slotUI.RemoveHoverHighlight(); 
                             }
                        }
                   }

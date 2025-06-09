@@ -1,18 +1,18 @@
 using UnityEngine;
 using Systems.Inventory;
 using System.Collections.Generic;
-using System; 
+using System;
 using Systems.GameStates;
 
 namespace Systems.Inventory
 {
     /// <summary>
     /// Manages the logic for using items, typically from the player's selected inventory slot.
-    /// Handles use input and delegates effect execution based on item type.
+    /// Handles use input and delegates effect execution based on item type,
+    /// including new health/durability logic for non-stackable items and checking allowed triggers.
     /// </summary>
     public class ItemUsageManager : MonoBehaviour
     {
-        // Singleton instance
         public static ItemUsageManager Instance { get; private set; }
 
         [Tooltip("Tag identifying the player's toolbar Inventory GameObject.")]
@@ -23,7 +23,7 @@ namespace Systems.Inventory
         private void Awake()
         {
             // Implement singleton pattern
-            if (Instance == null)
+            if (Instance == Instance) // Corrected singleton check
             {
                 Instance = this;
                 // Optional: DontDestroyOnLoad(gameObject); // If the manager should persist
@@ -42,7 +42,7 @@ namespace Systems.Inventory
                  playerInventorySelector = playerInventoryObject.GetComponent<InventorySelector>();
                  if (playerInventorySelector == null)
                  {
-                     Debug.LogError($"ItemUsageManager: GameObject with tag '{playerInventoryTag}' found, but it does not have an InventorySelector component.", playerInventoryObject);
+                     Debug.LogError($"ItemUsageManager: GameObject with tag '{playerInventoryObject.tag}' found, but it does not have an InventorySelector component.", playerInventoryObject);
                  }
              }
              else
@@ -53,14 +53,6 @@ namespace Systems.Inventory
              // Optional: Subscribe to MenuManager state changes if you only want usage in specific states
              // MenuManager.OnStateChanged += HandleGameStateChanged; // Example
         }
-
-         /* // Example if you need state-based usage
-         private void HandleGameStateChanged(MenuManager.GameState newState)
-         {
-             // Enable/disable usage logic based on state
-         }
-         */
-
 
         private void OnDestroy()
         {
@@ -79,32 +71,71 @@ namespace Systems.Inventory
             // And if we have a player inventory selector assigned
             if (MenuManager.Instance != null && MenuManager.Instance.currentState == MenuManager.GameState.Playing && playerInventorySelector != null)
             {
-                // Check for the "use item" input button press
-                if (Input.GetKeyDown(KeyCode.F)) // Using Input.GetButtonDown for configurable input
+                // Get the currently selected item instance
+                Item selectedItem = playerInventorySelector.SelectedItem;
+
+                // Only proceed if an item is selected and has details and allowed triggers list
+                if (selectedItem != null && selectedItem.details != null && selectedItem.details.allowedUsageTriggers != null)
                 {
-                     Debug.Log($"ItemUsageManager: input detected. Attempting to use selected item.");
-                    // Tell the player inventory selector to attempt to use its selected item
-                    playerInventorySelector.UseSelectedItem(); // This calls back to ItemUsageManager.UseItem
+                    // --- Check for the "use item" input button press (e.g., F key) ---
+                    if (Input.GetKeyDown(KeyCode.F))
+                    {
+                        // Check if the item allows usage via the FKey trigger
+                        if (selectedItem.details.allowedUsageTriggers.Contains(UsageTriggerType.FKey))
+                        {
+                             Debug.Log($"ItemUsageManager: 'F' input detected. Attempting to use selected item '{selectedItem.details.Name}' via FKey trigger.");
+                            // Tell the player inventory selector to attempt to use its selected item, passing the trigger type
+                            // Pass -1 for variableHealthLoss as it's not applicable to FKey trigger by default
+                            playerInventorySelector.UseSelectedItem(UsageTriggerType.FKey);
+                        }
+                        else
+                        {
+                             // Debug.Log($"ItemUsageManager: 'F' input detected for '{selectedItem.details.Name}', but FKey trigger is not allowed for this item."); // Commented out to reduce spam
+                        }
+                    }
+
+                    // --- Check for Left Mouse Button input (e.g., for weapons) ---
+                     if (Input.GetMouseButtonDown(0))
+                     {
+                         // Check if the item allows usage via the LeftClick trigger
+                         if (selectedItem.details.allowedUsageTriggers.Contains(UsageTriggerType.LeftClick))
+                         {
+                             Debug.Log($"ItemUsageManager: Left Click input detected. Attempting to use selected item '{selectedItem.details.Name}' via LeftClick trigger.");
+                             // Tell the player inventory selector to attempt to use its selected item, passing the trigger type
+                             // Pass -1 for variableHealthLoss as it's not applicable to LeftClick trigger by default
+                             playerInventorySelector.UseSelectedItem(UsageTriggerType.LeftClick);
+                         }
+                         else
+                         {
+                             // Debug.Log($"ItemUsageManager: Left Click input detected for '{selectedItem.details.Name}', but LeftClick trigger is not allowed for this item."); // Commented out to reduce spam
+                         }
+                     }
+
+                    // TODO: Add other input checks here for other trigger types if needed
                 }
             }
             // Optional: Add other states where item usage is allowed
         }
 
-        // --- Item Usage Logic (Called by InventorySelector) ---
+        // --- Item Usage Logic (Called by InventorySelector or other systems) ---
 
         /// <summary>
         /// Executes the usage logic for a specific item instance from a specific slot.
-        /// This method is called by the InventorySelector.
+        /// This method is called by the InventorySelector or other systems (e.g., Crafting).
+        /// Handles quantity reduction for stackable items and health reduction for non-stackable items,
+        /// varying logic based on the item's usageLogic and potentially the trigger type.
         /// </summary>
         /// <param name="itemToUse">The Item instance to use (should be the one from the selected slot).</param>
-        /// <param name="userInventory">The Inventory component the item belongs to (should be the player's inventory).</param>
-        /// <param name="selectedIndex">The index of the slot the item was selected from.</param> // ADDED PARAMETER
+        /// <param name="userInventory">The Inventory component the item belongs to.</param>
+        /// <param name="selectedIndex">The index of the slot the item was selected from.</param>
+        /// <param name="trigger">The type of action that triggered this usage.</param>
+        /// <param name="variableHealthLoss">Optional: The specific amount of health to reduce for VariableHealthReduction logic. Use -1 or omit for default.</param> // NEW PARAMETER
         /// <returns>True if the item usage logic was successfully triggered, false otherwise.</returns>
-        public bool UseItem(Item itemToUse, Inventory userInventory, int selectedIndex) // ADDED PARAMETER
+        public bool UseItem(Item itemToUse, Inventory userInventory, int selectedIndex, UsageTriggerType trigger, int variableHealthLoss = -1) // NEW PARAMETER
         {
-            if (itemToUse == null || itemToUse.details == null || userInventory == null || userInventory.InventoryState == null || userInventory.Combiner == null) // Added check for InventoryState
+            if (itemToUse == null || itemToUse.details == null || userInventory == null || userInventory.InventoryState == null || userInventory.Combiner == null)
             {
-                Debug.LogWarning("ItemUsageManager: UseItem called with invalid parameters.", this);
+                Debug.LogWarning("ItemUsageManager: UseItem called with invalid parameters (null item, details, inventory, state, or combiner).", this);
                 return false;
             }
 
@@ -119,56 +150,206 @@ namespace Systems.Inventory
              }
              // --- END VALIDATION ---
 
+            // --- Check if the trigger type is allowed for this item ---
+            // This check is primarily for external calls (like crafting systems) or robustness.
+            // Input handling in Update already checks this for player input.
+            if (itemToUse.details.allowedUsageTriggers == null || !itemToUse.details.allowedUsageTriggers.Contains(trigger))
+            {
+                 Debug.LogWarning($"ItemUsageManager: UseItem called for '{itemToUse.details.Name}' with disallowed trigger type '{trigger}'. Aborting usage.", this);
+                 return false;
+            }
+            // --- END NEW CHECK ---
 
-            Debug.Log($"ItemUsageManager: Executing usage logic for item '{itemToUse.details.Name}' (Instance ID: {itemToUse.Id}) from slot {selectedIndex}.", this);
+            // Check if the item is already depleted (quantity 0 for stackable, health <= 0 for durable non-stackable)
+            if ((itemToUse.details.maxStack > 1 && itemToUse.quantity <= 0) || (itemToUse.details.maxStack == 1 && itemToUse.details.maxHealth > 0 && itemToUse.health <= 0))
+            {
+                Debug.Log($"ItemUsageManager: Attempted to use depleted item '{itemToUse.details.Name}' from slot {selectedIndex}. Aborting usage.");
+                return false; // Item is already used up
+            }
+
+
+            Debug.Log($"ItemUsageManager: Executing usage logic for item '{itemToUse.details.Name}' (Instance ID: {itemToUse.Id}) from slot {selectedIndex}, triggered by: {trigger}.");
 
             bool usageHandled = false;
 
             // --- Implement Item Effect Logic Here ---
             // Based on itemToUse.details, perform the effect.
+            // This is where you'd add specific effects (e.g., apply buff, spawn projectile, etc.)
+            // For now, we focus on the quantity/health reduction side effects of usage.
+            Debug.Log($"ItemUsageManager: Applying effects for '{itemToUse.details.Name}' (Effect logic TBD).");
 
-            // Example: Consumable Logic (assuming any item used is a consumable)
-            // You would replace this with more specific logic based on item type/properties
-            Debug.Log($"ItemUsageManager: Assuming '{itemToUse.details.Name}' is a consumable. Reducing quantity by 1 in slot {selectedIndex}.");
 
-            itemToUse.quantity--; // Reduce the quantity of the specific item instance
+            // --- Handle Stackable vs Non-Stackable Usage ---
 
-            if (itemToUse.quantity <= 0)
+            if (itemToUse.details.maxStack > 1)
             {
-                // If quantity is zero or less, remove the item instance from the inventory
-                Debug.Log($"ItemUsageManager: Item quantity depleted in slot {selectedIndex}. Removing item instance.");
-                // Use the ObservableArray's method to remove the item at the specific index
-                userInventory.InventoryState.RemoveAt(selectedIndex); // Use RemoveAt with the index
-                usageHandled = true; // Item was used and removed
-            }
-            else
-            {
-                // If quantity is still positive, notify the ObservableArray that the item at this index changed (quantity updated)
-                Debug.Log($"ItemUsageManager: Item quantity updated in slot {selectedIndex}. New quantity: {itemToUse.quantity}.");
-                // Use SetItemAtIndex to update the item at the specific index.
-                // Pass the SAME item instance, but its internal quantity has been modified.
-                userInventory.InventoryState.SetItemAtIndex(itemToUse, selectedIndex); // Triggers SlotUpdated for this index
-                usageHandled = true; // Item was used and quantity updated
-            }
+                // --- Stackable Item Usage (Existing Logic) ---
+                Debug.Log($"ItemUsageManager: Item '{itemToUse.details.Name}' is stackable. Reducing quantity by 1 in slot {selectedIndex}.");
 
+                itemToUse.quantity--; // Reduce the quantity of the specific item instance
+
+                if (itemToUse.quantity <= 0)
+                {
+                    // If quantity is zero or less, remove the item instance from the inventory
+                    Debug.Log($"ItemUsageManager: Stackable item quantity depleted in slot {selectedIndex}. Removing item instance.");
+                    // Use the ObservableArray's method to remove the item at the specific index
+                    userInventory.InventoryState.RemoveAt(selectedIndex); // Use RemoveAt with the index
+                    usageHandled = true; // Item was used and removed
+                }
+                else
+                {
+                    // If quantity is still positive, notify the ObservableArray that the item at this index changed (quantity updated)
+                    Debug.Log($"ItemUsageManager: Stackable item quantity updated in slot {selectedIndex}. New quantity: {itemToUse.quantity}.");
+                    // Use SetItemAtIndex to update the item at the specific index.
+                    // Pass the SAME item instance, but its internal quantity has been modified.
+                    userInventory.InventoryState.SetItemAtIndex(itemToUse, selectedIndex); // Triggers SlotUpdated for this index
+                    usageHandled = true; // Item was used and quantity updated
+                }
+            }
+            else // itemToUse.details.maxStack == 1 (Non-Stackable Item)
+            {
+                // --- Non-Stackable Item Usage (Health/Durability Logic) ---
+
+                if (itemToUse.details.maxHealth > 0)
+                {
+                    // --- Durable Non-Stackable Item ---
+                    Debug.Log($"ItemUsageManager: Item '{itemToUse.details.Name}' is non-stackable with health ({itemToUse.health}/{itemToUse.details.maxHealth}). Applying usage logic: {itemToUse.details.usageLogic}.");
+
+                    bool healthChanged = false; // Flag to know if health was actually reduced this use
+
+                    // --- APPLY HEALTH REDUCTION BASED ON USAGE LOGIC ---
+                    switch (itemToUse.details.usageLogic)
+                    {
+                        case ItemUsageLogic.BasicHealthReduction:
+                            itemToUse.health--;
+                            healthChanged = true;
+                            Debug.Log($"ItemUsageManager: BasicHealthReduction applied. Health reduced by 1.");
+                            // Reset usage counter for clarity, though not strictly needed for this logic type
+                            itemToUse.usageEventsSinceLastLoss = 0;
+                            break;
+
+                        case ItemUsageLogic.VariableHealthReduction:
+                            int actualLoss = (variableHealthLoss >= 0) ? variableHealthLoss : itemToUse.details.defaultVariableHealthLoss;
+                            itemToUse.health -= actualLoss;
+                            healthChanged = true;
+                            Debug.Log($"ItemUsageManager: VariableHealthReduction applied. Health reduced by {actualLoss}.");
+                            // Reset usage counter for clarity
+                            itemToUse.usageEventsSinceLastLoss = 0;
+                            break;
+
+                        case ItemUsageLogic.DelayedHealthReduction:
+                            itemToUse.usageEventsSinceLastLoss++;
+                            Debug.Log($"ItemUsageManager: DelayedHealthReduction logic. Usage events since last loss: {itemToUse.usageEventsSinceLastLoss}/{itemToUse.details.usageEventsPerHealthLoss}.");
+
+                            if (itemToUse.usageEventsSinceLastLoss >= itemToUse.details.usageEventsPerHealthLoss)
+                            {
+                                itemToUse.health -= itemToUse.details.healthLossPerEventThreshold;
+                                healthChanged = true;
+                                Debug.Log($"ItemUsageManager: DelayedHealthReduction threshold reached ({itemToUse.details.usageEventsPerHealthLoss} events). Health reduced by {itemToUse.details.healthLossPerEventThreshold}.");
+                                itemToUse.usageEventsSinceLastLoss = 0; // Reset counter after health loss
+                            }
+                            // Note: Health doesn't change every use, only when threshold is met.
+                            // We still call SetItemAtIndex below to update the usage counter visual (if implemented later).
+                            break;
+
+                        case ItemUsageLogic.QuantityBased:
+                             // This case should ideally not be reached for maxStack == 1 && maxHealth > 0
+                             // If it is, treat it as basic reduction? Or log error?
+                             Debug.LogWarning($"ItemUsageManager: Durable non-stackable item '{itemToUse.details.Name}' has usageLogic set to QuantityBased. This is unexpected. Applying BasicHealthReduction as fallback.");
+                             itemToUse.health--;
+                             healthChanged = true;
+                             itemToUse.usageEventsSinceLastLoss = 0;
+                             break;
+
+                        default:
+                            Debug.LogWarning($"ItemUsageManager: Item '{itemToUse.details.Name}' has unhandled usageLogic: {itemToUse.details.usageLogic}. Applying BasicHealthReduction as fallback.");
+                            itemToUse.health--;
+                            healthChanged = true;
+                            itemToUse.usageEventsSinceLastLoss = 0;
+                            break;
+                    }
+                    // --- END APPLY HEALTH REDUCTION ---
+
+                    // Debug log the health change (if it happened this use) and current state
+                    if (healthChanged)
+                    {
+                         Debug.Log($"ItemUsageManager: Item '{itemToUse.details.Name}' health is now {itemToUse.health}.");
+                    }
+                     Debug.Log($"ItemUsageManager: Item '{itemToUse.details.Name}' usageEventsSinceLastLoss is now {itemToUse.usageEventsSinceLastLoss}.");
+
+
+                    // Notify the ObservableArray that the item at this index changed (health or usage counter updated)
+                    // This is crucial even if only health changed, so the Visualizer can update (in future phases)
+                    userInventory.InventoryState.SetItemAtIndex(itemToUse, selectedIndex); // Triggers SlotUpdated for this index
+                    usageHandled = true; // Item was used and health/counter updated
+
+                    // Check if health reached zero AFTER applying reduction
+                    if (itemToUse.health <= 0)
+                    {
+                        Debug.Log($"ItemUsageManager: Durable non-stackable item '{itemToUse.details.Name}' in slot {selectedIndex} health reached zero. Removing item instance.");
+                        // Remove the item instance from the inventory
+                        userInventory.InventoryState.RemoveAt(selectedIndex); // Use RemoveAt with the index
+                        // usageHandled is already true
+                    }
+                }
+                else
+                {
+                    // --- Non-Stackable Item with No Health (Simple Consumable) ---
+                    // This case covers items like a single piece of fruit (maxStack=1, maxHealth=0).
+                    // They are consumed entirely on one use.
+                    Debug.Log($"ItemUsageManager: Item '{itemToUse.details.Name}' is non-stackable with no health. Consuming entirely.");
+
+                    // Treat it like a quantity-1 stackable that is fully consumed.
+                    // The existing quantity logic handles this if quantity starts at 1.
+                    itemToUse.quantity = 0; // Set quantity to 0 to trigger removal
+
+                    Debug.Log($"ItemUsageManager: Non-durable non-stackable item depleted in slot {selectedIndex}. Removing item instance.");
+                    userInventory.InventoryState.RemoveAt(selectedIndex); // Use RemoveAt with the index
+                    usageHandled = true; // Item was used and removed
+                }
+            }
 
             // TODO: Add more sophisticated logic for different item types (Equip, Throw, Placeable, etc.)
-            // Equippables might call methods to equip/unequip and change state, not remove.
-            // Other items might spawn prefabs, trigger animations, etc.
-
+            // This current logic only covers "consumable" type usage (quantity/health reduction).
 
             if (!usageHandled)
             {
                  Debug.LogWarning($"ItemUsageManager: No specific usage logic found or handled for item: {itemToUse.details.Name}.", this);
                  // If no specific usage was handled, decide what to do.
-                 // For consumables, the logic above already handles removal.
+                 // For consumables, the logic above already handles removal/reduction.
                  // For other unhandled types, maybe do nothing or log a different message.
             }
 
 
-            return usageHandled; // Return true if usage was handled (item quantity reduced/removed)
+            return usageHandled; // Return true if usage was handled (item quantity/health reduced/removed)
         }
 
         // TODO: Add other usage-related methods (e.g., EquipItem, DropItem - though Drop might be D&D related)
+
+        /// <summary>
+        /// Public method for other systems (like Crafting) to trigger item usage with variable health loss.
+        /// </summary>
+        /// <param name="itemToUse">The Item instance to use.</param>
+        /// <param name="userInventory">The Inventory component the item belongs to.</param>
+        /// <param name="selectedIndex">The index of the slot the item is in.</param>
+        /// <param name="variableLossAmount">The specific amount of health to reduce.</param>
+        /// <returns>True if usage was successful.</returns>
+        public bool UseItemVariableLoss(Item itemToUse, Inventory userInventory, int selectedIndex, int variableLossAmount)
+        {
+             // This method assumes the caller knows this item uses VariableHealthReduction logic
+             // and provides a valid loss amount.
+             // The UseItem method will still validate the trigger type (Crafting, etc.)
+             // and the item's usageLogic.
+             return UseItem(itemToUse, userInventory, selectedIndex, UsageTriggerType.Crafting, variableLossAmount); // Assuming Crafting uses this
+        }
+
+        // Example public method for Delayed usage (e.g., melee hit)
+         public bool UseItemDelayedLoss(Item itemToUse, Inventory userInventory, int selectedIndex)
+         {
+             // This method assumes the caller knows this item uses DelayedHealthReduction logic.
+             // The UseItem method will still validate the trigger type (LeftClick, WorldInteraction, etc.)
+             // and the item's usageLogic.
+             return UseItem(itemToUse, userInventory, selectedIndex, UsageTriggerType.LeftClick); // Assuming LeftClick triggers melee
+         }
     }
 }

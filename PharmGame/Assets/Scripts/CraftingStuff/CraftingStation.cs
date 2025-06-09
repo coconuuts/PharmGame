@@ -45,13 +45,11 @@ namespace Systems.Inventory
         [SerializeField] private GameObject craftingUIRoot;
 
         [Tooltip("The UI Handler component on the crafting UI root.")]
-        private CraftingUIHandler uiHandler; // Assuming this exists and handles UI visuals
+        private CraftingUIHandler uiHandler;
 
         [Header("Crafting Minigame")]
-        // --- MODIFIED: Reference is now a serialized field ---
         [Tooltip("The CraftingMinigameManager component responsible for running minigames.")]
         [SerializeField] private CraftingMinigameManager craftingMinigameManager;
-        // ----------------------------------------------------
 
         [Header("State")]
         [Tooltip("The current state of the crafting station.")]
@@ -76,14 +74,11 @@ namespace Systems.Inventory
                 Debug.LogWarning($"CraftingStation ({gameObject.name}): Crafting UI Root GameObject '{craftingUIRoot.name}' is missing the CraftingUIHandler component! UI visuals may not function correctly.", this);
             }
 
-            // --- MODIFIED: Check if serialized manager reference is assigned ---
              if (craftingMinigameManager == null)
              {
                  Debug.LogError($"CraftingStation ({gameObject.name}): CraftingMinigameManager reference is not assigned in the inspector! Crafting minigames will not function.", this);
                  // Do NOT disable the station, maybe it can still be used for simple non-minigame recipes if implemented?
              }
-            // ----------------------------------------------------------------
-
 
             craftingUIRoot.SetActive(false);
 
@@ -92,40 +87,33 @@ namespace Systems.Inventory
 
         private void OnEnable()
         {
-            // Subscribe to the CraftingMinigameManager's completion event here,
-            // as the manager is a singleton or persistent reference.
-            // --- MODIFIED: Use the serialized manager reference ---
             if (craftingMinigameManager != null)
             {
                  craftingMinigameManager.OnMinigameSessionCompleted += HandleCraftingMinigameCompleted;
                  Debug.Log($"CraftingStation ({gameObject.name}): Subscribed to CraftingMinigameManager completion event.", this);
             }
-            // ----------------------------------------------------
         }
 
         private void OnDisable()
         {
-            // Unsubscribe from the CraftingMinigameManager's completion event here.
-            // --- MODIFIED: Use the serialized manager reference ---
             if (craftingMinigameManager != null)
             {
-                 craftingMinigameManager.OnMinigameSessionCompleted -= HandleCraftingMinigameCompleted;
-                 Debug.Log($"CraftingStation ({gameObject.name}): Unsubscribed from CraftingMinigameManager completion event.", this);
+                craftingMinigameManager.OnMinigameSessionCompleted -= HandleCraftingMinigameCompleted;
+                Debug.Log($"CraftingStation ({gameObject.name}): Unsubscribed from CraftingMinigameManager completion event.", this);
             }
-            // ----------------------------------------------------
 
-             // Unsubscribe from inventory events
+            // Unsubscribe from inventory events
             if (primaryInputInventory?.InventoryState != null)
             {
                 primaryInputInventory.InventoryState.AnyValueChanged -= HandlePrimaryInputChange;
             }
             if (secondaryInputInventory?.InventoryState != null)
             {
-                 secondaryInputInventory.InventoryState.AnyValueChanged -= HandleSecondaryInputChange;
+                secondaryInputInventory.InventoryState.AnyValueChanged -= HandleSecondaryInputChange;
             }
             if (outputInventory?.InventoryState != null)
             {
-                 outputInventory.InventoryState.AnyValueChanged -= HandleOutputInventoryChange;
+                outputInventory.InventoryState.AnyValueChanged -= HandleOutputInventoryChange;
             }
         }
 
@@ -168,7 +156,6 @@ namespace Systems.Inventory
         }
 
         // --- State Management ---
-
         private void SetState(CraftingState newState)
         {
             // Always update the UI handler first, before checking if state actually changed
@@ -187,10 +174,7 @@ namespace Systems.Inventory
             currentState = newState;
             Debug.Log($"CraftingStation ({gameObject.name}): State actually changed to {currentState}.", this);
 
-            // Handle exit actions for the *previous* state
             HandleStateExit(previousState);
-
-            // Handle entry actions for the *new* state
             HandleStateEntry(currentState);
         }
 
@@ -223,11 +207,9 @@ namespace Systems.Inventory
                     // On entering input state, re-check recipe match
                     Debug.Log($"CraftingStation ({gameObject.name}): Entering Inputting state. Checking for recipe match.", this);
                     CheckForRecipeMatch();
-                    // currentMatchedRecipe and maxCraftableBatches are cleared in HandleCraftingMinigameCompleted or on failure
                     break;
                 case CraftingState.Crafting:
                     Debug.Log($"CraftingStation ({gameObject.name}): Entering Crafting state. Starting minigame via manager.", this);
-                    // --- MODIFIED: Use the serialized manager reference ---
                     if (craftingMinigameManager != null)
                     {
                         // Start the appropriate minigame based on the matched recipe
@@ -242,24 +224,15 @@ namespace Systems.Inventory
                             SetState(CraftingState.Inputting);
                             // Clear the potentially problematic recipe/batches - this is handled below in HandleCraftingMinigameCompleted on failure.
                         }
-                         // IMPORTANT: Do NOT clear currentMatchedRecipe/maxCraftableBatches here!
-                         // The minigame needs this data implicitly via the recipe.
-                         // They are cleared in HandleCraftingMinigameCompleted after the outcome is processed.
                     }
                     else
                     {
                         Debug.LogError("CraftingStation: CraftingMinigameManager reference is null. Cannot start crafting minigame. Returning to Inputting.", this);
-                        // If manager is null, immediately return to Inputting state
                         SetState(CraftingState.Inputting);
-                        // Clear the potentially problematic recipe/batches - handled below.
                     }
                     break;
                 case CraftingState.Outputting:
                     Debug.Log($"CraftingStation ({gameObject.name}): Crafting complete. Item(s) available in output.", this);
-                    // The transition back to Inputting is handled ONLY by HandleOutputInventoryChange
-                    // when the output ghost slot is cleared by a drag.
-                    // We DO NOT automatically check IsOutputInventoryEmpty() here on entry.
-                    // This allows re-opening the UI and staying in Outputting if items are present.
                     break;
             }
         }
@@ -282,12 +255,8 @@ namespace Systems.Inventory
                 Debug.Log($"CraftingStation: Crafting minigame reported success. Proceeding with craft execution.", this);
                 // Proceed with the actual item consumption and production
                 // Use the stored currentMatchedRecipe and maxCraftableBatches from BEFORE the minigame started
-                // These are guaranteed to be valid IF minigameWasSuccessful is true,
-                // because they would only be cleared *after* calling this method.
-                // However, the CompleteCraft method relies on parameters.
-                // Let's call CompleteCraft with the stored members, as they are available at this point in the success case.
-                CompleteCraft(currentMatchedRecipe, maxCraftableBatches); // Pass values if needed, current design passes them.
-
+                // Call CompleteCraft with the stored members, as they are available at this point in the success case.
+                CompleteCraft(currentMatchedRecipe, maxCraftableBatches);
                 // After completing the craft (items consumed/produced), transition to the Outputting state
                 SetState(CraftingState.Outputting);
             }
@@ -296,15 +265,12 @@ namespace Systems.Inventory
                 Debug.LogWarning($"CraftingStation: Crafting minigame reported failure or was aborted. Not consuming items or producing output. Returning to Inputting state.", this);
                 // If the minigame failed or was aborted, return to the input state without completing the craft
                 SetState(CraftingState.Inputting);
-                // Optionally, show a message to the player about the failure
-                // if (uiHandler != null) uiHandler.ShowMessage("Crafting Failed!");
             }
 
             // Clear the matched recipe and batches NOW, after execution or failure handling
             // This happens regardless of success or failure, preventing leftover state.
             currentMatchedRecipe = null;
             maxCraftableBatches = 0;
-             // Button interactability is handled by UI handler based on state (will be off in Outputting/Inputting)
         }
 
         // --- Inventory Event Handling ---
@@ -397,9 +363,7 @@ namespace Systems.Inventory
              }
         }
 
-
         // --- Recipe Matching Logic ---
-
         private void CheckForRecipeMatch()
         {
             // Only check in the Inputting state
@@ -434,7 +398,7 @@ namespace Systems.Inventory
             }
 
             // --- Delegate recipe matching to the external helper ---
-            RecipeMatchResult matchResult = CraftingMatcher.FindRecipeMatch(craftingRecipes, allInputItems); // Assuming CraftingMatcher exists
+            RecipeMatchResult matchResult = CraftingMatcher.FindRecipeMatch(craftingRecipes, allInputItems);
 
             currentMatchedRecipe = matchResult.MatchedRecipe;
             maxCraftableBatches = matchResult.MaxCraftableBatches;
@@ -474,14 +438,12 @@ namespace Systems.Inventory
 
             // Proceed with starting the crafting state, which will trigger the minigame
             SetState(CraftingState.Crafting);
-            // The minigame will be started by HandleStateEntry(CraftingState.Crafting)
         }
 
         /// <summary>
         /// Performs the actual item consumption and creation for the calculated batches.
         /// Delegates the core logic to CraftingExecutor.
         /// Called by HandleCraftingMinigameCompleted after the minigame is finished and successful.
-        /// --- MODIFIED: Made private again and takes recipe/batches as parameters ---
         /// </summary>
         private void CompleteCraft(CraftingRecipe recipeToCraft, int batchesToCraft)
         {
@@ -494,7 +456,7 @@ namespace Systems.Inventory
             }
 
             // --- Delegate craft execution to the external helper ---
-            bool executionSuccess = CraftingExecutor.ExecuteCraft( // Assuming CraftingExecutor exists
+            bool executionSuccess = CraftingExecutor.ExecuteCraft(
                 currentMatchedRecipe,
                 maxCraftableBatches,
                 primaryInputInventory,
@@ -510,8 +472,6 @@ namespace Systems.Inventory
             {
                 Debug.Log($"CraftingStation ({gameObject.name}): Craft execution successful.");
             }
-
-            // State transition to Outputting is handled by HandleCraftingMinigameCompleted AFTER calling this method.
         }
 
         /// <summary>

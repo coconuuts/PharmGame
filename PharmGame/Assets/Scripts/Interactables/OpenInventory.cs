@@ -1,6 +1,6 @@
 using UnityEngine;
 using InventoryClass = Systems.Inventory.Inventory; // Use the alias
-using Systems.Interaction; // ADD THIS USING
+using Systems.Interaction; 
 
 // Ensure this script is on the same GameObject as the Collider that the PlayerInteractionManager hits
 public class OpenInventory : MonoBehaviour, IInteractable
@@ -13,6 +13,10 @@ public class OpenInventory : MonoBehaviour, IInteractable
 
     [Tooltip("The text to display in the interaction prompt.")]
     [SerializeField] private string interactionPrompt = "Open Inventory (E)"; // Default prompt
+    
+    [Header("Prompt Settings")] // Assuming prompt settings are common, move these up if needed
+    public Vector3 inventoryTextPromptOffset = Vector3.zero; 
+    public Vector3 inventoryTextPromptRotationOffset = Vector3.zero;
 
     public string InteractionPrompt => interactionPrompt;
 
@@ -69,9 +73,6 @@ public class OpenInventory : MonoBehaviour, IInteractable
         // --- Create and return the response ---
         // The PlayerInteractionManager will receive this and pass it to the MenuManager
         return new OpenInventoryResponse(inventoryComponent, inventoryUIRoot);
-        // --------------------------------------
-
-        // Removed: Direct call to MenuManager.Instance.OpenInventory(inventoryComponent, inventoryUIRoot);
     }
 
     // --- Optional: Add validation in editor ---
@@ -87,10 +88,4 @@ public class OpenInventory : MonoBehaviour, IInteractable
              Debug.LogWarning($"OpenInventory ({gameObject.name}): Assigned Inventory Component GameObject '{inventoryComponent.gameObject.name}' does not have a Combiner component. Are you sure this is the correct GameObject?", this);
          }
     }
-
-    // Assuming computerTextPromptOffset and computerTextPromptRotationOffset are defined elsewhere or were a copy-paste error.
-    // If they are specific to the computer, remove them from OpenInventory or handle them generically.
-     [Header("Prompt Settings")] // Assuming prompt settings are common, move these up if needed
-     public Vector3 inventoryTextPromptOffset = Vector3.zero; // Consider renaming or removing
-     public Vector3 inventoryTextPromptRotationOffset = Vector3.zero; // Consider renaming or removing
 }

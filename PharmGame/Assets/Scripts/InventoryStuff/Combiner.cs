@@ -19,7 +19,6 @@ namespace Systems.Inventory
         /// <summary>
         /// Provides access to the FlexibleGridLayout component.
         /// </summary>
-        // **ADD THIS PUBLIC PROPERTY**
         public FlexibleGridLayout FlexibleGridLayoutComponent => flexibleGridLayout;
 
         private ObservableArray<Item> inventoryState;
@@ -72,20 +71,22 @@ namespace Systems.Inventory
             // TODO: Add logic here later for loading saved inventory state if applicable
         }
 
-/// <summary>
+        /// <summary>
         /// Attempts to add a pre-created item instance to the inventory.
         /// Prioritizes stacking with existing compatible stacks before finding an empty slot
         /// and creating new stacks if the quantity exceeds maxStack.
         /// Only adds to physical slots (excluding the ghost slot).
+        /// Handles stackable items by quantity and non-stackable items by placing the instance.
         /// </summary>
         /// <param name="itemToAdd">The Item instance to add (its quantity will be reduced as it's added).</param>
         /// <returns>True if the item was fully added (either stacked or placed in empty slot/new stacks), false otherwise (inventory full).</returns>
         public bool AddItem(Item itemToAdd)
         {
             // Basic validation
-            if (itemToAdd == null || itemToAdd.details == null || itemToAdd.quantity <= 0)
+            if (itemToAdd == null || itemToAdd.details == null || (itemToAdd.details.maxStack > 1 && itemToAdd.quantity <= 0) || (itemToAdd.details.maxStack == 1 && itemToAdd.health <= 0 && itemToAdd.details.maxHealth > 0))
             {
-                Debug.LogWarning($"Combiner ({gameObject.name}): Attempted to add a null, detail-less, or zero/negative quantity item.");
+                 // Check quantity for stackable, or health for durable non-stackable
+                Debug.LogWarning($"Combiner ({gameObject.name}): Attempted to add a null, detail-less, or zero/negative quantity/health item. Item: {itemToAdd?.details?.Name ?? "NULL"}, Qty: {itemToAdd?.quantity ?? 0}, Health: {itemToAdd?.health ?? 0}, MaxStack: {itemToAdd?.details?.maxStack ?? 0}, MaxHealth: {itemToAdd?.details?.maxHealth ?? 0}");
                 return false;
             }
 
@@ -95,9 +96,9 @@ namespace Systems.Inventory
                 return false; // Item type not allowed, reject addition
             }
 
-            int quantityRemaining = itemToAdd.quantity; // Use a variable to track quantity being added
+            int quantityRemaining = itemToAdd.quantity; // Use a variable to track quantity being added (only relevant for stackables)
 
-            // --- Phase 1: Attempt to stack with existing items ---
+            // --- Attempt to stack with existing items ---
             // Only attempt stacking if the item type is stackable (maxStack > 1)
             if (itemToAdd.details.maxStack > 1)
             {
@@ -144,58 +145,76 @@ namespace Systems.Inventory
                 // If the loop finishes and quantityRemaining is still > 0, it means the remaining quantity
                 // could not be fully stacked into existing stacks.
             }
+            // Note: If itemToAdd is non-stackable (maxStack == 1), the above 'if' is false,
+            // and quantityRemaining starts at 1. The logic proceeds directly below.
 
-            // --- Phase 2: If remaining quantity > 0, find empty slots and create new stacks ---
+
+            // --- If remaining quantity > 0 (for stackables) OR it's a non-stackable item (quantityRemaining is 1) ---
+            // This condition correctly covers both cases.
             if (quantityRemaining > 0)
             {
-                 Debug.Log($"Combiner ({gameObject.name}): Remaining quantity ({quantityRemaining}) or not stackable. Searching for empty slot(s).");
+                 Debug.Log($"Combiner ({gameObject.name}): Remaining quantity ({quantityRemaining}) or non-stackable item. Searching for empty slot(s).");
                 // Iterate through physical slots to find an empty one
                 for (int i = 0; i < PhysicalSlotCount; i++)
                 {
                     // Check if the slot is empty
                     if (inventoryState[i] == null)
                     {
-                         // Calculate how much of the remaining quantity can fit into a new stack
-                         int quantityForNewStack = itemToAdd.details.maxStack > 1 ?
+                         // Calculate how much of the remaining quantity can fit into a new stack (for stackables)
+                         // or confirm it's just 1 for non-stackables.
+                         int quantityForThisSlot = itemToAdd.details.maxStack > 1 ?
                                                    Mathf.Min(quantityRemaining, itemToAdd.details.maxStack) : // If stackable, add up to maxStack
-                                                   quantityRemaining; // If not stackable, add the whole remaining quantity (should be 1 if not stackable)
+                                                   quantityRemaining; // If not stackable, this will be 1
 
-                         if (quantityForNewStack > 0)
+                         if (quantityForThisSlot > 0) // Should always be true here if quantityRemaining > 0
                          {
-                             // Create a NEW Item instance for this stack with the calculated quantity
-                             Item newStackItem = itemToAdd.details.Create(quantityForNewStack);
+                             Item itemToPlace;
+                             if (itemToAdd.details.maxStack > 1)
+                             {
+                                 // For stackable items, create a NEW instance with the partial quantity.
+                                 // The original itemToAdd instance's quantity is reduced below.
+                                 itemToPlace = itemToAdd.details.Create(quantityForThisSlot);
+                             }
+                             else // itemToAdd.details.maxStack == 1 (non-stackable)
+                             {
+                                 // For non-stackable items, place the ORIGINAL itemToAdd instance.
+                                 // Its quantity is already 1 (set in the constructor), and its health is set.
+                                 // We are placing the specific instance that was passed in.
+                                 itemToPlace = itemToAdd;
+                                 // quantityForThisSlot will be 1 in this case.
+                             }
 
-                             // Add this new item instance to the empty slot
-                             inventoryState.SetItemAtIndex(newStackItem, i); // Triggers SlotUpdated
+                             // Add this item instance to the empty slot
+                             inventoryState.SetItemAtIndex(itemToPlace, i); // Triggers SlotUpdated
 
-                             // Reduce the quantity remaining to be added
-                             quantityRemaining -= quantityForNewStack;
+                             // Reduce the quantity remaining to be added from the *original* itemToAdd instance
+                             quantityRemaining -= quantityForThisSlot; // This correctly reduces by quantityForThisSlot (1 for non-stackable)
 
-                             Debug.Log($"Combiner ({gameObject.name}): Added new stack of {quantityForNewStack} of {itemToAdd.details.Name} to empty physical slot {i}. Remaining to add: {quantityRemaining}.");
+                             Debug.Log($"Combiner ({gameObject.name}): Added {(itemToAdd.details.maxStack > 1 ? quantityForThisSlot.ToString() + " of " : "")}{itemToAdd.details.Name} to empty physical slot {i}. Remaining to add: {quantityRemaining}.");
 
                              // If the remaining quantity is now 0 or less, we are done adding the item
                              if (quantityRemaining <= 0)
                              {
-                                 Debug.Log($"Combiner ({gameObject.name}): Item fully added into new stack(s).");
-                                 itemToAdd.quantity = 0; // Explicitly set original item's quantity to 0
-                                 return true; // Item successfully added (to empty slot(s))
+                                 Debug.Log($"Combiner ({gameObject.name}): Item fully added into new slot(s).");
+                                 itemToAdd.quantity = 0; // Explicitly set original item's quantity to 0 (it was 1, now 0 for non-stackable)
+                                 return true; // Item successfully added
                              }
-                             // Else, continue the loop to find the next empty slot for the remaining quantity
+                             // Else, continue the loop to find the next empty slot for the remaining quantity (only relevant for stackable items adding multiple stacks)
                          }
                     }
                 }
 
-                // --- Phase 3: If no empty slot found and quantity still remains ---
+                // --- If no empty slot found and quantity still remains ---
                 // If we reach here, it means no empty physical slot was found for the remaining quantity.
                 Debug.LogWarning($"Combiner ({gameObject.name}): Failed to add item: {itemToAdd.details.Name}. All {PhysicalSlotCount} physical slots are full. Remaining quantity: {quantityRemaining}.");
-                 // Note: At this point, the original 'itemToAdd' still has 'quantityRemaining' left.
+                 // Note: At this point, the original 'itemToAdd' still has 'quantityRemaining' left (which is 1 for non-stackable if it failed to add).
                  // Depending on your Drag and Drop system, you might need to handle this remaining item (e.g., return it to the player's cursor).
                 itemToAdd.quantity = quantityRemaining; // Update the original item's quantity to reflect what wasn't added.
                 return false; // No empty slot found or item could not be fully added
             }
             else
             {
-                // This case is reached if the item was fully consumed by stacking in Phase 1.
+                // This case is reached if the item was fully consumed by stacking in (only possible for stackables).
                 Debug.Log($"Combiner ({gameObject.name}): AddItem finished, quantity remaining is 0 after stacking.");
                 itemToAdd.quantity = 0; // Ensure original item quantity is 0
                 return true; // Already fully stacked
@@ -234,6 +253,7 @@ namespace Systems.Inventory
         /// <summary>
         /// Attempts to remove a specific quantity of an item type from the inventory.
         /// Searches physical slots first, removing from stacks as needed.
+        /// This method is primarily for stackable items. Removing non-stackable items by quantity is less common.
         /// </summary>
         /// <param name="itemType">The ItemDetails of the type to remove.</param>
         /// <param name="quantityToRemove">The desired quantity to remove.</param>
@@ -259,30 +279,36 @@ namespace Systems.Inventory
                 Item itemInSlot = inventoryState[i]; // Get item instance
 
                 // Check if the slot has an item and it's the same type
+                // This method is primarily designed for stackable items.
+                // If it finds a non-stackable item of the same type, it will remove it if quantityToRemove is 1.
                 if (itemInSlot != null && itemInSlot.details != null && itemInSlot.details == itemType) // Use ItemDetails == operator
                 {
-                    // Determine how many to take from this stack
-                    int canTake = itemInSlot.quantity;
+                    // Determine how many to take from this stack/slot
+                    int canTake = itemInSlot.details.maxStack > 1 ? itemInSlot.quantity : 1; // Take quantity for stackable, 1 for non-stackable
                     int numToTake = Mathf.Min(quantityToRemove - quantityRemoved, canTake);
 
                     if (numToTake > 0)
                     {
-                        itemInSlot.quantity -= numToTake; // Reduce quantity
+                        // For stackable items, reduce quantity
+                        if (itemInSlot.details.maxStack > 1)
+                        {
+                             itemInSlot.quantity -= numToTake; // Reduce quantity
+                        }
+                        // For non-stackable items, numToTake will be 1, and we'll remove the whole item instance below.
+                        // No quantity reduction needed on the instance itself as quantity is fixed at 1.
+
                         quantityRemoved += numToTake; // Track total removed
 
-                        if (itemInSlot.quantity <= 0)
+                        // If stackable quantity <= 0 OR it's a non-stackable item (numToTake was 1)
+                        if ((itemInSlot.details.maxStack > 1 && itemInSlot.quantity <= 0) || itemInSlot.details.maxStack == 1)
                         {
                             // If stack is depleted, remove the item instance completely from the slot
                             inventoryState.RemoveAt(i); // Use RemoveAt which triggers event
-                             Debug.Log($"Combiner ({gameObject.name}): Removed stack of {itemType.Name} from slot {i} (depleted).");
+                             Debug.Log($"Combiner ({gameObject.name}): Removed {(itemInSlot.details.maxStack > 1 ? "stack" : "item instance")} of {itemType.Name} from slot {i} (depleted/removed).");
                         }
-                        else
+                        else if (itemInSlot.details.maxStack > 1) // Only update slot if stackable quantity was reduced but not depleted
                         {
-                            // If stack is just reduced, update the slot to trigger UI update
-                            // We can call SetItemAtIndex with the *same* item instance;
-                            // the ObservableArray's SetItemAtIndex triggers SlotUpdated,
-                            // and Visualizer.HandleInventoryChange for SlotUpdated will call
-                            // InventorySlotUI.SetItem, updating the quantity text.
+                            // If stackable quantity is just reduced, update the slot to trigger UI update
                             inventoryState.SetItemAtIndex(itemInSlot, i);
                              Debug.Log($"Combiner ({gameObject.name}): Reduced stack of {itemType.Name} in slot {i} by {numToTake}. Remaining: {itemInSlot.quantity}.");
                         }

@@ -116,7 +116,7 @@ namespace Game.NPC.States // Place alongside other active states
                  {
                       // If not at the front, rotate towards the spot in front of them (index - 1)
                       // Need a method in PrescriptionManager to get a queue point by index
-                      // Let's add GetPrescriptionQueuePoint(int index) in Phase 4.
+                      // Let's add GetPrescriptionQueuePoint(int index)
                       // For now, use a placeholder or assume the list is accessible (less ideal).
                       // Assuming PrescriptionManager will have GetPrescriptionQueuePoint(int index)
                       targetRotationTransform = prescriptionManager.GetPrescriptionQueuePoint(context.AssignedQueueSpotIndex - 1); // Use manager method
@@ -162,14 +162,12 @@ namespace Game.NPC.States // Place alongside other active states
              {
                   Debug.LogWarning($"{context.NpcObject.name}: Queue spot index not set when exiting {name} state! Cannot publish QueueSpotFreedEvent.", context.NpcObject);
              }
-            // --- END NEW LOGIC ---
 
             // --- Clear assigned queue spot index and type on the QueueHandler ---
             // This is handled by NpcQueueHandler.Reset() called from Runner.ResetRunnerTransientData
             // when the NPC is pooled/deactivated. If the NPC transitions to another state *without* pooling,
             // the QueueHandler's state should be reset by the handler itself or the Runner's reset logic.
             context.QueueHandler?.ClearQueueAssignment(); // Use the ClearQueueAssignment method on the handler
-            // --- END NEW LOGIC ---
         }
     }
 }

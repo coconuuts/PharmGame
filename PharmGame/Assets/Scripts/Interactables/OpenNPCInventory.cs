@@ -1,5 +1,5 @@
 using UnityEngine;
-using InventoryClass = Systems.Inventory.Inventory; // Use the alias
+using InventoryClass = Systems.Inventory.Inventory;
 using Systems.Interaction; // ADD THIS USING
 
 // Ensure this script is on the same GameObject as the Collider that the PlayerInteractionManager hits
@@ -9,7 +9,7 @@ public class OpenNPCInventory : MonoBehaviour, IInteractable
     [SerializeField] private GameObject inventoryUIRoot;
 
     [Tooltip("The Inventory component associated with this interactable object.")]
-    [SerializeField] private InventoryClass inventoryComponent; // Use the alias
+    [SerializeField] private InventoryClass inventoryComponent; 
     private string interactionPrompt;
     public string InteractionPrompt => interactionPrompt;
     
@@ -54,20 +54,17 @@ public class OpenNPCInventory : MonoBehaviour, IInteractable
         if (inventoryUIRoot == null)
         {
             Debug.LogError($"OpenInventory ({gameObject.name}): Inventory UI Root GameObject is not assigned! Cannot create response.", this);
-            return null; // Return null response on error
+            return null; 
         }
          if (inventoryComponent == null)
          {
              Debug.LogError($"OpenInventory ({gameObject.name}): Inventory Component is not assigned! Cannot create response.", this);
-             return null; // Return null response on error
+             return null;
          }
 
         // --- Create and return the response ---
         // The PlayerInteractionManager will receive this and pass it to the MenuManager
         return new OpenInventoryResponse(inventoryComponent, inventoryUIRoot);
-        // --------------------------------------
-
-        // Removed: Direct call to MenuManager.Instance.OpenInventory(inventoryComponent, inventoryUIRoot);
     }
 
     // --- Optional: Add validation in editor ---

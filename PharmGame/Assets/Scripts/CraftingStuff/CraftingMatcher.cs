@@ -28,7 +28,7 @@ namespace Systems.Inventory
             if (availableInputItems == null || availableInputItems.Count == 0)
             {
                 // No items means no possible match
-                 return RecipeMatchResult.NoMatch();
+                return RecipeMatchResult.NoMatch();
             }
 
             foreach (var recipe in allRecipes.recipes)
@@ -57,7 +57,6 @@ namespace Systems.Inventory
 
                 if (!typesMatchExactly)
                 {
-                    // Debug.Log($"Checking recipe '{recipe.recipeName}': Item types do not match exactly."); // Verbose
                     continue; // Item types don't match this recipe, skip
                 }
 
@@ -91,7 +90,6 @@ namespace Systems.Inventory
                     if (totalInputQuantity < requiredInput.quantity)
                     {
                         canCraftAtLeastOne = false;
-                        // Debug.Log($"Checking recipe '{recipe.recipeName}': Not enough quantity for {requiredInput.itemDetails.Name} (needed {requiredInput.quantity}, found {totalInputQuantity})."); // Verbose
                         break; // Not enough quantity for this ingredient, cannot craft this recipe at all
                     }
 
@@ -106,7 +104,6 @@ namespace Systems.Inventory
                 if (canCraftAtLeastOne && potentialBatches >= 1)
                 {
                     // Found a match!
-                    // Debug.Log($"CraftingMatcher: Found match for recipe '{recipe.recipeName}' with {potentialBatches} potential batches."); // Verbose
                     return new RecipeMatchResult(recipe, potentialBatches);
                 }
             }

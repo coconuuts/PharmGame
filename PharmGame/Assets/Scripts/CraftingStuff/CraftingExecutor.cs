@@ -1,4 +1,3 @@
-// systems/inventory/CraftingExecutor.cs (or similar path)
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -56,7 +55,7 @@ namespace Systems.Inventory
                 }
 
                 int totalQuantityToConsume = requiredInput.quantity * batchesToCraft;
-                Debug.Log($"CraftingExecutor: Attempting to consume {totalQuantityToConsume} of {requiredInput.itemDetails.Name}.", primaryInputInventory.gameObject); // Log from primary inventory's game object
+                Debug.Log($"CraftingExecutor: Attempting to consume {totalQuantityToConsume} of {requiredInput.itemDetails.Name}.", primaryInputInventory.gameObject); 
 
                 int removedFromPrimary = 0;
                 if (primaryInputInventory.Combiner != null)
@@ -119,15 +118,12 @@ namespace Systems.Inventory
                 if (!added)
                 {
                     Debug.LogError($"CraftingExecutor: Failed to add output item '{producedOutput.itemDetails.Name}' (Qty: {totalQuantityToProduce}) to output inventory. Output inventory might be full!");
-                    // TODO: Handle this failure. Drop item? Place in player inventory?
-                    // Crafting still succeeds conceptually, but items couldn't be placed.
                 }
                  else
                  {
                       Debug.Log($"CraftingExecutor: Produced and added {totalQuantityToProduce} of {producedOutput.itemDetails.Name} to output inventory.");
                  }
             }
-
             // If we attempted to produce outputs, craft execution is conceptually complete from the executor's perspective.
             // The calling code (CraftingStation) will handle the state transition based on consumption success.
             return consumptionSuccess; // Return whether input consumption succeeded

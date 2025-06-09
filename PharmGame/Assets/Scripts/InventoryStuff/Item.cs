@@ -5,7 +5,7 @@ using UnityEngine;
 namespace Systems.Inventory
 {
     /// <summary>
-    /// Represents a specific instance of an item in the inventory with a quantity.
+    /// Represents a specific instance of an item in the inventory with a quantity and health/durability.
     /// Implements IEquatable for comparing item instances based on their unique instance Id.
     /// </summary>
     [Serializable]
@@ -17,19 +17,53 @@ namespace Systems.Inventory
         // Reference to the ItemDetails ScriptableObject defining the item type.
         public ItemDetails details;
 
-        // The current quantity of this item instance.
+        // The current quantity of this item instance (relevant for stackable items).
         public int quantity;
+
+        // The current health or durability of this item instance (relevant for non-stackable items with maxHealth > 0).
+        public int health;
+
+        // Counter for usage events since the last health reduction (relevant for DelayedHealthReduction logic).
+        public int usageEventsSinceLastLoss; // NEW FIELD
 
         // Constructor
         public Item(ItemDetails details, int quantity = 1)
         {
             if (details == null)
             {
-                 Debug.LogError("Attempted to create an Item instance with null ItemDetails."); // Added error check
+                 Debug.LogError("Attempted to create an Item instance with null ItemDetails.");
+                 // Initialize with default/empty state if details are null
+                 Id = SerializableGuid.Empty;
+                 this.details = null;
+                 this.quantity = 0;
+                 this.health = 0;
+                 this.usageEventsSinceLastLoss = 0; // Initialize new field
+                 return; // Exit constructor early
             }
+
             Id = SerializableGuid.NewGuid(); // Unique ID for THIS instance
             this.details = details;
-            this.quantity = Mathf.Max(0, quantity); // Ensure quantity is not negative
+
+            // --- Initialize quantity and health based on maxStack/maxHealth ---
+            if (details.maxStack > 1)
+            {
+                // This is a stackable item
+                this.quantity = Mathf.Max(1, quantity); // Ensure quantity is at least 1 if creating
+                this.health = 0; // Health is not used for stackable items
+            }
+            else // maxStack is 1 (non-stackable)
+            {
+                this.quantity = 1; // Quantity is always 1 for non-stackable items
+                // Health is used if maxHealth > 0
+                this.health = Mathf.Max(0, details.maxHealth); // Initialize health from details, ensure non-negative
+            }
+            // --- End Initialization Logic ---
+
+            // --- Initialize new field ---
+            this.usageEventsSinceLastLoss = 0;
+            // --- End Initialization ---
+
+            // Debug.Log($"Created Item instance: ID={Id}, Details='{details?.Name ?? "NULL"}', Qty={this.quantity}, Health={this.health}, MaxStack={details?.maxStack ?? 0}, MaxHealth={details?.maxHealth ?? 0}"); // Optional debug log
         }
 
         // --- Equality Implementation (Based on Instance Id) ---
@@ -115,10 +149,9 @@ namespace Systems.Inventory
             // Must have valid details to compare types
             if (details == null || otherItem.details == null)
             {
-                 // Decide how to handle null details - perhaps never same type?
-                 // Or maybe if both are null, they are the "same null type"?
-                 // Comparing IDs is safer.
-                 return details?.Id == otherItem.details?.Id; // Compare ItemDetails IDs, handles null details safely if SerializableGuid == null is defined
+                 // If both details are null, they are considered the same type (the "null" type)
+                 // Otherwise, if one is null and the other isn't, they are different types.
+                 return details == otherItem.details; // This relies on the ItemDetails == operator handling nulls
             }
             // Use the ItemDetails equality operator (which compares ItemDetails.Id)
             return details == otherItem.details;

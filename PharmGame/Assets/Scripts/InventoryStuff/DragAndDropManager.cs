@@ -20,12 +20,12 @@ namespace Systems.Inventory
         [SerializeField] private Image ghostItemImage; // Assign your ghost visual UI Image here
 
         [Tooltip("The Text or TextMeshPro component for the quantity on the ghost visual.")]
-        [SerializeField] private TextMeshProUGUI ghostQuantityText; // ADD THIS FIELD (Change to Text if not using TextMeshPro)
+        [SerializeField] private TextMeshProUGUI ghostQuantityText;
 
-        // --- NEW: Flag to indicate if a drag operation is currently in progress ---
+        // --- Flag to indicate if a drag operation is currently in progress ---
         public bool IsDragging { get; private set; } = false;
 
-        // --- NEW: Event broadcast when the drag state changes ---
+        // --- Event broadcast when the drag state changes ---
         public event Action<bool> OnDragStateChanged;
 
 
@@ -40,10 +40,10 @@ namespace Systems.Inventory
 
         public static void RegisterInventory(Inventory inventory)
         {
-             if (!allInventories.Contains(inventory))
-             {
-                 allInventories.Add(inventory);
-             }
+            if (!allInventories.Contains(inventory))
+            {
+                allInventories.Add(inventory);
+            }
         }
 
         public static void UnregisterInventory(Inventory inventory)
@@ -78,20 +78,20 @@ namespace Systems.Inventory
             }
             else
             {
-                 Debug.LogError("DragAndDropManager: Ghost Item Image is not assigned!", this);
-                 enabled = false;
-                 return;
+                Debug.LogError("DragAndDropManager: Ghost Item Image is not assigned!", this);
+                enabled = false;
+                return;
             }
 
-             // Ensure the ghost quantity text is initially hidden
-             if (ghostQuantityText != null)
-             {
-                 ghostQuantityText.gameObject.SetActive(false);
-             }
-             else
-             {
-                  Debug.LogWarning("DragAndDropManager: Ghost Quantity Text is not assigned. Quantity will not be displayed during drag.", this);
-             }
+            // Ensure the ghost quantity text is initially hidden
+            if (ghostQuantityText != null)
+            {
+                ghostQuantityText.gameObject.SetActive(false);
+            }
+            else
+            {
+                Debug.LogWarning("DragAndDropManager: Ghost Quantity Text is not assigned. Quantity will not be displayed during drag.", this);
+            }
         }
 
         private void OnDestroy()
@@ -101,15 +101,13 @@ namespace Systems.Inventory
                 Instance = null;
             }
 
-            // --- NEW: Ensure state is reset and event is potentially invoked on destruction ---
+            // --- Ensure state is reset and event is potentially invoked on destruction ---
             if (IsDragging)
             {
                 IsDragging = false;
                 OnDragStateChanged?.Invoke(false);
             }
-             // -----------------------------------------------------------------------------
         }
-
 
         /// <summary>
         /// Called by an InventorySlotUI when a pointer is pressed down.
@@ -121,16 +119,16 @@ namespace Systems.Inventory
 
             if (slotUI.ParentInventory == null || slotUI.SlotIndex < 0 || slotUI.SlotIndex >= slotUI.ParentInventory.Combiner.PhysicalSlotCount)
             {
-                 Debug.LogError($"DragAndDropManager: StartDrag called with invalid slotUI parent inventory or index ({slotUI.SlotIndex}).", slotUI.gameObject);
-                 return;
+                Debug.LogError($"DragAndDropManager: StartDrag called with invalid slotUI parent inventory or index ({slotUI.SlotIndex}).", slotUI.gameObject);
+                return;
             }
 
             ObservableArray<Item> sourceObservableArray = slotUI.ParentInventory.InventoryState;
 
             if (sourceObservableArray == null)
             {
-                 Debug.LogError($"DragAndDropManager: Source inventory {slotUI.ParentInventory.Id} has a null ObservableArray.", slotUI.ParentInventory.gameObject);
-                 return;
+                Debug.LogError($"DragAndDropManager: Source inventory {slotUI.ParentInventory.Id} has a null ObservableArray.", slotUI.ParentInventory.gameObject);
+                return;
             }
 
             Item itemInSlot = sourceObservableArray[slotUI.SlotIndex];
@@ -142,11 +140,10 @@ namespace Systems.Inventory
                 sourceInventory = slotUI.ParentInventory;
                 sourceSlotIndex = slotUI.SlotIndex;
 
-                // --- NEW: Set dragging flag and broadcast event ---
+                // --- Set dragging flag and broadcast event ---
                 IsDragging = true;
                 OnDragStateChanged?.Invoke(true);
                 Debug.Log("DragAndDropManager: Drag started. Broadcasted OnDragStateChanged(true).");
-                // -------------------------------------------------
 
                 // Visually represent the item being dragged
                 if (ghostItemImage != null && itemBeingDragged.details != null && itemBeingDragged.details.Icon != null)
@@ -155,40 +152,39 @@ namespace Systems.Inventory
                     ghostItemImage.transform.position = eventData.position;
                     ghostItemImage.gameObject.SetActive(true);
 
-                     // --- Update Ghost Quantity Text ---
-                     if (ghostQuantityText != null)
-                     {
-                          // Only show quantity if maxStack > 1 and quantity > 1
-                          if (itemBeingDragged.details.maxStack > 1 && itemBeingDragged.quantity > 1)
-                          {
-                              ghostQuantityText.text = itemBeingDragged.quantity.ToString();
-                              ghostQuantityText.gameObject.SetActive(true);
-                          }
-                          else
-                          {
-                              // Hide quantity text if not applicable
-                              ghostQuantityText.text = ""; // Clear text
-                              ghostQuantityText.gameObject.SetActive(false);
-                          }
-                     }
+                    // --- Update Ghost Quantity Text ---
+                    if (ghostQuantityText != null)
+                    {
+                        // Only show quantity if maxStack > 1 and quantity > 1
+                        if (itemBeingDragged.details.maxStack > 1 && itemBeingDragged.quantity > 1)
+                        {
+                            ghostQuantityText.text = itemBeingDragged.quantity.ToString();
+                            ghostQuantityText.gameObject.SetActive(true);
+                        }
+                        else
+                        {
+                            // Hide quantity text if not applicable
+                            ghostQuantityText.text = ""; // Clear text
+                            ghostQuantityText.gameObject.SetActive(false);
+                        }
+                    }
 
-                     // --- CONCEPTUAL MOVE TO SOURCE GHOST SLOT & CLEAR ORIGINAL SLOT ---
-                     // Clear the original slot in the source inventory's data
-                     sourceObservableArray.SetItemAtIndex(null, sourceSlotIndex);
-                     // Move the item instance to the source inventory's ghost data slot
-                      sourceObservableArray.SetItemAtIndex(itemBeingDragged, sourceObservableArray.Length - 1); // Length-1 is the ghost slot index
+                    // --- CONCEPTUAL MOVE TO SOURCE GHOST SLOT & CLEAR ORIGINAL SLOT ---
+                    // Clear the original slot in the source inventory's data
+                    sourceObservableArray.SetItemAtIndex(null, sourceSlotIndex);
+                    // Move the item instance to the source inventory's ghost data slot
+                    sourceObservableArray.SetItemAtIndex(itemBeingDragged, sourceObservableArray.Length - 1); // Length-1 is the ghost slot index
 
                 }
                 else
                 {
                     Debug.LogError("DragAndDropManager: Ghost item visual setup failed (Image or ItemDetails/Icon missing).", this);
-                    // --- NEW: Reset drag state if visual setup fails ---
+                    // --- Reset drag state if visual setup fails ---
                     itemBeingDragged = null;
                     sourceInventory = null;
                     sourceSlotIndex = -1;
                     IsDragging = false; // Reset flag immediately
                     OnDragStateChanged?.Invoke(false); // Broadcast state change
-                    // -----------------------------------------------------
                 }
             }
             else
@@ -203,100 +199,100 @@ namespace Systems.Inventory
         /// </summary>
         public void Drag(PointerEventData eventData)
         {
-             if (itemBeingDragged != null && ghostItemImage != null)
+            if (itemBeingDragged != null && ghostItemImage != null)
             {
-                 ghostItemImage.transform.position = eventData.position;
-                  // Keep the quantity text in sync with the image's position
-                  if(ghostQuantityText != null)
-                  {
-                       ghostQuantityText.transform.position = eventData.position; // Assumes they are siblings or parented correctly
-                  }
+                ghostItemImage.transform.position = eventData.position;
+                // Keep the quantity text in sync with the image's position
+                if (ghostQuantityText != null)
+                {
+                    ghostQuantityText.transform.position = eventData.position; // Assumes they are siblings or parented correctly
+                }
             }
         }
 
-public void EndDrag(PointerEventData eventData)
-{
-    if (itemBeingDragged == null) return;
-
-    // Hide the ghost visual immediately
-    if (ghostItemImage != null) ghostItemImage.gameObject.SetActive(false);
-    if (ghostQuantityText != null) ghostQuantityText.gameObject.SetActive(false); // Hide quantity too
-
-    InventorySlotUI targetSlotUI = FindTargetSlot(eventData.position);
-    bool dropSuccessfullyProcessed = false; // Flag to know if item ended up in a valid target or was returned
-
-    if (targetSlotUI != null && targetSlotUI.ParentInventory != null)
-    {
-        Inventory targetInventory = targetSlotUI.ParentInventory;
-        int targetSlotIndex = targetSlotUI.SlotIndex;
-
-        // Ensure target index is within the physical slot range of the target inventory
-        if (targetSlotIndex >= 0 && targetSlotIndex < targetInventory.Combiner.PhysicalSlotCount)
+        public void EndDrag(PointerEventData eventData)
         {
-            // --- Item Label Filtering Check ---
-            if (!targetInventory.CanAddItem(itemBeingDragged)) // Simplified check assuming targetInventory is not null here
-            {
-                ReturnItemToSource(); // Item returned to its original spot
-                dropSuccessfullyProcessed = true;
-                PlayerUIPopups.Instance.SetInvalidItemActive(true);
-            }
-            else
-            {
-                // Filtering check passed, proceed with drop logic on target
-                ObservableArray<Item> targetObservableArray = targetInventory.InventoryState;
+            if (itemBeingDragged == null) return;
 
-                if (targetObservableArray != null)
+            // Hide the ghost visual immediately
+            if (ghostItemImage != null) ghostItemImage.gameObject.SetActive(false);
+            if (ghostQuantityText != null) ghostQuantityText.gameObject.SetActive(false); // Hide quantity too
+
+            InventorySlotUI targetSlotUI = FindTargetSlot(eventData.position);
+            bool dropSuccessfullyProcessed = false; // Flag to know if item ended up in a valid target or was returned
+
+            if (targetSlotUI != null && targetSlotUI.ParentInventory != null)
+            {
+                Inventory targetInventory = targetSlotUI.ParentInventory;
+                int targetSlotIndex = targetSlotUI.SlotIndex;
+
+                // Ensure target index is within the physical slot range of the target inventory
+                if (targetSlotIndex >= 0 && targetSlotIndex < targetInventory.Combiner.PhysicalSlotCount)
                 {
-                    Debug.Log($"DragAndDropManager: Item '{itemBeingDragged.details?.Name ?? "Unknown"}' allowed in target inventory '{targetInventory.Id}'. Proceeding with HandleDrop.");
-                    targetObservableArray.HandleDrop(itemBeingDragged, targetSlotIndex, sourceInventory.InventoryState, sourceSlotIndex);
-                    dropSuccessfullyProcessed = true;
+                    // --- Item Label Filtering Check ---
+                    if (!targetInventory.CanAddItem(itemBeingDragged)) // Simplified check assuming targetInventory is not null here
+                    {
+                        ReturnItemToSource(); // Item returned to its original spot
+                        dropSuccessfullyProcessed = true;
+                        PlayerUIPopups.Instance.SetInvalidItemActive(true);
+                    }
+                    else
+                    {
+                        // Filtering check passed, proceed with drop logic on target
+                        ObservableArray<Item> targetObservableArray = targetInventory.InventoryState;
+
+                        if (targetObservableArray != null)
+                        {
+                            Debug.Log($"DragAndDropManager: Item '{itemBeingDragged.details?.Name ?? "Unknown"}' allowed in target inventory '{targetInventory.Id}'. Proceeding with HandleDrop.");
+                            targetObservableArray.HandleDrop(itemBeingDragged, targetSlotIndex, sourceInventory.InventoryState, sourceSlotIndex);
+                            dropSuccessfullyProcessed = true;
+                        }
+                        else
+                        {
+                            Debug.LogError($"DragAndDropManager: Target inventory {targetInventory.Id} has a null ObservableArray. Cannot handle drop.", targetInventory.gameObject);
+                            // Drop not successfully handled by target
+                        }
+                    }
                 }
                 else
                 {
-                    Debug.LogError($"DragAndDropManager: Target inventory {targetInventory.Id} has a null ObservableArray. Cannot handle drop.", targetInventory.gameObject);
-                    // Drop not successfully handled by target
+                    // Dropped over a valid inventory's UI element, but not a physical slot index
+                    Debug.Log($"DragAndDropManager: Drop detected over target inventory '{targetInventory.Id}' but outside valid physical slots ({targetInventory.Combiner.PhysicalSlotCount}). Target Index: {targetSlotIndex}. Returning item to source.");
+                    ReturnItemToSource();
+                    dropSuccessfullyProcessed = true;
                 }
             }
+            // else: targetSlotUI was null (dropped outside any inventory UI) - handled below
+
+            // --- Handle cases where the drop was NOT successfully processed by a target slot ---
+            // This means targetSlotUI was null OR targetObservableArray was null
+            if (!dropSuccessfullyProcessed)
+            {
+                Debug.Log("DragAndDropManager: Drop target not found or invalid (e.g., dropped outside any slot). Returning item to source.");
+                ReturnItemToSource(); // Return the item to its source slot
+                dropSuccessfullyProcessed = true; // Ensure this path also flags as processed
+            }
+
+
+            // --- **** IMPORTANT: RESET DRAG STATE AND CLEANUP HERE **** ---
+            // Resetting these *before* potentially triggering completion events
+            // minimizes the window where a new drag could incorrectly start.
+            IsDragging = false;
+            OnDragStateChanged?.Invoke(false);
+            Debug.Log("DragAndDropManager: Drag ended. Broadcasted OnDragStateChanged(false).");
+
+            // Clean up drag state variables
+            itemBeingDragged = null;
+            sourceInventory = null;
+            sourceSlotIndex = -1;
+            // --- **** END RESET/CLEANUP **** ---
+
+
+            // Now trigger the completion event AFTER state is fully reset
+            OnDragDropCompleted?.Invoke();
+            Debug.Log($"DragAndDropManager: Drag/Drop transaction completed. Triggering OnDragDropCompleted event.");
+
         }
-        else
-        {
-            // Dropped over a valid inventory's UI element, but not a physical slot index
-            Debug.Log($"DragAndDropManager: Drop detected over target inventory '{targetInventory.Id}' but outside valid physical slots ({targetInventory.Combiner.PhysicalSlotCount}). Target Index: {targetSlotIndex}. Returning item to source.");
-            ReturnItemToSource();
-            dropSuccessfullyProcessed = true;
-        }
-    }
-    // else: targetSlotUI was null (dropped outside any inventory UI) - handled below
-
-    // --- Handle cases where the drop was NOT successfully processed by a target slot ---
-    // This means targetSlotUI was null OR targetObservableArray was null
-    if (!dropSuccessfullyProcessed)
-    {
-         Debug.Log("DragAndDropManager: Drop target not found or invalid (e.g., dropped outside any slot). Returning item to source.");
-         ReturnItemToSource(); // Return the item to its source slot
-         dropSuccessfullyProcessed = true; // Ensure this path also flags as processed
-    }
-
-
-    // --- **** IMPORTANT: RESET DRAG STATE AND CLEANUP HERE **** ---
-    // Resetting these *before* potentially triggering completion events
-    // minimizes the window where a new drag could incorrectly start.
-    IsDragging = false;
-    OnDragStateChanged?.Invoke(false);
-    Debug.Log("DragAndDropManager: Drag ended. Broadcasted OnDragStateChanged(false).");
-
-    // Clean up drag state variables
-    itemBeingDragged = null;
-    sourceInventory = null;
-    sourceSlotIndex = -1;
-    // --- **** END RESET/CLEANUP **** ---
-
-
-    // Now trigger the completion event AFTER state is fully reset
-    OnDragDropCompleted?.Invoke();
-    Debug.Log($"DragAndDropManager: Drag/Drop transaction completed. Triggering OnDragDropCompleted event.");
-
-}
 
 
         // Helper method to find the InventorySlotUI the pointer is currently over.
@@ -313,27 +309,27 @@ public void EndDrag(PointerEventData eventData)
                 if (slotUI != null)
                 {
                     // Ensure the hit slot belongs to a valid inventory
-                     if (slotUI.ParentInventory != null)
-                     {
-                          // --- IMPORTANT: Ignore raycasts hitting the ghost item itself ---
-                         // The ghost image has raycastTarget = false, but defensive check is good.
-                         if (result.gameObject == ghostItemImage.gameObject) continue;
+                    if (slotUI.ParentInventory != null)
+                    {
+                        // --- IMPORTANT: Ignore raycasts hitting the ghost item itself ---
+                        // The ghost image has raycastTarget = false, but defensive check is good.
+                        if (result.gameObject == ghostItemImage.gameObject) continue;
 
-                          return slotUI; // Found the target slot
-                     }
-                     else
-                     {
-                          Debug.LogWarning($"DragAndDropManager: Raycast hit InventorySlotUI on {result.gameObject.name} but it has no ParentInventory assigned.", result.gameObject);
-                     }
+                        return slotUI; // Found the target slot
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"DragAndDropManager: Raycast hit InventorySlotUI on {result.gameObject.name} but it has no ParentInventory assigned.", result.gameObject);
+                    }
                 }
-                 else
-                 {
-                      // Optional: Log other hits for debugging raycast setup
-                      // Debug.Log($"DragAndDropManager: Raycast hit {result.gameObject.name} (not a slot).", result.gameObject);
-                 }
+                else
+                {
+                    // Optional: Log other hits for debugging raycast setup
+                    // Debug.Log($"DragAndDropManager: Raycast hit {result.gameObject.name} (not a slot).", result.gameObject);
+                }
             }
 
-             // Debug.Log("DragAndDropManager: Raycast did not hit any valid InventorySlotUI with a parent inventory."); // Commented out to reduce spam
+            // Debug.Log("DragAndDropManager: Raycast did not hit any valid InventorySlotUI with a parent inventory."); // Commented out to reduce spam
             return null; // No valid InventorySlotUI found at the drop position
         }
 
@@ -350,9 +346,9 @@ public void EndDrag(PointerEventData eventData)
                 if (sourceObservableArray != null)
                 {
 
-                     // Call HandleDrop on the *source* array, targeting the original slot.
-                     // The HandleDrop method handles the internal logic (putting it back, potentially clearing ghost).
-                     sourceObservableArray.HandleDrop(itemBeingDragged, sourceSlotIndex, sourceObservableArray, sourceSlotIndex); // source and target arrays are the same
+                    // Call HandleDrop on the *source* array, targeting the original slot.
+                    // The HandleDrop method handles the internal logic (putting it back, potentially clearing ghost).
+                    sourceObservableArray.HandleDrop(itemBeingDragged, sourceSlotIndex, sourceObservableArray, sourceSlotIndex); // source and target arrays are the same
                 }
                 else
                 {
@@ -360,11 +356,48 @@ public void EndDrag(PointerEventData eventData)
                     // Item is effectively lost unless handled differently (e.g., dropped in world)
                 }
             }
-             else
-             {
-                 Debug.LogError("DragAndDropManager: Attempted to return item to source, but drag state was invalid.", this);
-             }
-             // Note: Drag state (itemBeingDragged, etc.) is cleared in EndDrag after this method returns.
+            else
+            {
+                Debug.LogError("DragAndDropManager: Attempted to return item to source, but drag state was invalid.", this);
+            }
+            // Note: Drag state (itemBeingDragged, etc.) is cleared in EndDrag after this method returns.
+        }
+        
+        public void AbortDrag()
+        {
+            // Only abort if a drag is actually in progress
+            if (!IsDragging || itemBeingDragged == null)
+            {
+                Debug.Log("DragAndDropManager: AbortDrag called, but no drag was active.", this);
+                return;
+            }
+
+            Debug.Log("DragAndDropManager: Aborting active drag operation.", this);
+
+            // --- Hide the ghost visual ---
+            if (ghostItemImage != null) ghostItemImage.gameObject.SetActive(false);
+            if (ghostQuantityText != null) ghostQuantityText.gameObject.SetActive(false);
+
+            // --- Return the item to its source slot ---
+            // Use the existing helper. This will move the item from the ghost slot
+            // back to its original physical slot via HandleDrop.
+            ReturnItemToSource();
+
+            // --- Reset dragging state and broadcast event ---
+            IsDragging = false;
+            OnDragStateChanged?.Invoke(false); // Notify UI elements (slots) to re-evaluate highlights
+            Debug.Log("DragAndDropManager: Drag aborted. Broadcasted OnDragStateChanged(false).");
+
+
+            // --- Clear internal drag state variables ---
+            itemBeingDragged = null;
+            sourceInventory = null;
+            sourceSlotIndex = -1;
+
+            // --- Optionally trigger a completion event, or a specific abort event ---
+            // Using completion event for simplicity, indicates the drag process is finished.
+            OnDragDropCompleted?.Invoke();
+            Debug.Log("DragAndDropManager: Triggering OnDragDropCompleted after abort.");
         }
     }
 }

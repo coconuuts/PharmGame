@@ -1,17 +1,14 @@
 using UnityEngine;
-// Remove unused using InventoryClass = Systems.Inventory.Inventory;
-using Systems.Interaction; // Make sure this using directive matches your Interaction system's namespace
+using Systems.Interaction; 
 
-// Ensure this script is on the same GameObject as the Collider that the PlayerInteractionManager hits
 public class OpenPrescriptionTableInventory : MonoBehaviour, IInteractable
 {
     [Tooltip("The CraftingStation component associated with this interactable object.")]
     [SerializeField] private Systems.Inventory.CraftingStation craftingStation; // Reference the CraftingStation
 
     [Tooltip("The text to display in the interaction prompt.")]
-    [SerializeField] private string interactionPrompt = "Use Crafting Table (E)"; // Default prompt
+    [SerializeField] private string interactionPrompt = "Access Prescription Table (E)"; // Default prompt
 
-    // Assuming prompt settings are common and used by PromptEditor
     [Header("Prompt Settings")]
     public Vector3 textPromptOffset = Vector3.zero;
     public Vector3 textPromptRotationOffset = Vector3.zero;
@@ -21,7 +18,6 @@ public class OpenPrescriptionTableInventory : MonoBehaviour, IInteractable
 
 
     // --- MonoBehaviour Lifecycle ---
-
     private void Awake()
     {
         // Basic validation
@@ -79,19 +75,14 @@ public class OpenPrescriptionTableInventory : MonoBehaviour, IInteractable
             return null;
         }
 
-        // --- Create and return the new response type ---
         return new OpenCraftingResponse(craftingStation);
-        // ---------------------------------------------
-
-        // Removed: Direct call to craftingStation.OpenCraftingUI(); - MenuManager will do this now
     }
 
-     // --- Optional: Add validation in editor ---
-     private void OnValidate()
-     {
-         if (craftingStation == null)
-         {
-             Debug.LogWarning($"OpenPrescriptionTableInventory ({gameObject.name}): Crafting Station reference is not assigned.", this);
-         }
-     }
+    private void OnValidate()
+    {
+        if (craftingStation == null)
+        {
+            Debug.LogWarning($"OpenPrescriptionTableInventory ({gameObject.name}): Crafting Station reference is not assigned.", this);
+        }
+    }
 }

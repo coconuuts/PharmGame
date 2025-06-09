@@ -23,7 +23,7 @@ namespace Systems.Interaction
         public InventoryClass InventoryComponent { get; }
         public GameObject InventoryUIRoot { get; }
 
-        public OpenInventoryResponse(InventoryClass inventoryComponent, GameObject inventoryUIRoot) // : base(InteractionResult.OpenInventory) // Add if using base constructor
+        public OpenInventoryResponse(InventoryClass inventoryComponent, GameObject inventoryUIRoot)
         {
             InventoryComponent = inventoryComponent;
             InventoryUIRoot = inventoryUIRoot;
@@ -41,7 +41,7 @@ namespace Systems.Interaction
         public GameObject ComputerUIRoot { get; }
         public ComputerInteractable ComputerInteractable { get; }
 
-        public EnterComputerResponse(Transform cameraTargetView, float cameraMoveDuration, GameObject computerUIRoot, ComputerInteractable computerInteractable) // : base(InteractionResult.EnterComputer) // Add if using base constructor
+        public EnterComputerResponse(Transform cameraTargetView, float cameraMoveDuration, GameObject computerUIRoot, ComputerInteractable computerInteractable)
         {
             CameraTargetView = cameraTargetView;
             CameraMoveDuration = cameraMoveDuration;
@@ -54,7 +54,7 @@ namespace Systems.Interaction
     {
         public LightSwitch LightSwitch { get; }
 
-        public ToggleLightResponse(LightSwitch lightSwitch) // : base(InteractionResult.ToggleLight) // Add if using base constructor
+        public ToggleLightResponse(LightSwitch lightSwitch) 
         {
             LightSwitch = lightSwitch;
         }
@@ -63,27 +63,19 @@ namespace Systems.Interaction
     /// <summary>
     /// Response indicating that a general (non-crafting) minigame should be started.
     /// Contains data needed for camera movement, minigame setup, and a reference to the interactable.
-    /// --- MODIFIED: Ensures camera properties are carried ---
+    /// Ensures camera properties are carried 
     /// </summary>
     public class StartMinigameResponse : InteractionResponse
     {
-        // --- MODIFIED: Renamed CameraTargetView to InitialCameraTarget for consistency ---
         public Transform InitialCameraTarget { get; }
-        // --- MODIFIED: Renamed CameraMoveDuration to InitialCameraDuration for consistency ---
         public float InitialCameraDuration { get; }
-        // Removed MinigameUIRoot - UI activation is handled by the minigame's config
-
-        public int TargetClickCount { get; } // Still useful for the BarcodeMinigame setup data
+        public int TargetClickCount { get; } // Needed for BarcodeMinigame setup data
         public CashRegisterInteractable CashRegisterInteractable { get; } // Reference to the initiating Interactable
-
         public MinigameType Type { get; } // The type of minigame to start
-
         public List<(ItemDetails details, int quantity)> ItemsToScan { get; } // Specific data for BarcodeScanning
-
 
         /// <summary>
         /// Constructor for StartMinigameResponse.
-        /// --- MODIFIED: Parameter names updated for consistency ---
         /// </summary>
         /// <param name="minigameType">The type of minigame to start.</param>
         /// <param name="initialCameraTarget">The transform for the minigame camera view.</param>
@@ -113,7 +105,7 @@ namespace Systems.Interaction
         /// Constructor for OpenCraftingResponse.
         /// </summary>
         /// <param name="craftingStation">The CraftingStation component that was interacted with.</param>
-        public OpenCraftingResponse(CraftingStation craftingStation) // : base(...) // Add if using a base constructor in InteractionResponse
+        public OpenCraftingResponse(CraftingStation craftingStation) 
         {
             CraftingStationComponent = craftingStation;
         }

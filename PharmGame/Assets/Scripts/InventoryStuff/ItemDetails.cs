@@ -1,10 +1,30 @@
 using System;
 using UnityEngine;
-using UnityEditor; // Still needed for OnValidate and EditorUtility
-using VisualStorage;
+using UnityEditor;
+using VisualStorage; // Assuming this namespace is relevant for prefab3D/shelfArrangement
+using System.Collections.Generic; // Needed for List
 
 namespace Systems.Inventory
 {
+    /// <summary>
+    /// Defines the different ways a durable item's health/durability can be reduced upon usage.
+    /// </summary>
+    public enum ItemUsageLogic
+    {
+        /// <summary> Default logic: Health reduces by 1 per usage event. </summary>
+        BasicHealthReduction,
+
+        /// <summary> Health reduces by a variable amount specified by the caller (e.g., crafting system). </summary>
+        VariableHealthReduction,
+
+        /// <summary> Health reduces by a fixed amount after a certain number of usage events. </summary>
+        DelayedHealthReduction,
+
+        /// <summary> This item uses quantity (maxStack > 1). Health logic is ignored. </summary>
+        QuantityBased // Added for clarity, though logic handles maxStack > 1 separately
+    }
+
+
     /// <summary>
     /// Defines the properties and unique identifier for a specific type of item asset.
     /// Implements IEquatable for comparing item types based on their unique Id.
@@ -29,7 +49,7 @@ namespace Systems.Inventory
         [Tooltip("The 3D prefab to instantiate on shelves for this item.")]
         public GameObject prefab3D; // Reference to the 3D prefab
         [Tooltip("How this item prefab occupies ShelfSlot grid spaces.")]
-        public ShelfSlotArrangement shelfArrangement = ShelfSlotArrangement.OneByOne; // ADD THIS FIELD
+        public ShelfSlotArrangement shelfArrangement = ShelfSlotArrangement.OneByOne;
 
         [Header("Item Classification")] // New Header for labels/categories
         [Tooltip("The primary classification or label for this item.")]
@@ -37,6 +57,33 @@ namespace Systems.Inventory
 
         [Tooltip("The price of this item when sold to a customer.")]
         public float price = 5.0f;
+
+        // --- NEW FIELDS FOR ITEM HEALTH/DURABILITY ---
+        [Header("Durability/Health")]
+        [Tooltip("The maximum health or durability for instances of this item type (only relevant if maxStack is 1).")]
+        public int maxHealth = 1; // Default to 1 for non-stackable items
+
+        [Tooltip("Defines how health is reduced for this item type (only relevant if maxStack is 1 and maxHealth > 0).")]
+        public ItemUsageLogic usageLogic = ItemUsageLogic.BasicHealthReduction; // NEW FIELD
+
+        [Tooltip("Default health loss amount for VariableHealthReduction if no specific amount is provided by the caller.")]
+        public int defaultVariableHealthLoss = 1; // NEW FIELD
+
+        [Tooltip("Number of usage events required before health is reduced (for DelayedHealthReduction).")]
+        public int usageEventsPerHealthLoss = 1; // NEW FIELD
+
+        [Tooltip("Amount of health lost when the usage event threshold is reached (for DelayedHealthReduction).")]
+        public int healthLossPerEventThreshold = 1; // NEW FIELD
+
+
+        // --- NEW FIELDS FOR USAGE TRIGGERS ---
+        [Header("Usage Triggers")]
+        [Tooltip("The list of allowed input or system triggers that can initiate usage for this item type.")]
+        public List<UsageTriggerType> allowedUsageTriggers = new List<UsageTriggerType>();
+
+        [Tooltip("The primary or default trigger type for UI display purposes (optional).")]
+        public UsageTriggerType primaryUsageTrigger = UsageTriggerType.None;
+
 
         // --- Editor-Specific Logic ---
 
@@ -54,11 +101,10 @@ namespace Systems.Inventory
         /// <summary>
         /// Creates a new runtime Item instance based on this ItemDetails template.
         /// </summary>
-        /// <param name="quantity">The initial quantity of the item instance.</param>
+        /// <param name="quantity">The initial quantity of the item instance (relevant for stackable items).</param>
         /// <returns>A new Item instance.</returns>
         public Item Create(int quantity)
         {
-            // Assumes you have an 'Item' class defined elsewhere that takes ItemDetails and quantity.
             return new Item(this, quantity);
         }
 

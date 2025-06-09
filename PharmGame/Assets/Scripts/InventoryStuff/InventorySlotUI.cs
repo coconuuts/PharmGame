@@ -44,7 +44,7 @@ namespace Systems.Inventory
             isHovered = false;
         }
 
-        // --- NEW: Subscribe to the drag state event ---
+        // --- Subscribe to the drag state event ---
         private void OnEnable()
         {
             if (DragAndDropManager.Instance != null)
@@ -55,7 +55,7 @@ namespace Systems.Inventory
             UpdateHighlightVisual();
         }
 
-        // --- NEW: Unsubscribe from the drag state event ---
+        // --- Unsubscribe from the drag state event ---
         private void OnDisable()
         {
             if (DragAndDropManager.Instance != null)
@@ -68,20 +68,17 @@ namespace Systems.Inventory
                 highlightElement.SetActive(false);
             }
         }
-        // -------------------------------------------------
 
         /// <summary>
         /// Called when the drag state changes (start or end).
         /// </summary>
-        // --- NEW: Handler for the drag state changed event ---
+        // --- Handler for the drag state changed event ---
         private void HandleDragStateChanged(bool isDragging)
         {
             // When the drag state changes, re-evaluate the highlight visual.
             // The logic inside UpdateHighlightVisual() will handle whether to show it.
             UpdateHighlightVisual();
         }
-        // ---------------------------------------------------
-
 
         public void SetItem(Item item)
         {
@@ -130,8 +127,6 @@ namespace Systems.Inventory
             isSelected = false;
             UpdateHighlightVisual(); // Update the visual based on combined state
         }
-        // -------------------------------------------------------------------
-
 
         // --- METHODS CALLED BY POINTER EVENTS (FOR HOVER HIGHLIGHT) ---
         public void ApplyHoverHighlight()
@@ -145,7 +140,6 @@ namespace Systems.Inventory
             isHovered = false;
             UpdateHighlightVisual(); // Update the visual based on combined state
         }
-        // ------------------------------------------------------------
 
 
         /// <summary>
@@ -158,12 +152,11 @@ namespace Systems.Inventory
                 // Determine if the highlight *should* be active under normal circumstances (selected or hovered)
                 bool shouldBeActiveNormally = isSelected || isHovered;
 
-                // --- NEW: Check if a drag operation is in progress ---
+                // --- Check if a drag operation is in progress ---
                 bool dragInProgress = (DragAndDropManager.Instance != null && DragAndDropManager.Instance.IsDragging);
 
                 // The highlight element is active ONLY IF it should be active normally AND NO drag is in progress.
                 highlightElement.SetActive(shouldBeActiveNormally && !dragInProgress);
-                // ----------------------------------------------------
             }
         }
 
@@ -209,26 +202,22 @@ namespace Systems.Inventory
         // --- POINTER ENTER AND EXIT HANDLERS FOR HOVER ---
         public void OnPointerEnter(PointerEventData eventData)
         {
-            // --- MODIFIED: Include InCrafting state for hover highlight ---
             if (MenuManager.Instance != null &&
                (MenuManager.Instance.currentState == MenuManager.GameState.InInventory ||
                 MenuManager.Instance.currentState == MenuManager.GameState.InCrafting))
             {
                  ApplyHoverHighlight(); // Sets isHovered = true and calls UpdateHighlightVisual
             }
-            // ------------------------------------------------------------
         }
 
         public void OnPointerExit(PointerEventData eventData)
         {
-            // --- MODIFIED: Include InCrafting state for hover highlight ---
             if (MenuManager.Instance != null &&
                (MenuManager.Instance.currentState == MenuManager.GameState.InInventory ||
                 MenuManager.Instance.currentState == MenuManager.GameState.InCrafting))
             {
                  RemoveHoverHighlight(); // Sets isHovered = false and calls UpdateHighlightVisual
             }
-            // ------------------------------------------------------------
         }
     }
 }

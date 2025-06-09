@@ -15,4 +15,4 @@ MonoBehaviour:
   stateID: 
   isInterruptible: 1
   checkMovementArrival: 0
-  impatientTimeRange: {x: 15, y: 16}
+  impatientTimeRange: {x: 30, y: 35}

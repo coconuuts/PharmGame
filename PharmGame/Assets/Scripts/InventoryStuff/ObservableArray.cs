@@ -253,7 +253,7 @@ namespace Systems.Inventory
             {
                 Debug.Log($"ObservableArray ({typeof(T).Name}): Dropping onto stackable item of same type at slot {targetIndex}.");
 
-                // New logic: Check if the combined quantity is within the max stack limit
+                // Check if the combined quantity is within the max stack limit
                 if (targetItem.quantity + itemToDrop.quantity <= targetItem.details.maxStack)
                 {
                     // Proceed with stacking logic
@@ -304,7 +304,6 @@ private void PerformSwap(T itemToDrop, int targetIndex, T targetItem, Observable
     // If sourceArray != this, it's a cross-inventory swap/move.
     sourceArray.SetItemAtIndex(targetItem, sourceOriginalIndex); // Triggers SlotUpdated for source original slot
 
-    // *** ADD THIS LINE TO EXPLICITLY CLEAR THE SOURCE GHOST SLOT ***
     // This is essential to prevent the dragged item from being counted in two places.
     // The dragged item was placed in the source ghost slot in StartDrag.
     // We must clear that temporary location now that the item is in its final spot.

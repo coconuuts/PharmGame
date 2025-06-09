@@ -1,5 +1,4 @@
 // ItemLabel.cs
-// You can place this in a common 'Enums' folder or within your 'Systems.Inventory' namespace
 
 namespace Systems.Inventory
 {

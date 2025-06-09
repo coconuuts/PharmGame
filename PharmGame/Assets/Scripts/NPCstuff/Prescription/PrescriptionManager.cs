@@ -94,10 +94,8 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
         private Coroutine tiAssignmentCoroutine;
         private Coroutine orderGenerationCoroutine; // Added field
 
-        // --- Runtime tracking for active prescription claim spot --- // <-- NEW TRACKING
+        // --- Runtime tracking for active prescription claim spot --- 
         private GameObject currentClaimSpotOccupant = null; // Track the GameObject currently at the claim spot
-        // --- END NEW ---
-
 
         private void Awake()
         {
@@ -141,55 +139,49 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
             Debug.Log("PrescriptionManager: Awake completed.");
         }
 
-        private void Start()
-        {
-            // Get references to other singletons
-            timeManager = TimeManager.Instance;
-            if (timeManager == null) Debug.LogError("PrescriptionManager: TimeManager instance not found!");
+          private void Start()
+          {
+               // Get references to other singletons
+               timeManager = TimeManager.Instance;
+               if (timeManager == null) Debug.LogError("PrescriptionManager: TimeManager instance not found!");
 
-            tiNpcManager = TiNpcManager.Instance;
-            if (tiNpcManager == null) Debug.LogError("PrescriptionManager: TiNpcManager instance not found!");
+               tiNpcManager = TiNpcManager.Instance;
+               if (tiNpcManager == null) Debug.LogError("PrescriptionManager: TiNpcManager instance not found!");
 
-            customerManager = CustomerManager.Instance;
-            if (customerManager == null) Debug.LogError("PrescriptionManager: CustomerManager instance not found!");
+               customerManager = CustomerManager.Instance;
+               if (customerManager == null) Debug.LogError("PrescriptionManager: CustomerManager instance not found!");
 
-            poolingManager = PoolingManager.Instance;
-            if (poolingManager == null) Debug.LogError("PrescriptionManager: PoolingManager instance not found!");
+               poolingManager = PoolingManager.Instance;
+               if (poolingManager == null) Debug.LogError("PrescriptionManager: PoolingManager instance not found!");
 
-            waypointManager = WaypointManager.Instance;
-            if (waypointManager == null) Debug.LogError("PrescriptionManager: WaypointManager instance not found!");
+               waypointManager = WaypointManager.Instance;
+               if (waypointManager == null) Debug.LogError("PrescriptionManager: WaypointManager instance not found!");
 
 
-            // Subscribe to TimeManager events if available
-            if (timeManager != null)
-            {
-                // Assuming TimeManager has an OnSunset event to signal day end
-                timeManager.OnSunset += HandleSunset; // <-- SUBSCRIBED TO ON SUNSET
-                // Assuming TimeManager has an OnSunrise event to signal day start
-                timeManager.OnSunrise += HandleSunrise; // <-- SUBSCRIBED TO ON SUNRISE
-            }
-            
-            // Start the coroutine for timed TI assignments - REMOVED FROM START()
-               // tiAssignmentCoroutine = StartCoroutine(TimedTIAssignmentRoutine());
-
+               // Subscribe to TimeManager events if available
+               if (timeManager != null)
+               {
+                    timeManager.OnSunset += HandleSunset;
+                    timeManager.OnSunrise += HandleSunrise;
+               }
                Debug.Log("PrescriptionManager: Start completed. Manager references acquired.");
-        }
+          }
 
-        private void Update()
-        {
-            // Check if orders need to be generated based on time
-            if (!ordersGeneratedToday && timeManager != null && timeManager.CurrentGameTime != DateTime.MinValue)
-            {
-                DateTime currentTime = timeManager.CurrentGameTime;
-                // Check if the current time is within the generation range AND we haven't generated today
-                if (orderGenerationTime.IsWithinRange(currentTime)) // Assuming TimeRange has IsWithinRange
-                {
-                    // Time is within the generation window and we haven't generated yet today
-                    StartOrderGenerationRoutine(); // Start the timed generation coroutine
-                    ordersGeneratedToday = true; // Set flag immediately to prevent starting multiple coroutines
-                }
-            }
-        }
+          private void Update()
+          {
+               // Check if orders need to be generated based on time
+               if (!ordersGeneratedToday && timeManager != null && timeManager.CurrentGameTime != DateTime.MinValue)
+               {
+                    DateTime currentTime = timeManager.CurrentGameTime;
+                    // Check if the current time is within the generation range AND we haven't generated today
+                    if (orderGenerationTime.IsWithinRange(currentTime)) // Assuming TimeRange has IsWithinRange
+                    {
+                         // Time is within the generation window and we haven't generated yet today
+                         StartOrderGenerationRoutine(); // Start the timed generation coroutine
+                         ordersGeneratedToday = true; // Set flag immediately to prevent starting multiple coroutines
+                    }
+               }
+          }
 
         private void OnEnable()
         {
@@ -197,20 +189,14 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
              // EventManager.Subscribe<NpcInitializingEvent>(HandleNpcInitializing); // Placeholder
              if (timeManager != null)
              {
-                 timeManager.OnSunset += HandleSunset; // <-- SUBSCRIBED TO ON SUNSET
-                 timeManager.OnSunrise += HandleSunrise; // <-- SUBSCRIBED TO ON SUNRISE
+                 timeManager.OnSunset += HandleSunset; 
+                 timeManager.OnSunrise += HandleSunrise; 
              }
              // Subscribe to new prescription events
-             EventManager.Subscribe<ClaimPrescriptionSpotEvent>(HandleClaimPrescriptionSpot); // <-- NEW Subscription
-             EventManager.Subscribe<FreePrescriptionClaimSpotEvent>(HandleFreePrescriptionClaimSpot); // <-- NEW Subscription
-             EventManager.Subscribe<QueueSpotFreedEvent>(HandlePrescriptionQueueSpotFreed); // <-- NEW Subscription (for prescription queue)
+             EventManager.Subscribe<ClaimPrescriptionSpotEvent>(HandleClaimPrescriptionSpot); 
+             EventManager.Subscribe<FreePrescriptionClaimSpotEvent>(HandleFreePrescriptionClaimSpot); 
+             EventManager.Subscribe<QueueSpotFreedEvent>(HandlePrescriptionQueueSpotFreed);
 
-             // Restart TI assignment coroutine ONLY IF it was running and stopped by OnDisable
-             // It's normally started by HandleSunrise now.
-             // if (tiAssignmentCoroutine == null)
-             // {
-             //     tiAssignmentCoroutine = StartCoroutine(TimedTIAssignmentRoutine());
-             // }
              if (orderGenerationCoroutine == null && ordersToGeneratePerDay > 0 && !ordersGeneratedToday && timeManager != null && timeManager.CurrentGameTime != DateTime.MinValue && orderGenerationTime.IsWithinRange(timeManager.CurrentGameTime))
              {
                  // Only restart generation if it was supposed to be running based on time/flags
@@ -221,16 +207,15 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
         private void OnDisable()
         {
              // Unsubscribe from events
-             // EventManager.Unsubscribe<NpcInitializingEvent>(HandleNpcInitializing); // Placeholder
              if (timeManager != null)
              {
-                 timeManager.OnSunset -= HandleSunset; // <-- UNSUBSCRIBED FROM ON SUNSET
-                 timeManager.OnSunrise -= HandleSunrise; // <-- UNSUBSCRIBED FROM ON SUNRISE
+                 timeManager.OnSunset -= HandleSunset; 
+                 timeManager.OnSunrise -= HandleSunrise; 
              }
              // Unsubscribe from new prescription events
-             EventManager.Unsubscribe<ClaimPrescriptionSpotEvent>(HandleClaimPrescriptionSpot); // <-- NEW Unsubscription
-             EventManager.Unsubscribe<FreePrescriptionClaimSpotEvent>(HandleFreePrescriptionClaimSpot); // <-- NEW Unsubscription
-             EventManager.Unsubscribe<QueueSpotFreedEvent>(HandlePrescriptionQueueSpotFreed); // <-- NEW Unsubscription (for prescription queue)
+             EventManager.Unsubscribe<ClaimPrescriptionSpotEvent>(HandleClaimPrescriptionSpot); 
+             EventManager.Unsubscribe<FreePrescriptionClaimSpotEvent>(HandleFreePrescriptionClaimSpot); 
+             EventManager.Unsubscribe<QueueSpotFreedEvent>(HandlePrescriptionQueueSpotFreed); 
 
              if (tiAssignmentCoroutine != null)
              {
@@ -260,7 +245,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
             Debug.Log("PrescriptionManager: OnDestroy completed.");
         }
 
-        // --- Order Generation Logic (Substep 1.3 Implementation) ---
+        // --- Order Generation Logic ---
 
         /// <summary>
         /// Handles the OnSunset event from TimeManager. Resets daily order data.
@@ -277,16 +262,12 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
             // Clearing the manager's dictionaries here ensures they aren't tracked across days.
 
             ordersGeneratedToday = false; // Allow generation again on the *next* day
-
-            // Optional: Clear prescription queue occupants at end of day?
-            // This might be better handled by the NPCs themselves exiting the queue state.
-            // For now, let's let the standard queue freeing logic handle it.
         }
 
         /// <summary>
         /// Handles the OnSunrise event from TimeManager. Starts the TI assignment routine.
         /// </summary>
-        private void HandleSunrise() // <-- NEW HANDLER FOR STARTING ASSIGNMENT
+        private void HandleSunrise() 
         {
             Debug.Log("PrescriptionManager: Received OnSunrise event. Starting TI assignment routine.");
             // Start the coroutine for timed TI assignments
@@ -335,7 +316,6 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
                 bool illegal = Random.value < 0.1f; // 10% chance of being illegal
 
                 PrescriptionOrder newOrder = new PrescriptionOrder(patientName, prescribedDrug, dose, length, illegal);
-                // --- End Placeholder ---
 
                 allOrdersGeneratedToday.Add(newOrder);
                 unassignedOrders.Add(newOrder);
@@ -349,10 +329,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
             orderGenerationCoroutine = null; // Clear coroutine reference
         }
 
-        // --- END Order Generation Logic ---
-
-
-        // --- TI Assignment Logic (Substep 1.5 Implementation) ---
+        // --- TI Assignment Logic ---
 
         /// <summary>
         /// Coroutine for timed assignment of pendingPrescription flags to TI NPCs.
@@ -396,7 +373,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
         /// <summary>
         /// Helper method to attempt assigning a TI prescription order.
         /// </summary>
-        private void AttemptTIAssignment() // <-- NEW HELPER METHOD
+        private void AttemptTIAssignment() 
         {
             if (timeManager == null || tiNpcManager == null)
             {
@@ -445,17 +422,9 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
 
                 Debug.Log($"PrescriptionManager: Assigned prescription order for '{orderToAssign.Value.patientName}' to TI NPC '{targetTi.Id}'. {unassignedOrders.Count} unassigned orders remaining.");
             }
-            else
-            {
-                // No suitable order/NPC found in this attempt
-                // Debug.Log("PrescriptionManager: No unassigned orders matching a TI NPC without a pending prescription found for assignment."); // Too noisy
-            }
         }
 
-        // --- END TI Assignment Logic ---
-
-
-        // --- Transient Assignment Logic (Substep 1.6 Implementation) ---
+        // --- Transient Assignment Logic ---
 
         /// <summary>
         /// Attempts to assign a non-TI prescription order to a transient NPC.
@@ -496,7 +465,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
                 {
                     // Check if the prescription queue is full. If so, we cannot assign.
                     // This check is based on the vision: "if the prescription queue is currently full, then the prescriptionmanager will not flag any new transient npcs."
-                    if (IsPrescriptionQueueFull()) // Implemented in this substep
+                    if (IsPrescriptionQueueFull()) 
                     {
                         Debug.Log($"PrescriptionManager: Prescription queue is full. Cannot assign transient order to '{runner.gameObject.name}'.");
                         return false; // Cannot assign if queue is full
@@ -529,10 +498,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
             }
         }
 
-        // --- END Transient Assignment Logic ---
-
-
-        // --- Prescription Queue & Spot Management (Phase 4 Implementation) --- // <-- NEW HEADER
+        // --- Prescription Queue & Spot Management ---
 
         /// <summary>
         /// Handles the ClaimPrescriptionSpotEvent. Marks the claim spot as occupied.
@@ -617,7 +583,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
                        {
                             // Need a method on QueueHandler to signal move to claim spot
                             // Let's add GoToPrescriptionClaimSpotFromQueue() to NpcQueueHandler
-                            runnerAtSpot0.QueueHandler.GoToPrescriptionClaimSpotFromQueue(); // Implemented in Substep 4.3
+                            runnerAtSpot0.QueueHandler.GoToPrescriptionClaimSpotFromQueue();
                        }
                        else
                        {
@@ -727,7 +693,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
                   {
                        Debug.LogWarning($"PrescriptionManager: No Runner found occupying spot {currentSpotIndex} in Prescription queue. This spot is a gap. Continuing cascade search.", this);
                   }
-             } // End of cascade loop
+             } 
         }
 
 
@@ -887,7 +853,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
          /// Removes a TI NPC's assigned order from the manager's tracking dictionary.
          /// Called when the TI NPC successfully completes the prescription flow.
          /// </summary>
-         public void RemoveAssignedTiOrder(string tiId) // <-- NEW METHOD Implementation
+         public void RemoveAssignedTiOrder(string tiId) 
          {
               if (assignedTiOrders.ContainsKey(tiId))
               {
@@ -902,7 +868,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
          /// Removes a Transient NPC's assigned order from the manager's tracking dictionary.
          /// Called when the Transient NPC successfully completes the prescription flow.
          /// </summary>
-         public void RemoveAssignedTransientOrder(GameObject npcObject) // <-- NEW METHOD Implementation
+         public void RemoveAssignedTransientOrder(GameObject npcObject)
          {
               if (assignedTransientOrders.ContainsKey(npcObject))
               {
@@ -914,7 +880,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
          }
 
 
-        // --- Simulation Status Methods (Needed by Basic States) --- // <-- NEW METHODS
+        // --- Simulation Status Methods (Needed by Basic States) --- 
 
         /// <summary>
         /// Simulates whether the prescription claim spot is occupied for inactive NPCs.
@@ -994,10 +960,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
              return isFull;
         }
 
-        // --- END Simulation Status Methods ---
-
-
-        // --- Placeholder Methods (Implemented in this substep or earlier) ---
+        // --- Placeholder Methods ---
 
         /// <summary>
         /// Gets the transform for the prescription claim point.
@@ -1006,8 +969,6 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
         {
              return prescriptionClaimPoint;
         }
-
-        // --- END Placeholder Methods ---
     }
 }
 

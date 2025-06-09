@@ -1,5 +1,5 @@
 using UnityEngine;
-using Systems.Inventory; // Needed for InventoryClass, Item, Visualizer
+using Systems.Inventory; // Needed for InventoryClass, Item, Visualizer, UsageTriggerType
 using System.Collections.Generic;
 using System.Linq; // Needed for .ToList()
 using Systems.GameStates; // Needed for MenuManager and GameState enum
@@ -48,12 +48,15 @@ namespace Systems.Inventory
                      selectedIndex >= 0 && selectedIndex < parentInventory.InventoryState.Length)
                  {
                      // Check if the index is within the bounds of physical slots if Combiner exists
+                     // The ghost slot (Length - 1) should not be selectable.
                      if (parentInventory.Combiner != null && selectedIndex < parentInventory.Combiner.PhysicalSlotCount)
                      {
                          return parentInventory.InventoryState[selectedIndex];
                      }
                      else if (parentInventory.Combiner == null) // If no Combiner, assume all slots are physical/selectable
                      {
+                         // This case should ideally not happen if Inventory is configured correctly
+                         Debug.LogWarning($"InventorySelector ({gameObject.name}): Parent Inventory has no Combiner. Assuming all slots are selectable, but this might be incorrect.", this);
                          return parentInventory.InventoryState[selectedIndex];
                      }
                  }
@@ -82,8 +85,17 @@ namespace Systems.Inventory
                     return;
                 }
 
-                // Ensure the initial selected index is valid
-                selectedIndex = Mathf.Clamp(selectedIndex, 0, slotUIs.Count - 1);
+                // Ensure the initial selected index is valid within physical slots
+                if (parentInventory != null && parentInventory.Combiner != null)
+                {
+                    selectedIndex = Mathf.Clamp(selectedIndex, 0, parentInventory.Combiner.PhysicalSlotCount - 1);
+                }
+                else
+                {
+                     // Fallback if Combiner is missing (should be caught in Awake/Inventory Start)
+                     selectedIndex = Mathf.Clamp(selectedIndex, 0, slotUIs.Count - 1);
+                }
+
 
                 if (MenuManager.Instance == null)
                 {
@@ -96,7 +108,7 @@ namespace Systems.Inventory
                 MenuManager.OnStateChanged += HandleGameStateChanged;
                 Debug.Log("InventorySelector: Subscribed to MenuManager.OnStateChanged.");
 
-                // --- ADDED: Check current state and apply highlight if already in Playing ---
+                // --- Check current state and apply highlight if already in Playing ---
                 // This handles the scenario where the toolbar UI is activated AFTER the initial
                 // MenuManager state transition has already occurred.
                 if (MenuManager.Instance.currentState == MenuManager.GameState.Playing)
@@ -191,13 +203,15 @@ namespace Systems.Inventory
                 if (scroll > 0f) selectedIndex--;
                 else selectedIndex++;
 
-                // Wrap around
-                if (selectedIndex < 0) selectedIndex = slotUIs.Count - 1;
-                else if (selectedIndex >= slotUIs.Count) selectedIndex = 0;
+                // Wrap around physical slots only
+                int physicalSlotCount = (parentInventory != null && parentInventory.Combiner != null) ? parentInventory.Combiner.PhysicalSlotCount : slotUIs.Count;
+                if (selectedIndex < 0) selectedIndex = physicalSlotCount - 1;
+                else if (selectedIndex >= physicalSlotCount) selectedIndex = 0;
             }
 
             // Handle number key input (1-0 for slots 0-9)
-            for (int i = 0; i < slotUIs.Count && i < 10; i++)
+            int maxKeyIndex = (parentInventory != null && parentInventory.Combiner != null) ? Mathf.Min(parentInventory.Combiner.PhysicalSlotCount, 10) : Mathf.Min(slotUIs.Count, 10);
+            for (int i = 0; i < maxKeyIndex; i++)
             {
                 KeyCode key = KeyCode.Alpha1 + i;
                 if (i == 9) key = KeyCode.Alpha0; // KeyCode.Alpha0 is for the '0' key
@@ -243,24 +257,23 @@ namespace Systems.Inventory
                  return;
             }
 
-            // Ensure indices are valid within the collected slot list
-            newIndex = Mathf.Clamp(newIndex, 0, slotUIs.Count - 1);
+            // Ensure indices are valid within the collected slot list (which should match physical slots)
+             int physicalSlotCount = (parentInventory != null && parentInventory.Combiner != null) ? parentInventory.Combiner.PhysicalSlotCount : slotUIs.Count;
+            newIndex = Mathf.Clamp(newIndex, 0, physicalSlotCount - 1);
             // previousIndex can be -1 initially, allow that.
-            previousIndex = Mathf.Clamp(previousIndex, -1, slotUIs.Count - 1);
+            previousIndex = Mathf.Clamp(previousIndex, -1, physicalSlotCount - 1);
 
 
             // Remove selection highlight from the previous slot (if a valid previous index exists and it's different from the new index)
-             if (previousIndex >= 0 && previousIndex < slotUIs.Count && previousIndex != newIndex)
+             if (previousIndex >= 0 && previousIndex < slotUIs.Count && previousIndex != newIndex) // Check against slotUIs.Count for safety
              {
-                 // Call the new RemoveSelectionHighlight method on the SlotUI
                  if(slotUIs[previousIndex] != null) slotUIs[previousIndex].RemoveSelectionHighlight();
                  else Debug.LogWarning($"InventorySelector: slotUIs[{previousIndex}] is null when attempting to remove selection highlight.", this);
              }
 
             // Apply selection highlight to the new slot
-            if (newIndex >= 0 && newIndex < slotUIs.Count)
+            if (newIndex >= 0 && newIndex < slotUIs.Count) // Check against slotUIs.Count for safety
             {
-                 // Call the new ApplySelectionHighlight method on the SlotUI
                  if(slotUIs[newIndex] != null) slotUIs[newIndex].ApplySelectionHighlight();
                  else Debug.LogWarning($"InventorySelector: slotUIs[{newIndex}] is null when attempting to apply selection highlight.", this);
             }
@@ -280,17 +293,18 @@ namespace Systems.Inventory
         /// Attempts to use the item in the currently selected slot.
         /// Called by the input handling system (e.g., ItemUsageManager).
         /// </summary>
-        public bool UseSelectedItem()
+        /// <param name="trigger">The type of action that triggered this usage.</param> // NEW PARAMETER
+        public bool UseSelectedItem(UsageTriggerType trigger) // NEW PARAMETER
         {
             Item itemToUse = GetSelectedItem();
 
             if (itemToUse != null)
             {
-                Debug.Log($"InventorySelector: Item '{itemToUse.details.Name}' found in selected slot {selectedIndex}. Attempting to use.", this);
+                Debug.Log($"InventorySelector: Item '{itemToUse.details.Name}' found in selected slot {selectedIndex}. Attempting to use via trigger: {trigger}.", this);
                 if (ItemUsageManager.Instance != null) // Assumes ItemUsageManager exists
                 {
-                    // Pass the item INSTANCE, the parent inventory, AND the selected slot INDEX
-                    return ItemUsageManager.Instance.UseItem(itemToUse, parentInventory, selectedIndex);
+                    // Pass the item INSTANCE, the parent inventory, the selected slot INDEX, AND the trigger type
+                    return ItemUsageManager.Instance.UseItem(itemToUse, parentInventory, selectedIndex, trigger); // Pass trigger
                 }
                 else Debug.LogError("InventorySelector: ItemUsageManager Instance is null! Cannot use item.", this);
                 return false;

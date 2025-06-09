@@ -2,7 +2,7 @@ using UnityEngine;
 using Systems.GameStates; // Needed for MenuManager and GameState enum
 using Systems.Interaction; // Needed for InteractionResponse types
 using Systems.Inventory; // Needed for Inventory (for hover clear)
-using Systems.CraftingMinigames; // ADDED: Needed for CraftingStation reference type
+using Systems.CraftingMinigames; // Needed for CraftingStation reference type
 
 
 namespace Systems.UI
@@ -22,7 +22,7 @@ namespace Systems.UI
         [Tooltip("The GameObject root for the Player Toolbar UI. Will find by tag if null.")]
         [SerializeField] private GameObject playerToolbarUIRoot;
 
-        // Add a reference for the Pause Menu UI if you have one
+        // TODO: Add a reference for the Pause Menu UI
         [Header("Specific UI References")]
         [Tooltip("The GameObject root for the Pause Menu UI.")]
         [SerializeField] private GameObject pauseMenuUIRoot;
@@ -153,7 +153,6 @@ namespace Systems.UI
 
 
             // --- Handle UI Activation logic for the new state ---
-            // These use the NEW state and the response data (if provided).
             switch (newState)
             {
                 case MenuManager.GameState.Playing:

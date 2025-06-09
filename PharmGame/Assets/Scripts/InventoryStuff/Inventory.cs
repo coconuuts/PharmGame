@@ -64,7 +64,6 @@ namespace Systems.Inventory
             }
         }
 
-         // New method in Inventory.cs to find slots and assign parent
          private void FindAndAssignSlotUIs()
         {
              if (flexibleGridLayout == null)
@@ -95,7 +94,7 @@ namespace Systems.Inventory
              // Pass the found list to the Visualizer (Visualizer needs a method to accept this list)
              if (visualizer != null)
              {
-                 visualizer.SetSlotUIComponents(foundSlots); // Visualizer needs this new public method
+                 visualizer.SetSlotUIComponents(foundSlots); 
              }
              else
              {

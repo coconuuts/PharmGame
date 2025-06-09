@@ -8,11 +8,7 @@ namespace Systems.Inventory
     public class Visualizer : MonoBehaviour
     {
         private ObservableArray<Item> inventoryState;
-
-        // --- ADD THIS DECLARATION ---
         private List<InventorySlotUI> slotUIComponents;
-    
-        // --- ADD THIS PUBLIC GETTER ---
         public List<InventorySlotUI> SlotUIComponents => slotUIComponents;
 
         /// <summary>
@@ -61,10 +57,8 @@ namespace Systems.Inventory
 
         private void HandleInventoryChange(ArrayChangeInfo<Item> changeInfo)
         {
-             // This method now works because slotUIComponents is declared
              if (changeInfo == null) return;
 
-             // Added null check for slotUIComponents before accessing Count
              if (slotUIComponents == null)
              {
                  Debug.LogError($"Visualizer ({gameObject.name}): HandleInventoryChange called but slotUIComponents is null. Cannot update UI.", this);
@@ -87,13 +81,11 @@ namespace Systems.Inventory
                      for (int i = 0; i < visualSlotCount; i++)
                      {
                          Item item = (currentItems != null && i < currentItems.Length) ? currentItems[i] : null;
-                          // This line now works because slotUIComponents is declared
                          slotUIComponents[i].SetItem(item);
                      }
                      // Clear any extra visual slots if the array is smaller (shouldn't happen with ghost slot)
                      for (int i = visualSlotCount; i < slotUIComponents.Count; i++)
                       {
-                           // This line now works because slotUIComponents is declared
                            slotUIComponents[i].SetItem(null);
                       }
                      break;
@@ -105,7 +97,6 @@ namespace Systems.Inventory
                      int singleIndex = changeInfo.Index;
                      if (singleIndex >= 0 && singleIndex < visualSlotCount)
                      {
-                          // This line now works because slotUIComponents is declared
                           slotUIComponents[singleIndex].SetItem(changeInfo.NewItem);
                      }
                      else
@@ -123,7 +114,6 @@ namespace Systems.Inventory
 
                      if (index1 >= 0 && index1 < visualSlotCount)
                      {
-                          // This line now works because slotUIComponents is declared
                           slotUIComponents[index1].SetItem(changeInfo.NewItem);
                           updatedVisualSlot1 = true;
                      }
@@ -134,7 +124,6 @@ namespace Systems.Inventory
 
                      if (index2 >= 0 && index2 < visualSlotCount)
                      {
-                           // This line now works because slotUIComponents is declared
                            slotUIComponents[index2].SetItem(changeInfo.NewTargetItem);
                            updatedVisualSlot2 = true;
                      }
@@ -154,8 +143,5 @@ namespace Systems.Inventory
                      break;
              }
         }
-
-        // Need a public method for Inventory to set the list of slots
-         // This is now handled by SetSlotUIComponents
     }
 }

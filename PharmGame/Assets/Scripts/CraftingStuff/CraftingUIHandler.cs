@@ -51,7 +51,6 @@ namespace Systems.Inventory // Ensure this is the correct namespace
 
         private void OnDestroy()
         {
-            // Remove listener from the craft button click
             if (craftButton != null)
             {
                 craftButton.onClick.RemoveListener(OnCraftButtonClicked);
@@ -85,21 +84,21 @@ namespace Systems.Inventory // Ensure this is the correct namespace
                     // Only activate secondary if it's assigned in the inspector
                     if (secondaryInputUIPanel != null) secondaryInputUIPanel.SetActive(true);
                     if (outputUIPanel != null) outputUIPanel.SetActive(false);
-                    if (craftButton != null) craftButton.gameObject.SetActive(true); // Craft button is visible
+                    if (craftButton != null) craftButton.gameObject.SetActive(true); 
                     // Interactability handled by SetCraftButtonInteractable
                     break;
                 case CraftingStation.CraftingState.Crafting:
                     // Typically hide/disable interaction with slots during crafting animation/time
                     if (primaryInputUIPanel != null) primaryInputUIPanel.SetActive(false);
                     if (secondaryInputUIPanel != null) secondaryInputUIPanel.SetActive(false);
-                    if (outputUIPanel != null) outputUIPanel.SetActive(false); // Hide output during craft animation/time
-                    if (craftButton != null) craftButton.gameObject.SetActive(false); // Hide craft button during craft
+                    if (outputUIPanel != null) outputUIPanel.SetActive(false); 
+                    if (craftButton != null) craftButton.gameObject.SetActive(false); 
                     break;
                 case CraftingStation.CraftingState.Outputting:
                     if (primaryInputUIPanel != null) primaryInputUIPanel.SetActive(false);
                     if (secondaryInputUIPanel != null) secondaryInputUIPanel.SetActive(false);
                     if (outputUIPanel != null) outputUIPanel.SetActive(true);
-                    if (craftButton != null) craftButton.gameObject.SetActive(false); // Hide craft button in Outputting
+                    if (craftButton != null) craftButton.gameObject.SetActive(false); 
                     break;
             }
             Debug.Log($"CraftingUIHandler ({gameObject.name}): UI updated for state: {state}.", this);
@@ -115,7 +114,6 @@ namespace Systems.Inventory // Ensure this is the correct namespace
             if (craftButton != null)
             {
                 craftButton.interactable = isInteractable;
-                // Debug.Log($"CraftingUIHandler ({gameObject.name}): Craft button interactable: {isInteractable}.", this); // Verbose
             }
         }
 
@@ -128,7 +126,7 @@ namespace Systems.Inventory // Ensure this is the correct namespace
             {
                 Debug.Log($"CraftingUIHandler ({gameObject.name}): Craft button clicked. Notifying CraftingStation.", this);
                 // Delegate the craft logic back to the CraftingStation
-                linkedCraftingStation.NotifyCraftButtonClicked(); // CraftingStation will need this public method
+                linkedCraftingStation.NotifyCraftButtonClicked(); 
             }
             else
             {
