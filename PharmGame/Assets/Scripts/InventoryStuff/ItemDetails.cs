@@ -21,7 +21,10 @@ namespace Systems.Inventory
         DelayedHealthReduction,
 
         /// <summary> This item uses quantity (maxStack > 1). Health logic is ignored. </summary>
-        QuantityBased // Added for clarity, though logic handles maxStack > 1 separately
+        QuantityBased, // Added for clarity, though logic handles maxStack > 1 separately
+
+        /// <summary> This item is a gun and uses magazine/reserve ammo logic (requires magazineSize > 0). </summary>
+        GunLogic // NEW ENUM VALUE
     }
 
 
@@ -60,7 +63,7 @@ namespace Systems.Inventory
 
         // --- NEW FIELDS FOR ITEM HEALTH/DURABILITY ---
         [Header("Durability/Health")]
-        [Tooltip("The maximum health or durability for instances of this item type (only relevant if maxStack is 1).")]
+        [Tooltip("The maximum health or durability for instances of this item type (only relevant if maxStack is 1). For guns, this is total ammo capacity.")]
         public int maxHealth = 1; // Default to 1 for non-stackable items
 
         [Tooltip("Defines how health is reduced for this item type (only relevant if maxStack is 1 and maxHealth > 0).")]
@@ -74,6 +77,14 @@ namespace Systems.Inventory
 
         [Tooltip("Amount of health lost when the usage event threshold is reached (for DelayedHealthReduction).")]
         public int healthLossPerEventThreshold = 1; // NEW FIELD
+
+        // --- NEW FIELDS FOR GUN LOGIC ---
+        [Header("Gun Settings (Requires Usage Logic: GunLogic)")] // NEW HEADER
+        [Tooltip("The number of shots/uses before a reload is required (magazine capacity). Only relevant if usageLogic is GunLogic.")]
+        public int magazineSize = 0; // NEW FIELD
+
+        [Tooltip("The time in seconds required to complete a reload. Only relevant if usageLogic is GunLogic.")]
+        public float reloadTime = 0.0f; // NEW FIELD
 
 
         // --- NEW FIELDS FOR USAGE TRIGGERS ---
@@ -95,6 +106,17 @@ namespace Systems.Inventory
                 #if UNITY_EDITOR // Ensure this is editor-only
                 UnityEditor.EditorUtility.SetDirty(this);
                 #endif
+            }
+
+            // Optional: Add validation to ensure magazineSize is <= maxHealth if usageLogic is GunLogic
+            if (usageLogic == ItemUsageLogic.GunLogic && magazineSize > maxHealth)
+            {
+                Debug.LogWarning($"ItemDetails '{Name}': magazineSize ({magazineSize}) should not exceed maxHealth ({maxHealth}) for GunLogic.", this);
+                // Optional: clamp magazineSize = maxHealth;
+            }
+            if (usageLogic == ItemUsageLogic.GunLogic && magazineSize <= 0)
+            {
+                 Debug.LogWarning($"ItemDetails '{Name}': magazineSize should be greater than 0 for GunLogic.", this);
             }
         }
 

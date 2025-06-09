@@ -17,7 +17,7 @@ namespace Systems.Inventory
     [RequireComponent(typeof(Visualizer))]
     public class InventorySelector : MonoBehaviour
     {
-        private Inventory parentInventory;
+        internal Inventory parentInventory;
         private Visualizer inventoryVisualizer;
         private List<InventorySlotUI> slotUIs;
 
@@ -35,7 +35,7 @@ namespace Systems.Inventory
         }
 
         [Tooltip("The index of the currently selected slot (0-based).")]
-        [SerializeField] private int selectedIndex = 0;
+        [SerializeField] internal int selectedIndex = 0;
 
         [Tooltip("The input axis name for scrolling (e.g., 'Mouse ScrollWheel').")]
         [SerializeField] private string scrollAxis = "Mouse ScrollWheel";
