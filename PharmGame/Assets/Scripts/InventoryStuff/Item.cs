@@ -28,17 +28,15 @@ namespace Systems.Inventory
         // Counter for usage events since the last health reduction (relevant for DelayedHealthReduction logic).
         public int usageEventsSinceLastLoss;
 
-        // --- NEW FIELDS FOR GUN LOGIC (Relevant if details.usageLogic is GunLogic) ---
+        // --- FIELDS FOR GUN LOGIC (Relevant if details.usageLogic is GunLogic) ---
         // The current number of shots remaining in the magazine.
-        public int currentMagazineHealth; // NEW FIELD
+        public int currentMagazineHealth; 
         // The total number of shots remaining outside the current magazine (reserve ammo).
-        public int totalReserveHealth; // NEW FIELD
+        public int totalReserveHealth;
         // Flag indicating if the gun is currently in the process of reloading.
-        public bool isReloading; // NEW FIELD
+        public bool isReloading; 
         // The time when the current reload started (used to track progress).
-        public float reloadStartTime; // NEW FIELD
-        // --- END NEW FIELDS ---
-
+        public float reloadStartTime; 
 
         // Constructor
         public Item(ItemDetails details, int quantity = 1)
@@ -69,7 +67,6 @@ namespace Systems.Inventory
                 // This is a stackable item
                 this.quantity = Mathf.Max(1, quantity); // Ensure quantity is at least 1 if creating
                 this.health = 0; // Total health is not used for stackable items
-                // Initialize new gun fields to defaults
                 this.currentMagazineHealth = 0;
                 this.totalReserveHealth = 0;
                 this.isReloading = false;
@@ -95,12 +92,10 @@ namespace Systems.Inventory
                 {
                     // This is a non-stackable item but NOT a gun (uses Basic/Variable/Delayed health or no health)
                     this.health = Mathf.Max(0, details.maxHealth); // Initialize total health from details
-                    // Initialize new gun fields to defaults
                     this.currentMagazineHealth = 0;
                     this.totalReserveHealth = 0;
                     this.isReloading = false;
                     this.reloadStartTime = 0.0f;
-                     // Debug.Log($"Created Non-Gun Durable Item instance: ID={Id}, Details='{details.Name}', Health={this.health}, MaxHealth={details.maxHealth}"); // Optional debug
                 }
             }
             // --- End Initialization Logic ---

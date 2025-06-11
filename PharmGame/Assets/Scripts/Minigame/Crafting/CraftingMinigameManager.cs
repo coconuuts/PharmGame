@@ -34,7 +34,6 @@ namespace Systems.CraftingMinigames // Use the same namespace
         private CraftingMinigameBase currentActiveMinigame;
 
         // Event to notify the CraftingStation when the minigame is completed or aborted
-        // --- MODIFIED: Documentation updated to reflect boolean data ---
         /// <summary>
         /// Event triggered when a crafting minigame session is completed or aborted.
         /// The object parameter is a boolean: true for success, false for failure/abort.
@@ -174,16 +173,12 @@ namespace Systems.CraftingMinigames // Use the same namespace
 
         /// <summary>
         /// Called when the currently active crafting minigame reports completion or abortion via its event.
-        /// --- MODIFIED: Handles the boolean result data ---
         /// </summary>
         /// <param name="resultData">A boolean: true for success, false for failure/abort.</param>
         private void HandleActiveMinigameCompleted(object resultData)
         {
-            // --- MODIFIED: Cast resultData to boolean ---
             bool minigameWasSuccessful = (resultData is bool success) ? success : false;
             Debug.Log($"CraftingMinigameManager: Received completion event from active minigame. Outcome: {(minigameWasSuccessful ? "Success" : "Failure/Aborted")}.", this);
-            // --------------------------------------------
-
 
             // Unsubscribe from the completed minigame's event and clean it up
             // Check if currentActiveMinigame is still valid before trying to unsubscribe/cleanup.
@@ -212,7 +207,7 @@ namespace Systems.CraftingMinigames // Use the same namespace
             OnMinigameSessionCompleted?.Invoke(minigameWasSuccessful); // Pass the boolean result
 
 
-            // --- MODIFIED: Conditional State Transition ---
+            // --- Conditional State Transition ---
             // Only transition back to InCrafting if the minigame was successful AND
             // if MenuManager is *still* in the InMinigame state.
             // If MenuManager is no longer InMinigame, it means an external state change (like Escape)
@@ -228,13 +223,11 @@ namespace Systems.CraftingMinigames // Use the same namespace
                  // we let MenuManager continue its transition (likely to Playing).
                  Debug.Log($"CraftingMinigameManager: Minigame not successful OR state is already changing ({MenuManager.Instance?.currentState}). Not forcing return to InCrafting.");
             }
-            // --------------------------------------------
         }
 
         /// <summary>
         /// Ends the current active crafting minigame, if any.
         /// This is called internally or externally (e.g., by MenuManager during an emergency exit like Escape).
-        /// --- MODIFIED: Accepts wasAborted parameter ---
         /// </summary>
         /// <param name="wasAborted">True if the minigame is being ended prematurely (e.g., by Escape).</param>
         public void EndCurrentMinigame(bool wasAborted)

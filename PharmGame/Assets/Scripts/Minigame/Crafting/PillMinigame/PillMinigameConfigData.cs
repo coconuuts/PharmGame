@@ -1,4 +1,4 @@
-// Systems/Minigame/Config/PillMinigameConfigData.cs (Adjust namespace if needed)
+// Systems/Minigame/Config/PillMinigameConfigData.cs 
 using UnityEngine;
 using TMPro; // Needed for TextMeshProUGUI reference type if needed later (keeping for now)
 using UnityEngine.UI; // Needed for Button reference type if needed later (keeping for now)
@@ -53,23 +53,23 @@ namespace Systems.Minigame.Config // Use the same sub-namespace
 
         [Header("Animation Settings")]
          [Tooltip("How many degrees the pill stock container tilts forward when pouring (Z-axis usually).")]
-         public float pourTiltAngle = 133f; // Moved from Animator
+         public float pourTiltAngle = 133f; 
          [Tooltip("Duration of the pill stock container tilting forward.")]
-         public float pourTiltDuration = 0.45f; // Moved from Animator
+         public float pourTiltDuration = 0.45f;
 
          [Tooltip("Duration of the pill stock container tilting back.")]
-         public float pourReturnDuration = 0.25f; // Moved from Animator
+         public float pourReturnDuration = 0.25f;
          [Tooltip("Duration for the lid to animate open/closed.")]
-         public float lidAnimateDuration = 0.75f; // Moved from Animator
+         public float lidAnimateDuration = 0.75f; 
          [Tooltip("Local Euler angle for the prescription container lid when open.")]
-         public Vector3 lidOpenLocalEuler; // Moved from Animator
+         public Vector3 lidOpenLocalEuler; 
          [Tooltip("Local Euler angle for the prescription container lid when closed.")]
-         public Vector3 lidClosedLocalEuler; // Moved from Animator
+         public Vector3 lidClosedLocalEuler; 
 
           [Tooltip("Duration for individual pills to animate into the packaging container (Total for the entire path).")]
-         public float pillPackageAnimateDuration = 0.75f; // Moved from Animator
+         public float pillPackageAnimateDuration = 0.75f; 
 
          [Tooltip("Duration of the interval where pills drop during packaging animation.")]
-         public float pillsDropIntervalDuration = 0.6f; // Moved from Animator
+         public float pillsDropIntervalDuration = 0.6f; 
     }
 }

@@ -24,7 +24,7 @@ namespace Systems.Inventory
         QuantityBased, // Added for clarity, though logic handles maxStack > 1 separately
 
         /// <summary> This item is a gun and uses magazine/reserve ammo logic (requires magazineSize > 0). </summary>
-        GunLogic // NEW ENUM VALUE
+        GunLogic 
     }
 
 
@@ -47,47 +47,47 @@ namespace Systems.Inventory
         [TextArea] // Makes the Description field a multi-line text area in the Inspector
         public string Description;
 
-        // --- ADD FIELDS FOR VISUAL STORAGE ---
+        // --- FIELDS FOR VISUAL STORAGE ---
         [Header("Visual Storage Settings")]
         [Tooltip("The 3D prefab to instantiate on shelves for this item.")]
         public GameObject prefab3D; // Reference to the 3D prefab
         [Tooltip("How this item prefab occupies ShelfSlot grid spaces.")]
         public ShelfSlotArrangement shelfArrangement = ShelfSlotArrangement.OneByOne;
 
-        [Header("Item Classification")] // New Header for labels/categories
+        [Header("Item Classification")] 
         [Tooltip("The primary classification or label for this item.")]
         public ItemLabel itemLabel = ItemLabel.None; // Use the enum field
 
         [Tooltip("The price of this item when sold to a customer.")]
         public float price = 5.0f;
 
-        // --- NEW FIELDS FOR ITEM HEALTH/DURABILITY ---
+        // --- FIELDS FOR ITEM HEALTH/DURABILITY ---
         [Header("Durability/Health")]
         [Tooltip("The maximum health or durability for instances of this item type (only relevant if maxStack is 1). For guns, this is total ammo capacity.")]
         public int maxHealth = 1; // Default to 1 for non-stackable items
 
         [Tooltip("Defines how health is reduced for this item type (only relevant if maxStack is 1 and maxHealth > 0).")]
-        public ItemUsageLogic usageLogic = ItemUsageLogic.BasicHealthReduction; // NEW FIELD
+        public ItemUsageLogic usageLogic = ItemUsageLogic.BasicHealthReduction; 
 
         [Tooltip("Default health loss amount for VariableHealthReduction if no specific amount is provided by the caller.")]
-        public int defaultVariableHealthLoss = 1; // NEW FIELD
+        public int defaultVariableHealthLoss = 1;
 
         [Tooltip("Number of usage events required before health is reduced (for DelayedHealthReduction).")]
-        public int usageEventsPerHealthLoss = 1; // NEW FIELD
+        public int usageEventsPerHealthLoss = 1; 
 
         [Tooltip("Amount of health lost when the usage event threshold is reached (for DelayedHealthReduction).")]
-        public int healthLossPerEventThreshold = 1; // NEW FIELD
+        public int healthLossPerEventThreshold = 1; 
 
-        // --- NEW FIELDS FOR GUN LOGIC ---
-        [Header("Gun Settings (Requires Usage Logic: GunLogic)")] // NEW HEADER
+        // --- FIELDS FOR GUN LOGIC ---
+        [Header("Gun Settings (Requires Usage Logic: GunLogic)")] 
         [Tooltip("The number of shots/uses before a reload is required (magazine capacity). Only relevant if usageLogic is GunLogic.")]
-        public int magazineSize = 0; // NEW FIELD
+        public int magazineSize = 0; 
 
         [Tooltip("The time in seconds required to complete a reload. Only relevant if usageLogic is GunLogic.")]
-        public float reloadTime = 0.0f; // NEW FIELD
+        public float reloadTime = 0.0f; 
 
 
-        // --- NEW FIELDS FOR USAGE TRIGGERS ---
+        // --- FIELDS FOR USAGE TRIGGERS ---
         [Header("Usage Triggers")]
         [Tooltip("The list of allowed input or system triggers that can initiate usage for this item type.")]
         public List<UsageTriggerType> allowedUsageTriggers = new List<UsageTriggerType>();

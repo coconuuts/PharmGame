@@ -5,6 +5,7 @@ using System.Collections.Generic; // Needed for List
 using System.Linq;
 using Systems.Minigame;
 using Systems.CraftingMinigames;
+using Game.Prescriptions;
 
 // Assuming this is within your Systems.Interaction namespace file (e.g., InteractionResponses.cs)
 namespace Systems.Interaction
@@ -54,7 +55,7 @@ namespace Systems.Interaction
     {
         public LightSwitch LightSwitch { get; }
 
-        public ToggleLightResponse(LightSwitch lightSwitch) 
+        public ToggleLightResponse(LightSwitch lightSwitch)
         {
             LightSwitch = lightSwitch;
         }
@@ -105,12 +106,12 @@ namespace Systems.Interaction
         /// Constructor for OpenCraftingResponse.
         /// </summary>
         /// <param name="craftingStation">The CraftingStation component that was interacted with.</param>
-        public OpenCraftingResponse(CraftingStation craftingStation) 
+        public OpenCraftingResponse(CraftingStation craftingStation)
         {
             CraftingStationComponent = craftingStation;
         }
     }
-    
+
     /// <summary>
     /// Response indicating that a CRAFTING minigame should be started.
     /// Contains a reference to the instantiated minigame component.
@@ -132,6 +133,21 @@ namespace Systems.Interaction
             Batches = batches;
             InitialCameraTarget = initialCameraTarget;
             InitialCameraDuration = initialCameraDuration;
+        }
+    }
+    
+    // --- Response for obtaining a prescription --- 
+    /// <summary>
+    /// Response indicating that the player is obtaining a prescription from an NPC.
+    /// Contains the details of the prescription order.
+    /// </summary>
+    public class ObtainPrescriptionResponse : InteractionResponse 
+    {
+        public PrescriptionOrder OrderDetails { get; } // <-- Holds the prescription data
+
+        public ObtainPrescriptionResponse(PrescriptionOrder orderDetails) // <-- Constructor
+        {
+            OrderDetails = orderDetails;
         }
     }
 }

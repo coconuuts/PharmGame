@@ -1,4 +1,4 @@
-// --- START OF FILE WaitingForPrescriptionSO.cs ---
+// --- START OF FILE WaitingForPrescriptionSO.cs (Modified for Caching Interaction Components) ---
 
 using UnityEngine;
 using System;
@@ -8,6 +8,9 @@ using Game.NPC; // Needed for CustomerState and GeneralState enums
 using Game.Prescriptions; // Needed for PrescriptionOrder // <-- NEW: Added using directive
 using Random = UnityEngine.Random; // Specify UnityEngine.Random
 using Game.Events; // Needed for new event // <-- NEW: Added using directive
+using Systems.Interaction; // Needed for MultiInteractableManager // <-- NEW: Added using directive
+using Game.Interaction; // Needed for ObtainPrescription // <-- NEW: Added using directive
+
 
 namespace Game.NPC.States // Place alongside other active states
 {
@@ -15,6 +18,9 @@ namespace Game.NPC.States // Place alongside other active states
     /// State for a Prescription Customer waiting at the prescription claim spot.
     /// An impatience timer runs, after which the NPC exits.
     /// Corresponds to CustomerState.WaitingForPrescription.
+    /// MODIFIED: Activates the ObtainPrescription interactable on Enter and deactivates on Exit.
+    /// UI display is now handled by PlayerUIPopups.
+    /// Interaction components are accessed via context (cached on Runner).
     /// </summary>
     [CreateAssetMenu(fileName = "CustomerWaitingForPrescriptionState", menuName = "NPC/Customer States/Waiting For Prescription", order = 3)] // Order after Prescription Entering
     public class WaitingForPrescriptionSO : NpcStateSO
@@ -49,29 +55,32 @@ namespace Game.NPC.States // Place alongside other active states
 
             waitingRoutine = context.StartCoroutine(WaitingRoutine(context)); // Start the timer coroutine
 
-            // --- Log Prescription Order Data --- // <-- NEW LOGIC
+            // --- Log Prescription Order Data ---
             PrescriptionOrder assignedOrder;
             bool hasOrder = false;
 
-            if (context.Runner != null && context.Runner.IsTrueIdentityNpc && context.TiData != null)
+            if (context.Runner != null)
             {
-                 // TI NPC: Get order from TiData
-                 assignedOrder = context.TiData.assignedOrder; // Struct copy
-                 hasOrder = context.TiData.pendingPrescription; // Check the flag
-                 Debug.Log($"{context.NpcObject.name}: TI NPC. Has Pending Prescription: {hasOrder}. Order Data: {assignedOrder.ToString()}", context.NpcObject);
+                 if (context.Runner.IsTrueIdentityNpc && context.TiData != null)
+                 {
+                      // TI NPC: Get order from TiData
+                      assignedOrder = context.TiData.assignedOrder; // Struct copy
+                      hasOrder = context.TiData.pendingPrescription; // Check the flag
+                      Debug.Log($"{context.NpcObject.name}: TI NPC. Has Pending Prescription: {hasOrder}. Order Data: {assignedOrder.ToString()}", context.NpcObject);
+                 }
+                 else if (!context.Runner.IsTrueIdentityNpc)
+                 {
+                      // Transient NPC: Get order from Runner's temporary fields
+                      assignedOrder = context.Runner.assignedOrderTransient; // Struct copy
+                      hasOrder = context.Runner.hasPendingPrescriptionTransient; // Check the flag
+                      Debug.Log($"{context.NpcObject.name}: Transient NPC. Has Pending Prescription: {hasOrder}. Order Data: {assignedOrder.ToString()}", context.NpcObject);
+                 } else {
+                      Debug.LogWarning($"{context.NpcObject.name}: WaitingForPrescriptionSO OnEnter: Runner is TI but TiData is null!", context.NpcObject);
+                 }
+            } else {
+                 Debug.LogError($"{context.NpcObject.name}: WaitingForPrescriptionSO OnEnter: Runner is null! Cannot access assigned order data.", context.NpcObject);
             }
-            else if (context.Runner != null && !context.Runner.IsTrueIdentityNpc)
-            {
-                 // Transient NPC: Get order from Runner's temporary fields
-                 assignedOrder = context.Runner.assignedOrderTransient; // Struct copy
-                 hasOrder = context.Runner.hasPendingPrescriptionTransient; // Check the flag
-                 Debug.Log($"{context.NpcObject.name}: Transient NPC. Has Pending Prescription: {hasOrder}. Order Data: {assignedOrder.ToString()}", context.NpcObject);
-            }
-            else
-            {
-                 Debug.LogError($"{context.NpcObject.name}: WaitingForPrescriptionSO OnEnter: Runner or TiData is null! Cannot access assigned order data.", context.NpcObject);
-                 hasOrder = false; // Cannot confirm order
-            }
+
 
             if (!hasOrder)
             {
@@ -79,8 +88,10 @@ namespace Game.NPC.States // Place alongside other active states
                  // Fallback if somehow entered this state without a pending order
                  context.TransitionToState(CustomerState.Exiting);
                  // Note: The coroutine might still start but will be stopped by OnExit.
+                 return; // Exit OnEnter early
             }
-            // --- END NEW LOGIC ---
+            // --- END Log Prescription Order Data ---
+
 
             // Optional: Rotate towards the player interaction point if known
             // This might be the same as the claim point, or a specific interaction trigger point.
@@ -96,6 +107,23 @@ namespace Game.NPC.States // Place alongside other active states
              {
                  Debug.LogWarning($"CustomerAI ({context.NpcObject.name}): PrescriptionManager or claim point is null! Cannot rotate.", context.NpcObject);
              }
+
+            // --- Activate the ObtainPrescription interactable using cached components --- // <-- MODIFIED LOGIC
+            MultiInteractableManager multiManager = context.GetMultiInteractableManager(); // Get from context helper
+            ObtainPrescription obtainPrescriptionComponent = context.GetObtainPrescription(); // Get from context helper
+
+            if (multiManager != null && obtainPrescriptionComponent != null)
+            {
+                Debug.Log($"{context.NpcObject.name}: Activating ObtainPrescription interactable.", context.NpcObject);
+                multiManager.SetActiveInteractable(obtainPrescriptionComponent); // Set ObtainPrescription as the active interactable
+            }
+            else
+            {
+                Debug.LogError($"{context.NpcObject.name}: MultiInteractableManager ({multiManager != null}) or ObtainPrescription component ({obtainPrescriptionComponent != null}) not found! Cannot activate prescription interaction.", context.NpcObject);
+                // Decide fallback: maybe transition to Exiting if interaction is critical?
+                // For now, just log error and continue the waiting timer.
+            }
+            // --- END MODIFIED LOGIC ---
         }
 
         public override void OnUpdate(NpcStateContext context)
@@ -123,15 +151,47 @@ namespace Game.NPC.States // Place alongside other active states
             // Note: Stop waiting animation
             // context.PlayAnimation("Idle");
 
-            // --- NEW: Publish event to free the claim spot --- // <-- NEW LOGIC
-            // This event signals that the NPC is leaving the claim spot.
-            // The PrescriptionManager will listen for this to update its IsPrescriptionClaimSpotOccupied status.
-            // This should happen regardless of the reason for exiting (impatience, successful interaction - future).
-            Debug.Log($"{context.NpcObject.name}: Exiting {name}. Publishing FreePrescriptionClaimSpotEvent.", context.NpcObject);
-            context.PublishEvent(new FreePrescriptionClaimSpotEvent(context.NpcObject)); // Need to define FreePrescriptionClaimSpotEvent
+            // --- Deactivate the ObtainPrescription interactable and reset its state using cached components --- // <-- MODIFIED LOGIC
+            MultiInteractableManager multiManager = context.GetMultiInteractableManager(); // Get from context helper
+            ObtainPrescription obtainPrescriptionComponent = context.GetObtainPrescription(); // Get from context helper
+
+
+            if (multiManager != null)
+            {
+                 // Deactivate the current interactable (which should be ObtainPrescription if we entered correctly)
+                 Debug.Log($"{context.NpcObject.name}: Deactivating current interactable (expected ObtainPrescription).", context.NpcObject);
+                 multiManager.DeactivateCurrentInteractable(); // This also disables the component
+            }
+            else
+            {
+                 Debug.LogWarning($"{context.NpcObject.name}: MultiInteractableManager not found on exit! Cannot deactivate interactable.", context.NpcObject);
+            }
+
+            if (obtainPrescriptionComponent != null)
+            {
+                 // Reset the state of the ObtainPrescription component (clears flag)
+                 Debug.Log($"{context.NpcObject.name}: Resetting ObtainPrescription component state.", context.NpcObject);
+                 obtainPrescriptionComponent.ResetInteraction(); // <-- This now only resets the flag
+            }
+            else
+            {
+                 Debug.LogWarning($"{context.NpcObject.name}: ObtainPrescription component not found on exit! Cannot reset its state.", context.NpcObject);
+            }
+            // --- END MODIFIED LOGIC ---
+
+
+            // --- NEW: Hide the UI via PlayerUIPopups ---
+            if (PlayerUIPopups.Instance != null)
+            {
+                 Debug.Log($"{context.NpcObject.name}: Calling PlayerUIPopups.HidePrescriptionOrder().", context.NpcObject);
+                 PlayerUIPopups.Instance.HidePrescriptionOrder();
+            } else {
+                 Debug.LogWarning($"{context.NpcObject.name}: PlayerUIPopups.Instance is null! Cannot hide prescription order UI on exit.", context.NpcObject);
+            }
             // --- END NEW LOGIC ---
 
-            // --- NEW: Clear pending prescription flag and order data --- // <-- NEW LOGIC
+
+            // --- Clear pending prescription flag and order data ---
             // This should happen when the NPC *completes* the prescription flow (by exiting this state).
             // This ensures they don't try to get the same prescription again immediately.
             if (context.Runner != null)
@@ -156,6 +216,15 @@ namespace Game.NPC.States // Place alongside other active states
             } else {
                  Debug.LogError($"{context.NpcObject.name}: WaitingForPrescriptionSO OnExit: Runner is null! Cannot clear pending prescription data.", context.NpcObject);
             }
+            // --- END Clear pending prescription flag and order data ---
+
+
+            // --- Publish event to free the claim spot ---
+            // This event signals that the NPC is leaving the claim spot.
+            // The PrescriptionManager will listen for this to update its IsPrescriptionClaimSpotOccupied status.
+            // This should happen regardless of the reason for exiting (impatience, successful interaction - future).
+            Debug.Log($"{context.NpcObject.name}: Exiting {name}. Publishing FreePrescriptionClaimSpotEvent.", context.NpcObject);
+            context.PublishEvent(new FreePrescriptionClaimSpotEvent(context.NpcObject));
             // --- END NEW LOGIC ---
         }
 
@@ -184,4 +253,4 @@ namespace Game.NPC.States // Place alongside other active states
         }
     }
 }
-// --- END OF FILE WaitingForPrescriptionSO.cs ---
+// --- END OF FILE WaitingForPrescriptionSO.cs (Modified for Caching Interaction Components) ---

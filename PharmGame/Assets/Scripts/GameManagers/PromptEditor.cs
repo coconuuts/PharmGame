@@ -11,6 +11,8 @@ public class PromptEditor : MonoBehaviour
 
     [Tooltip("The screen-space GameObject containing the TMP_Text for NPC interaction prompts.")]
     [SerializeField] private GameObject screenSpaceNPCPrompt; // Renamed for clarity
+    [Tooltip("The TMP Text component *inside* the screen-space NPC prompt GameObject.")] // NEW FIELD
+    [SerializeField] private TMP_Text screenSpaceNPCText;
 
 
     private static PromptEditor instance; // Singleton instance
@@ -42,25 +44,34 @@ public class PromptEditor : MonoBehaviour
         {
             Debug.LogError("No GameObject found with the tag 'InteractionPrompt'.");
         }
+
+        if (screenSpaceNPCPrompt != null)
+        {
+            screenSpaceNPCText = screenSpaceNPCPrompt.GetComponentInChildren<TMP_Text>(); // Use GetComponentInChildren in case the Text is on a child
+            if (screenSpaceNPCText == null)
+            {
+                Debug.LogError("Screen Space NPC Prompt GameObject is assigned but does not have a TMP_Text component (or in its children).");
+            }
+        } else {
+            Debug.LogError("Screen Space NPC Prompt GameObject is not assigned in PromptEditor!");
+        }
     }
 
     private void Start()
     {
-        // Store the initial rotation of the prompt text element.
+        // Store the initial rotation of the prompt text element (for world-space).
         if (promptText != null)
         {
             initialPromptRotation = promptText.transform.rotation;
         }
         else
         {
-            Debug.LogWarning("PromptEditor: promptText is null in Start().  Make sure the InteractionPrompt tag is set and the object exists in the scene.");
+            Debug.LogWarning("PromptEditor: promptText is null in Start(). World-space prompt rotation tracking disabled.");
         }
 
-        if (screenSpaceNPCPrompt != null)
-        {
-             // Ensure the GameObject itself is inactive, not just the text component
-            screenSpaceNPCPrompt.SetActive(false);
-        }
+        // Ensure BOTH prompts are initially inactive
+        HidePrompt(); // Hide world-space
+        SetScreenSpaceNPCPromptActive(false, ""); // Hide screen-space and clear text
     }
 
     /// <summary>
@@ -118,15 +129,41 @@ public class PromptEditor : MonoBehaviour
         }
     }
 
-        /// <summary>
+    /// <summary>
     /// Sets the active state and text of the SCREEN-SPACE NPC prompt.
     /// </summary>
-    public void SetScreenSpaceNPCPromptActive(bool isActive)
+    /// <param name="isActive">True to show the prompt, false to hide it.</param>
+    /// <param name="message">The text to display. Only used if isActive is true.</param>
+    public void SetScreenSpaceNPCPromptActive(bool isActive, string message = "")
     {
         if (screenSpaceNPCPrompt != null)
         {
-            // Activate/Deactivate the parent GameObject
             screenSpaceNPCPrompt.SetActive(isActive);
+            if (isActive && screenSpaceNPCText != null)
+            {
+                screenSpaceNPCText.text = message;
+            }
+            else if (!isActive && screenSpaceNPCText != null) // Clear text when hiding
+            {
+                screenSpaceNPCText.text = "";
+            }
+        }
+        else
+        {
+            Debug.LogWarning("PromptEditor: Screen Space NPC Prompt GameObject is not assigned. Cannot set active state or text.");
+        }
+
+        // IMPORTANT: When activating the screen-space prompt, ensure the world-space one is hidden.
+        // And vice-versa. This prevents overlap.
+        if (isActive && promptText != null && promptText.enabled)
+        {
+            HidePrompt(); // Hide world-space if screen-space is activated
+        }
+        else if (!isActive && promptText != null && !promptText.enabled)
+        {
+            // If screen-space is being hidden, we might need to re-evaluate showing a world-space prompt
+            // if the player is now looking at something else. This is handled by PlayerInteractionManager's raycast loop.
+            // We don't need to explicitly re-activate the world-space one here.
         }
     }
 }

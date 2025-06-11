@@ -1,8 +1,12 @@
+// Systems/Player/PlayerInteractionManager.cs
+// Keep existing usings and namespace
+
 using UnityEngine;
 using TMPro;
-using Systems.Interaction; // Needed for IInteractable and InteractionResponse
+using Systems.Interaction; // Needed for IInteractable, InteractionResponse, and MultiInteractableManager
 using Systems.GameStates; // Needed for MenuManager and GameState enum
 using Systems.Player; // Moved PlayerInteractionManager to Player namespace
+using System.Linq; // Needed for OfType if you modify Awake/Start
 
 namespace Systems.Player // Place in Systems.Player namespace for consistency
 {
@@ -41,20 +45,6 @@ namespace Systems.Player // Place in Systems.Player namespace for consistency
                      return;
                  }
             }
-
-            // If PromptEditor manages prompts, we don't need to initialize promptText here.
-            // If this script manages the text directly, initialize it:
-            /*
-             if (promptText != null)
-             {
-                  promptText.text = "";
-                  promptText.enabled = false; // Or promptText.gameObject.SetActive(false);
-             }
-             else
-             {
-                  Debug.LogWarning("PlayerInteractionManager: Prompt Text is not assigned. Interaction prompts will not be displayed.", this);
-             }
-            */
         }
 
         private void OnEnable()
@@ -83,7 +73,6 @@ namespace Systems.Player // Place in Systems.Player namespace for consistency
              */
         }
 
-        // --- ADDED: Handler for state changes ---
         private void HandleGameStateChanged(MenuManager.GameState newState, MenuManager.GameState oldState, InteractionResponse response)
         {
             // Enable raycast only in the Playing state
@@ -178,38 +167,56 @@ namespace Systems.Player // Place in Systems.Player namespace for consistency
 
             Ray ray = new Ray(cameraTransform.position, cameraTransform.forward);
             RaycastHit hit;
-            IInteractable hitInteractable = null;
+            IInteractable hitInteractable = null; // This will hold the *final* interactable we potentially care about
 
             if (Physics.Raycast(ray, out hit, rayDistance))
             {
-                 // Check the collider first to see if it's a trigger or has an IInteractable
-                 // Using GetComponent<IInteractable>() is generally more direct than checking isTrigger if you're specifically looking for the interface.
-                 // However, keeping the isTrigger check might be intentional if only triggers are interactable. Let's stick to the original logic flow.
-                 if (hit.collider.isTrigger)
+                 GameObject hitObject = hit.collider.gameObject;
+
+                 // --- Check for MultiInteractableManager first ---
+                 // Check the hit object or any parent for the manager
+                 MultiInteractableManager multiManager = hitObject.GetComponentInParent<MultiInteractableManager>();
+
+                 if (multiManager != null)
                  {
-                      hitInteractable = hit.collider.GetComponent<IInteractable>();
+                      // If the object has a manager, ask it for the currently active interactable
+                      hitInteractable = multiManager.CurrentActiveInteractable;
+                      // Note: The manager itself doesn't implement IInteractable,
+                      // so hit.collider.GetComponentInParent<IInteractable>() on the manager GO
+                      // might return one of the managed interactables, BUT asking the manager
+                      // directly is the correct way to get the *intended* active one.
                  }
-                 // If not a trigger, check the collider's GameObject for IInteractable anyway (in case interactable is on a non-trigger collider)
-                 // This adds robustness.
-                 if (hitInteractable == null)
+                 else
                  {
-                      hitInteractable = hit.collider.GetComponentInParent<IInteractable>(); // Check parent hierarchy too
+                      // If no manager, fall back to the old logic: find the first IInteractable
+                      // on the object or its parent. This works for objects with only one interactable.
+                      hitInteractable = hitObject.GetComponentInParent<IInteractable>();
+                 }
+
+                // The rest of the logic remains the same:
+                // Manage prompt and currentInteractable based on raycast hit
+                 if (hitInteractable != null)
+                 {
+                      // If we hit a NEW interactable (or null -> interactable)
+                      if (currentInteractable != hitInteractable)
+                      {
+                           currentInteractable?.DeactivatePrompt(); // Deactivate prompt on the old one (if any)
+                           currentInteractable = hitInteractable; // Set the new one
+                           currentInteractable.ActivatePrompt(); // Activate prompt on the new one
+                      }
+                      // If we hit the SAME interactable, do nothing (prompt is already active)
+                 }
+                 else // If raycast did NOT hit a valid interactable (either none or manager returned null)
+                 {
+                      // If we were looking at an interactable, deactivate its prompt and clear the reference
+                      if (currentInteractable != null)
+                      {
+                           currentInteractable.DeactivatePrompt();
+                           currentInteractable = null;
+                      }
                  }
             }
-
-             // --- Manage prompt and currentInteractable based on raycast hit ---
-             if (hitInteractable != null)
-             {
-                  // If we hit a NEW interactable
-                  if (currentInteractable != hitInteractable)
-                  {
-                       currentInteractable?.DeactivatePrompt(); // Deactivate prompt on the old one (if any)
-                       currentInteractable = hitInteractable; // Set the new one
-                       currentInteractable.ActivatePrompt(); // Activate prompt on the new one
-                  }
-                  // If we hit the SAME interactable, do nothing (prompt is already active)
-             }
-             else // If raycast did NOT hit an interactable
+             else // If raycast hit nothing
              {
                   // If we were looking at an interactable, deactivate its prompt and clear the reference
                   if (currentInteractable != null)
@@ -218,7 +225,6 @@ namespace Systems.Player // Place in Systems.Player namespace for consistency
                        currentInteractable = null;
                   }
              }
-             // -------------------------------------------------------------------
         }
 
 
@@ -255,6 +261,5 @@ namespace Systems.Player // Place in Systems.Player namespace for consistency
               */
             Debug.Log("PlayerInteractionManager: Interaction raycast disabled.");
         }
-        // ---------------------------------------------------------------------------------------
     }
 }

@@ -113,7 +113,6 @@ namespace Systems.Inventory
                          if (selectedItem.details.usageLogic == ItemUsageLogic.GunLogic && selectedItem.details.magazineSize > 0)
                          {
                              Debug.Log($"ItemUsageManager: 'R' input detected. Attempting to reload '{selectedItem.details.Name}'.");
-                             // Call a new method to handle reload initiation
                              TryStartReload(selectedItem, playerInventorySelector.parentInventory, playerInventorySelector.selectedIndex);
                          }
                          // else { Debug.Log($"ItemUsageManager: 'R' input detected, but selected item '{selectedItem.details.Name}' is not a reloadable gun."); } // Commented out to reduce spam
@@ -205,8 +204,6 @@ namespace Systems.Inventory
                  Debug.LogWarning($"ItemUsageManager: UseItem called for '{itemToUse.details.Name}' with disallowed trigger type '{trigger}'. Aborting usage.", this);
                  return false;
             }
-            // --- END NEW CHECK ---
-
 
             Debug.Log($"ItemUsageManager: Executing usage logic for item '{itemToUse.details.Name}' (Instance ID: {itemToUse.Id}) from slot {selectedIndex}, triggered by: {trigger}.");
 
@@ -274,9 +271,9 @@ namespace Systems.Inventory
                         if (itemToUse.currentMagazineHealth <= 0)
                         {
                             Debug.Log($"ItemUsageManager: Magazine of '{itemToUse.details.Name}' is empty. Auto-reloading...");
-                            // --- Trigger Auto-Reload --- (Implementation in later substep)
+                            // --- Trigger Auto-Reload --- 
                             // For now, just log the intention. The actual reload start logic goes here later.
-                            TryStartReload(itemToUse, userInventory, selectedIndex); // Call the new reload method
+                            TryStartReload(itemToUse, userInventory, selectedIndex);
                         }
                          // Note: Gun items are NOT removed when total health reaches 0.
                          // The IsUsable() check at the start prevents using them when total health is 0.
@@ -401,7 +398,7 @@ namespace Systems.Inventory
         }
 
 
-        // --- NEW RELOAD LOGIC ---
+        // --- RELOAD LOGIC ---
 
         /// <summary>
         /// Attempts to start the reload process for a gun item.
@@ -506,7 +503,7 @@ namespace Systems.Inventory
             // else: Reload is still in progress, do nothing this frame.
         }
 
-        // --- NEW TEMPORARY AMMO ACQUISITION LOGIC ---
+        // --- TEMPORARY AMMO ACQUISITION LOGIC ---
         /// <summary>
         /// Simulates adding ammo to a gun's total reserve health (for testing).
         /// Called by player input (T key).

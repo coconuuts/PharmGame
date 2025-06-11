@@ -1,5 +1,3 @@
-// --- START OF FILE NpcStateContext.cs (Modified for PrescriptionManager) ---
-
 // --- START OF FILE NpcStateContext.cs --- // Keep original comment for history
 
 using UnityEngine;
@@ -16,6 +14,9 @@ using Game.Proximity; // Needed for ProximityManager.ProximityZone
 using Game.Navigation; // Needed for PathSO, PathTransitionDetails
 using Game.NPC.TI; // Needed for TiNpcData, TiNpcManager
 using Game.Prescriptions; // Needed for PrescriptionManager // <-- NEW: Added using directive
+using Systems.Interaction; // Needed for MultiInteractableManager // <-- NEW: Added using directive
+using Game.Interaction; // Needed for ObtainPrescription // <-- NEW: Added using directive
+
 
 namespace Game.NPC.States // Context is closely related to states
 {
@@ -23,7 +24,7 @@ namespace Game.NPC.States // Context is closely related to states
     /// Provides necessary references and helper methods to an NpcStateSO
     /// currently being executed by the NpcStateMachineRunner.
     /// Passed to OnEnter, OnUpdate, OnExit methods.
-    /// MODIFIED: Includes references to TiNpcManager and PrescriptionManager.
+    /// MODIFIED: Includes references to TiNpcManager, PrescriptionManager, MultiInteractableManager, and ObtainPrescription.
     /// </summary>
     public class NpcStateContext
     {
@@ -38,6 +39,11 @@ namespace Game.NPC.States // Context is closely related to states
         // Reference to the Path Following handler
         public NpcPathFollowingHandler PathFollowingHandler;
          public TiNpcData TiData;
+
+        // --- NEW: Cached Interaction Components --- // <-- NEW FIELDS
+        public MultiInteractableManager MultiInteractableManager;
+        public ObtainPrescription ObtainPrescription;
+        // --- END NEW ---
 
 
         // --- External References ---
@@ -277,7 +283,7 @@ namespace Game.NPC.States // Context is closely related to states
 
              assignedSpot = null;
              spotIndex = -1;
-             
+
              Debug.Log($"[DEBUG {NpcObject.name}] CONTEXT_TRY_JOIN_BEFORE_IF: Just before if check.", NpcObject);
 
              if (PrescriptionManager != null)
@@ -352,7 +358,21 @@ namespace Game.NPC.States // Context is closely related to states
          {
               InterruptionHandler?.EndInterruption();
          }
+
+        // --- NEW: Helper methods for Interaction Components via cached Runner references --- // <-- NEW LOGIC
+
+        /// <summary>
+        /// Gets the cached MultiInteractableManager component from the Runner.
+        /// </summary>
+        public MultiInteractableManager GetMultiInteractableManager() => Runner?.MultiInteractableManager;
+
+        /// <summary>
+        /// Gets the cached ObtainPrescription component from the Runner.
+        /// </summary>
+        public ObtainPrescription GetObtainPrescription() => Runner?.ObtainPrescription;
+
+        // --- END NEW LOGIC ---
     }
 }
 
-// --- END OF FILE NpcStateContext.cs (Modified for PrescriptionManager) ---
+// --- END OF FILE NpcStateContext.cs (Modified for Caching MultiInteractableManager and ObtainPrescription) ---

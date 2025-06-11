@@ -1,3 +1,5 @@
+// --- START OF FILE SimpleActionDispatcher.cs ---
+
 using UnityEngine;
 using Systems.Interaction; // Needed to access InteractionResponse types
 
@@ -31,6 +33,21 @@ namespace Systems.GameStates // Place in the same namespace as MenuManager and S
             // Add more 'else if' blocks here for other simple, stateless interaction response types
             // else if (response is PlaySoundResponse playSoundResponse) { /* ... handle playing a sound ... */ }
             // else if (response is GrantItemResponse grantItemResponse) { /* ... handle giving player an item ... */ }
+
+            // --- Handle ObtainPrescriptionResponse ---
+            else if (response is ObtainPrescriptionResponse obtainPrescriptionResponse)
+            {
+                Debug.Log($"SimpleActionDispatcher: Received ObtainPrescriptionResponse for order: {obtainPrescriptionResponse.OrderDetails}. Displaying UI.");
+
+                // --- NEW: Call PlayerUIPopups to display the order ---
+                if (PlayerUIPopups.Instance != null)
+                {
+                    PlayerUIPopups.Instance.DisplayPrescriptionOrder(obtainPrescriptionResponse.OrderDetails);
+                } else {
+                    Debug.LogError("SimpleActionDispatcher: PlayerUIPopups.Instance is null! Cannot display prescription order UI.");
+                }
+                // --- END NEW ---
+            }
             else
             {
                 // Log a warning if the response type is not handled by this dispatcher
@@ -39,3 +56,4 @@ namespace Systems.GameStates // Place in the same namespace as MenuManager and S
         }
     }
 }
+// --- END OF FILE SimpleActionDispatcher.cs ---

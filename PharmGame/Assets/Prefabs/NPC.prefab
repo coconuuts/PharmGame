@@ -636,6 +636,8 @@ GameObject:
   - component: {fileID: 163036449089475493}
   - component: {fileID: -4162844480891638504}
   - component: {fileID: 4614193484094961147}
+  - component: {fileID: 8946029754246460174}
+  - component: {fileID: 1359511461587307478}
   m_Layer: 7
   m_Name: NPC
   m_TagString: NPC
@@ -942,7 +944,12 @@ MonoBehaviour:
   fallbackReturningStateEnumType: Game.NPC.GeneralState
   fallbackIdleStateEnumKey: Idle
   fallbackIdleStateEnumType: Game.NPC.GeneralState
-  moderateUpdateRateHz: 10
+  assignedOrderTransient:
+    patientName: 
+    prescribedDrug: 
+    dosePerDay: 0
+    lengthOfTreatmentDays: 0
+    illegalOrder: 0
 --- !u!114 &54584857617627132
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1021,6 +1028,32 @@ MonoBehaviour:
   pathFollowingSpeed: 3.5
   waypointArrivalThreshold: 0.75
   rotationSpeed: 0.5
+--- !u!114 &8946029754246460174
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4394407753789290286}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0527167dee5cf874fbbed83b5cf6ed42, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  interactionPromptMessage: Take prescription order (E)
+--- !u!114 &1359511461587307478
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4394407753789290286}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 47fdcc1e8f776cc42b17f8aaaafe7978, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  initialActiveInteractableTypeName: OpenNPCInventory
 --- !u!1 &4855562079567102611
 GameObject:
   m_ObjectHideFlags: 0

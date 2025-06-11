@@ -116,7 +116,7 @@ namespace Systems.Inventory
                     Debug.Log("InventorySelector: Starting while in Playing state, applying initial selection highlight.");
                     ApplyHighlight(selectedIndex); // Apply selection highlight to the default/saved index
                 }
-                // --- END ADDED CODE ---
+
                  else
                  {
                      // Ensure highlight is off if starting in a state other than Playing
@@ -293,8 +293,8 @@ namespace Systems.Inventory
         /// Attempts to use the item in the currently selected slot.
         /// Called by the input handling system (e.g., ItemUsageManager).
         /// </summary>
-        /// <param name="trigger">The type of action that triggered this usage.</param> // NEW PARAMETER
-        public bool UseSelectedItem(UsageTriggerType trigger) // NEW PARAMETER
+        /// <param name="trigger">The type of action that triggered this usage.</param> 
+        public bool UseSelectedItem(UsageTriggerType trigger)
         {
             Item itemToUse = GetSelectedItem();
 

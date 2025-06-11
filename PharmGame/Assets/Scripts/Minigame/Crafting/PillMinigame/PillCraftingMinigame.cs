@@ -223,8 +223,6 @@ namespace Systems.CraftingMinigames
                  uiHandler.OnFinishButtonClicked += OnFinishCountingClicked;
             }
             else Debug.LogError($"PillCraftingMinigame ({gameObject.name}): UI Handler is null! Cannot manage UI.", this);
-            // REMOVED: Direct UI access like countText.text, countingUIRoot.SetActive, finishCountingButton.onClick.AddListener, finishCountingButton.interactable
-            // -------------------------------------------------------------------------
 
             if (clickInteractor != null)
             {
@@ -414,7 +412,6 @@ namespace Systems.CraftingMinigames
              Debug.Log($"PillCraftingMinigame ({gameObject.name}): Finished starting pill spawns.");
         }
 
-        // --- UPDATED: Input handling will be moved to ClickInteractor in Phase 3 ---
         private void HandleObjectClicked(GameObject clickedObject)
         {
              // This method is ONLY subscribed and enabled during the Middle (Counting) state.
