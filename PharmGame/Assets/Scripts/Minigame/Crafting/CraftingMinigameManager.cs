@@ -1,3 +1,5 @@
+// --- START OF FILE CraftingMinigameManager.cs ---
+
 // Systems/CraftingMinigames/CraftingMinigameManager.cs
 using UnityEngine;
 using InventoryClass = Systems.Inventory.Inventory;
@@ -98,11 +100,13 @@ namespace Systems.CraftingMinigames // Use the same namespace
 
         /// <summary>
         /// Called by the CraftingStation to start a specific crafting minigame.
+        /// --- MODIFIED: Added parameters dictionary ---
         /// </summary>
         /// <param name="recipe">The recipe being crafted.</param>
         /// <param name="batches">The number of batches.</param>
+        /// <param name="parameters">A dictionary of additional parameters for minigame setup.</param>
         /// <returns>True if the minigame was successfully initiated, false otherwise.</returns>
-        public bool StartCraftingMinigame(CraftingRecipe recipe, int batches)
+        public bool StartCraftingMinigame(CraftingRecipe recipe, int batches, Dictionary<string, object> parameters)
         {
             if (currentActiveMinigame != null)
             {
@@ -134,7 +138,9 @@ namespace Systems.CraftingMinigames // Use the same namespace
                     currentActiveMinigame.gameObject.SetActive(true);
 
                     // Setup and start the minigame logic (derived class assigns _initialCameraTarget/Duration here)
-                    currentActiveMinigame.SetupAndStart(recipe, batches);
+                    // --- MODIFIED: Pass the parameters dictionary ---
+                    currentActiveMinigame.SetupAndStart(recipe, batches, parameters);
+                    // --- END MODIFIED ---
 
                     // Notify MenuManager with the STARTING camera data from the minigame instance
                     if (MenuManager.Instance != null)
@@ -170,6 +176,7 @@ namespace Systems.CraftingMinigames // Use the same namespace
                 return false; // No config found
             }
         }
+        // --- END MODIFIED ---
 
         /// <summary>
         /// Called when the currently active crafting minigame reports completion or abortion via its event.
@@ -247,3 +254,4 @@ namespace Systems.CraftingMinigames // Use the same namespace
         }
     }
 }
+// --- END OF FILE CraftingMinigameManager.cs ---

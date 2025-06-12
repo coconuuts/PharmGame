@@ -1,7 +1,9 @@
-// Systems/CraftingMinigames/ICraftingMinigame.cs
+// --- START OF FILE ICraftingMinigame.cs ---
+
 using System;
 using UnityEngine;
 using Systems.Inventory;
+using System.Collections.Generic; // Needed for Dictionary // <-- Added using directive
 
 namespace Systems.CraftingMinigames
 {
@@ -23,11 +25,14 @@ namespace Systems.CraftingMinigames
 
 
         /// <summary>
-        /// Sets up and starts the crafting minigame with recipe details and batches.
+        /// Sets up and starts the crafting minigame with recipe details, batches, and additional parameters.
+        /// --- MODIFIED: Added parameters dictionary ---
         /// </summary>
         /// <param name="recipe">The CraftingRecipe being crafted.</param>
         /// <param name="batches">The number of batches being crafted.</param>
-        void SetupAndStart(CraftingRecipe recipe, int batches);
+        /// <param name="parameters">A dictionary of additional parameters for minigame setup (e.g., target count from prescription).</param>
+        void SetupAndStart(CraftingRecipe recipe, int batches, Dictionary<string, object> parameters);
+        // --- END MODIFIED ---
 
         /// <summary>
         /// Performs final cleanup for the crafting minigame, often involving hiding UI or preparing for deactivation.
@@ -49,3 +54,4 @@ namespace Systems.CraftingMinigames
         event Action<object> OnCraftingMinigameCompleted;
     }
 }
+// --- END OF FILE ICraftingMinigame.cs ---

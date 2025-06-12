@@ -1,5 +1,7 @@
 // --- START OF FILE PrescriptionManager.cs ---
 
+// --- START OF FILE PrescriptionManager.cs ---
+
 using UnityEngine;
 using System.Collections.Generic; // Needed for List and Dictionary
 using System; // Needed for System.Serializable and Enum
@@ -17,12 +19,16 @@ using Random = UnityEngine.Random; // Specify UnityEngine.Random
 using System.Collections; // Needed for Coroutines
 using System.Linq; // Needed for LINQ operations like FirstOrDefault
 using Game.NPC.BasicStates;
+using Systems.Crafting; // Needed for DrugRecipeMappingSO // <-- Added using directive
+using Systems.Inventory; // Needed for ItemDetails // <-- Added using directive
+
 
 namespace Game.Prescriptions // Place the Prescription Manager in its own namespace
 {
     /// <summary>
     /// Manages the generation, assignment, and tracking of prescription orders.
     /// Also manages the Prescription Queue.
+    /// Now includes reference to DrugRecipeMappingSO for delivery validation.
     /// </summary>
     public class PrescriptionManager : MonoBehaviour
     {
@@ -40,6 +46,12 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
         [SerializeField] private PoolingManager poolingManager; // Will get via Instance if not assigned
         [Tooltip("Reference to the WaypointManager instance in the scene.")]
         [SerializeField] private WaypointManager waypointManager; // Will get via Instance if not assigned
+
+        // --- NEW: Reference to Drug Recipe Mapping ---
+        [Header("Prescription Fulfillment")]
+        [Tooltip("Reference to the ScriptableObject containing mappings from prescription drug names to crafting recipes and output items.")]
+        [SerializeField] private DrugRecipeMappingSO drugRecipeMapping; // <-- Added reference
+        // --- END NEW ---
 
 
         [Header("Prescription Order Settings")]
@@ -94,7 +106,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
         private Coroutine tiAssignmentCoroutine;
         private Coroutine orderGenerationCoroutine; // Added field
 
-        // --- Runtime tracking for active prescription claim spot --- 
+        // --- Runtime tracking for active prescription claim spot ---
         private GameObject currentClaimSpotOccupant = null; // Track the GameObject currently at the claim spot
 
         private void Awake()
@@ -157,6 +169,13 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
                waypointManager = WaypointManager.Instance;
                if (waypointManager == null) Debug.LogError("PrescriptionManager: WaypointManager instance not found!");
 
+               // --- NEW: Check Drug Recipe Mapping reference ---
+               if (drugRecipeMapping == null)
+               {
+                   Debug.LogError("PrescriptionManager: Drug Recipe Mapping SO reference is not assigned! Prescription delivery validation will not work.", this);
+               }
+               // --- END NEW ---
+
 
                // Subscribe to TimeManager events if available
                if (timeManager != null)
@@ -189,12 +208,12 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
              // EventManager.Subscribe<NpcInitializingEvent>(HandleNpcInitializing); // Placeholder
              if (timeManager != null)
              {
-                 timeManager.OnSunset += HandleSunset; 
-                 timeManager.OnSunrise += HandleSunrise; 
+                 timeManager.OnSunset += HandleSunset;
+                 timeManager.OnSunrise += HandleSunrise;
              }
              // Subscribe to new prescription events
-             EventManager.Subscribe<ClaimPrescriptionSpotEvent>(HandleClaimPrescriptionSpot); 
-             EventManager.Subscribe<FreePrescriptionClaimSpotEvent>(HandleFreePrescriptionClaimSpot); 
+             EventManager.Subscribe<ClaimPrescriptionSpotEvent>(HandleClaimPrescriptionSpot);
+             EventManager.Subscribe<FreePrescriptionClaimSpotEvent>(HandleFreePrescriptionClaimSpot);
              EventManager.Subscribe<QueueSpotFreedEvent>(HandlePrescriptionQueueSpotFreed);
 
              if (orderGenerationCoroutine == null && ordersToGeneratePerDay > 0 && !ordersGeneratedToday && timeManager != null && timeManager.CurrentGameTime != DateTime.MinValue && orderGenerationTime.IsWithinRange(timeManager.CurrentGameTime))
@@ -209,13 +228,13 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
              // Unsubscribe from events
              if (timeManager != null)
              {
-                 timeManager.OnSunset -= HandleSunset; 
-                 timeManager.OnSunrise -= HandleSunrise; 
+                 timeManager.OnSunset -= HandleSunset;
+                 timeManager.OnSunrise -= HandleSunrise;
              }
              // Unsubscribe from new prescription events
-             EventManager.Unsubscribe<ClaimPrescriptionSpotEvent>(HandleClaimPrescriptionSpot); 
-             EventManager.Unsubscribe<FreePrescriptionClaimSpotEvent>(HandleFreePrescriptionClaimSpot); 
-             EventManager.Unsubscribe<QueueSpotFreedEvent>(HandlePrescriptionQueueSpotFreed); 
+             EventManager.Unsubscribe<ClaimPrescriptionSpotEvent>(HandleClaimPrescriptionSpot);
+             EventManager.Unsubscribe<FreePrescriptionClaimSpotEvent>(HandleFreePrescriptionClaimSpot);
+             EventManager.Unsubscribe<QueueSpotFreedEvent>(HandlePrescriptionQueueSpotFreed);
 
              if (tiAssignmentCoroutine != null)
              {
@@ -267,7 +286,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
         /// <summary>
         /// Handles the OnSunrise event from TimeManager. Starts the TI assignment routine.
         /// </summary>
-        private void HandleSunrise() 
+        private void HandleSunrise()
         {
             Debug.Log("PrescriptionManager: Received OnSunrise event. Starting TI assignment routine.");
             // Start the coroutine for timed TI assignments
@@ -310,10 +329,10 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
                 // potentially pulling from a list of possible drugs, generating
                 // realistic doses/lengths, and linking to actual TI NPC IDs.
                 string patientName = $"Patient_{i + 1}"; // Simple dummy name
-                string prescribedDrug = $"Drug_{Random.Range(1, 10)}"; // Simple dummy drug
+                string prescribedDrug = $"Drug_1"; // Simple dummy drug
                 int dose = Random.Range(1, 4); // 1-3 times a day
-                int length = Random.Range(3, 30); // Increased length range for more persistence
-                bool illegal = Random.value < 0.1f; // 10% chance of being illegal
+                int length = Random.Range(3, 6); // Increased length range for more persistence
+                bool illegal = false; // 10% chance of being illegal
 
                 PrescriptionOrder newOrder = new PrescriptionOrder(patientName, prescribedDrug, dose, length, illegal);
 
@@ -369,11 +388,11 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
                   Debug.Log($"PrescriptionManager: Next TI assignment attempt in {tiAssignmentTimer:F2}s.");
              }
         }
-        
+
         /// <summary>
         /// Helper method to attempt assigning a TI prescription order.
         /// </summary>
-        private void AttemptTIAssignment() 
+        private void AttemptTIAssignment()
         {
             if (timeManager == null || tiNpcManager == null)
             {
@@ -465,7 +484,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
                 {
                     // Check if the prescription queue is full. If so, we cannot assign.
                     // This check is based on the vision: "if the prescription queue is currently full, then the prescriptionmanager will not flag any new transient npcs."
-                    if (IsPrescriptionQueueFull()) 
+                    if (IsPrescriptionQueueFull())
                     {
                         Debug.Log($"PrescriptionManager: Prescription queue is full. Cannot assign transient order to '{runner.gameObject.name}'.");
                         return false; // Cannot assign if queue is full
@@ -693,7 +712,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
                   {
                        Debug.LogWarning($"PrescriptionManager: No Runner found occupying spot {currentSpotIndex} in Prescription queue. This spot is a gap. Continuing cascade search.", this);
                   }
-             } 
+             }
         }
 
 
@@ -853,7 +872,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
          /// Removes a TI NPC's assigned order from the manager's tracking dictionary.
          /// Called when the TI NPC successfully completes the prescription flow.
          /// </summary>
-         public void RemoveAssignedTiOrder(string tiId) 
+         public void RemoveAssignedTiOrder(string tiId)
          {
               if (assignedTiOrders.ContainsKey(tiId))
               {
@@ -880,7 +899,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
          }
 
 
-        // --- Simulation Status Methods (Needed by Basic States) --- 
+        // --- Simulation Status Methods (Needed by Basic States) ---
 
         /// <summary>
         /// Simulates whether the prescription claim spot is occupied for inactive NPCs.
@@ -969,6 +988,33 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
         {
              return prescriptionClaimPoint;
         }
+
+        // --- NEW: Method to get expected output item details for delivery ---
+        /// <summary>
+        /// Looks up the expected ItemDetails of the crafted item required for a given prescription order.
+        /// Uses the assigned DrugRecipeMappingSO.
+        /// </summary>
+        /// <param name="order">The prescription order.</param>
+        /// <returns>The ItemDetails of the expected crafted item, or null if mapping not found or invalid.</returns>
+        public ItemDetails GetExpectedOutputItemDetails(PrescriptionOrder order)
+        {
+             if (drugRecipeMapping == null)
+             {
+                 Debug.LogError("PrescriptionManager: Drug Recipe Mapping SO is null! Cannot get expected output item details.", this);
+                 return null;
+             }
+
+             // Use the mapping SO to find the details based on the prescribed drug name
+             ItemDetails expectedDetails = drugRecipeMapping.GetCraftedOutputItemDetailsForDrug(order.prescribedDrug);
+
+             if (expectedDetails == null)
+             {
+                 Debug.LogWarning($"PrescriptionManager: No crafted output item details found in mapping for prescribed drug '{order.prescribedDrug}'.", this);
+             }
+
+             return expectedDetails;
+        }
+        // --- END NEW ---
     }
 }
 

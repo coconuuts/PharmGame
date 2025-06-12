@@ -57,5 +57,8 @@ MonoBehaviour:
     - stateEnumName: PrescriptionQueue
       stateEnumType: Game.NPC.CustomerState
       stateSO: {fileID: 11400000, guid: a75da74ceb121b246a649e998c62aeec, type: 2}
+    - stateEnumName: WaitingForDelivery
+      stateEnumType: Game.NPC.CustomerState
+      stateSO: {fileID: 11400000, guid: 8b08735ad37a0854885f4418d693ca1d, type: 2}
   primaryStartingStateEnumKey: LookingToShop
   primaryStartingStateEnumType: Game.NPC.CustomerState

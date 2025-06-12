@@ -1133,6 +1133,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   invalidItem: {fileID: 928554872}
+  wrongPrescriptionPopupRoot: {fileID: 0}
+  wrongPrescriptionMessageText: {fileID: 0}
+  wrongPrescriptionPopupDuration: 3
   prescriptionOrderUIRoot: {fileID: 158870078}
   prescriptionOrderDetailsText: {fileID: 158870080}
 --- !u!114 &99645956
@@ -7170,6 +7173,7 @@ MonoBehaviour:
   outputInventory: {fileID: 538098023}
   craftingUIRoot: {fileID: 993991559}
   craftingMinigameManager: {fileID: 1722133799}
+  drugRecipeMapping: {fileID: 11400000, guid: d1d6e0276a73e7044a5254c1a7193ea5, type: 2}
   currentState: 0
 --- !u!114 &673708010
 MonoBehaviour:
@@ -7995,6 +7999,7 @@ MonoBehaviour:
   customerManager: {fileID: 763258580}
   poolingManager: {fileID: 99645952}
   waypointManager: {fileID: 763258586}
+  drugRecipeMapping: {fileID: 11400000, guid: d1d6e0276a73e7044a5254c1a7193ea5, type: 2}
   orderGenerationTime:
     startHour: 6
     startMinute: 0
@@ -17439,6 +17444,18 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 438501964579209876, guid: 8202459e60c16e64a96afbd191a02aa8, type: 3}
   m_PrefabInstance: {fileID: 3932140101012895896}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &1579874850
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1579874844}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b78519075dcef054d84e068dd9d647ea, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &1580117456
 GameObject:
   m_ObjectHideFlags: 0
@@ -24768,7 +24785,10 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 9060534025125944493, guid: 8202459e60c16e64a96afbd191a02aa8, type: 3}
       insertIndex: 10
       addedObject: {fileID: 158870079}
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 5090654061441059079, guid: 8202459e60c16e64a96afbd191a02aa8, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1579874850}
   m_SourcePrefab: {fileID: 100100000, guid: 8202459e60c16e64a96afbd191a02aa8, type: 3}
 --- !u!33 &4045481823221808124
 MeshFilter:

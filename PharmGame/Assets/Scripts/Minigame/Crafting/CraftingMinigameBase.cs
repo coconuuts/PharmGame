@@ -1,7 +1,10 @@
+// --- START OF FILE CraftingMinigameBase.cs ---
+
 // Systems/CraftingMinigames/CraftingMinigameBase.cs
 using UnityEngine;
 using System;
 using Systems.Inventory;
+using System.Collections.Generic; // Needed for Dictionary // <-- Added using directive
 
 namespace Systems.CraftingMinigames
 {
@@ -23,6 +26,7 @@ namespace Systems.CraftingMinigames
 
         protected CraftingRecipe craftingRecipe;
         protected int craftBatches;
+        protected Dictionary<string, object> minigameParameters; // <-- NEW: Field to store parameters
         public bool minigameSuccessStatus = false; // Field to track success status, accessed by EndMinigame
 
 
@@ -37,10 +41,18 @@ namespace Systems.CraftingMinigames
         public event Action<object> OnCraftingMinigameCompleted;
 
         // Marked as virtual in Phase 1 to allow override in derived class
-        public virtual void SetupAndStart(CraftingRecipe recipe, int batches)
+        /// <summary>
+        /// Sets up and starts the crafting minigame with recipe details, batches, and additional parameters.
+        /// --- MODIFIED: Added parameters dictionary ---
+        /// </summary>
+        /// <param name="recipe">The CraftingRecipe being crafted.</param>
+        /// <param name="batches">The number of batches being crafted.</param>
+        /// <param name="parameters">A dictionary of additional parameters for minigame setup (e.g., target count from prescription).</param>
+        public virtual void SetupAndStart(CraftingRecipe recipe, int batches, Dictionary<string, object> parameters)
         {
             craftingRecipe = recipe;
             craftBatches = batches;
+            minigameParameters = parameters ?? new Dictionary<string, object>(); // <-- Store parameters, handle null
             minigameSuccessStatus = false; // Initialize success status to false on start
             Debug.Log($"CraftingMinigameBase: Setup and Start for recipe '{recipe.recipeName}' x {batches} batches.", this);
 
@@ -49,6 +61,7 @@ namespace Systems.CraftingMinigames
 
             SetMinigameState(MinigameState.Beginning);
         }
+        // --- END MODIFIED ---
 
         /// <summary>
         /// Implementation from ICraftingMinigame.
@@ -177,3 +190,4 @@ namespace Systems.CraftingMinigames
         }
     }
 }
+// --- END OF FILE CraftingMinigameBase.cs ---

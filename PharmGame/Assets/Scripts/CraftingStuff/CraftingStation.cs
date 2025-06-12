@@ -1,3 +1,5 @@
+// --- START OF FILE CraftingStation.cs ---
+
 // Systems/Inventory/CraftingStation.cs
 using UnityEngine;
 using UnityEngine.UI;
@@ -6,6 +8,9 @@ using System.Linq;
 using System;
 using Systems.CraftingMinigames;
 using Systems.GameStates; // Needed for MenuManager
+using Systems.Crafting; // Needed for DrugRecipeMappingSO
+using Systems.Player; // Needed for PlayerPrescriptionTracker
+using Game.Prescriptions; // Needed for PrescriptionOrder
 
 
 namespace Systems.Inventory
@@ -18,6 +23,8 @@ namespace Systems.Inventory
     /// Preserves state when UI is closed and re-opened.
     /// Delegates minigame execution to CraftingMinigameManager.
     /// Handles minigame outcomes including success and abort.
+    /// Now references DrugRecipeMappingSO for prescription crafting.
+    /// --- MODIFIED: Uses recipe name string from DrugRecipeMappingSO. ---
     /// </summary>
     public class CraftingStation : MonoBehaviour
     {
@@ -51,6 +58,13 @@ namespace Systems.Inventory
         [Tooltip("The CraftingMinigameManager component responsible for running minigames.")]
         [SerializeField] private CraftingMinigameManager craftingMinigameManager;
 
+        // --- NEW: Prescription Crafting Mapping ---
+        [Header("Prescription Crafting")]
+        [Tooltip("The ScriptableObject containing mappings from prescription drug names to crafting recipes.")]
+        [SerializeField] private DrugRecipeMappingSO drugRecipeMapping; // <-- Added reference
+        // --- END NEW ---
+
+
         [Header("State")]
         [Tooltip("The current state of the crafting station.")]
         [SerializeField] private CraftingState currentState = CraftingState.Inputting;
@@ -61,12 +75,14 @@ namespace Systems.Inventory
 
         private void Awake()
         {
-            if (craftingRecipes == null || primaryInputInventory == null || outputInventory == null || craftingUIRoot == null)
+            // --- MODIFIED: Added drugRecipeMapping to essential references check ---
+            if (craftingRecipes == null || primaryInputInventory == null || outputInventory == null || craftingUIRoot == null || drugRecipeMapping == null)
             {
-                Debug.LogError($"CraftingStation ({gameObject.name}): Missing essential references in the Inspector! (CraftingRecipes, PrimaryInputInventory, OutputInventory, CraftingUIRoot)", this);
+                Debug.LogError($"CraftingStation ({gameObject.name}): Missing essential references in the Inspector! (CraftingRecipes, PrimaryInputInventory, OutputInventory, CraftingUIRoot, DrugRecipeMapping)", this);
                 enabled = false;
                 return;
             }
+            // --- END MODIFIED ---
 
             uiHandler = craftingUIRoot.GetComponent<CraftingUIHandler>();
             if (uiHandler == null)
@@ -212,10 +228,47 @@ namespace Systems.Inventory
                     Debug.Log($"CraftingStation ({gameObject.name}): Entering Crafting state. Starting minigame via manager.", this);
                     if (craftingMinigameManager != null)
                     {
+                        // --- MODIFIED: Prepare parameters for the minigame, including prescription data if applicable ---
+                        Dictionary<string, object> minigameParameters = new Dictionary<string, object>();
+
+                        // Check if the player has an active prescription order
+                        Systems.Player.PlayerPrescriptionTracker playerTracker = null;
+                        GameObject playerGO = GameObject.FindGameObjectWithTag("Player"); // Assuming player has the "Player" tag
+                        if (playerGO != null)
+                        {
+                            playerTracker = playerGO.GetComponent<Systems.Player.PlayerPrescriptionTracker>();
+                        }
+
+                        if (playerTracker != null && playerTracker.ActivePrescriptionOrder.HasValue)
+                        {
+                            Game.Prescriptions.PrescriptionOrder activeOrder = playerTracker.ActivePrescriptionOrder.Value;
+                            Debug.Log($"CraftingStation ({gameObject.name}): Player has active prescription order for '{activeOrder.prescribedDrug}'. Preparing minigame parameters.", this);
+
+                            // Calculate the target quantity for the pill minigame
+                            int targetPillCount = activeOrder.dosePerDay * activeOrder.lengthOfTreatmentDays;
+                            Debug.Log($"CraftingStation ({gameObject.name}): Calculated target pill count: {activeOrder.dosePerDay} dose * {activeOrder.lengthOfTreatmentDays} days = {targetPillCount}.", this);
+
+                            // Add the target pill count to the parameters dictionary
+                            minigameParameters["TargetPillCount"] = targetPillCount; // Use a consistent key
+
+                            // Add other relevant order data if needed by minigame (e.g., drug name)
+                            minigameParameters["PrescribedDrugName"] = activeOrder.prescribedDrug; // Example
+
+                            // Note: The recipe itself (currentMatchedRecipe) is already determined by CheckForRecipeMatch
+                            // and validated against the order in OnCraftButtonClicked before reaching this point.
+                        }
+                        else
+                        {
+                            Debug.Log($"CraftingStation ({gameObject.name}): Player does not have an active prescription order. Starting minigame with default parameters.", this);
+                            // If no active order, the minigame will use its default logic (e.g., random target count for pills)
+                            // No specific parameters related to prescription are added here.
+                        }
+                        // --- END MODIFIED ---
+
+
                         // Start the appropriate minigame based on the matched recipe
-                        // The CraftingMinigameManager will transition MenuManager.GameState to InMinigame
-                        // and will handle subscribing its own completion event (which we are subscribed to in OnEnable).
-                        bool started = craftingMinigameManager.StartCraftingMinigame(currentMatchedRecipe, maxCraftableBatches);
+                        // Pass the prepared parameters dictionary
+                        bool started = craftingMinigameManager.StartCraftingMinigame(currentMatchedRecipe, maxCraftableBatches, minigameParameters);
 
                         if (!started)
                         {
@@ -375,7 +428,7 @@ namespace Systems.Inventory
                 return;
             }
 
-            if (craftingRecipes == null || primaryInputInventory?.Combiner?.InventoryState == null)
+            if (craftingRecipes == null || primaryInputInventory?.Combiner?.InventoryState == null || drugRecipeMapping == null) // Added drugRecipeMapping check
             {
                 Debug.LogError($"CraftingStation ({gameObject.name}): Cannot check for recipe match, missing essential references.", this);
                 currentMatchedRecipe = null;
@@ -403,14 +456,56 @@ namespace Systems.Inventory
             currentMatchedRecipe = matchResult.MatchedRecipe;
             maxCraftableBatches = matchResult.MaxCraftableBatches;
 
+            // --- NEW: If there's an active prescription order, validate the matched recipe against it ---
+            Systems.Player.PlayerPrescriptionTracker playerTracker = null;
+            GameObject playerGO = GameObject.FindGameObjectWithTag("Player"); // Assuming player has the "Player" tag
+            if (playerGO != null)
+            {
+                playerTracker = playerGO.GetComponent<Systems.Player.PlayerPrescriptionTracker>();
+            }
+
+            if (playerTracker != null && playerTracker.ActivePrescriptionOrder.HasValue)
+            {
+                 Game.Prescriptions.PrescriptionOrder activeOrder = playerTracker.ActivePrescriptionOrder.Value;
+                 // --- MODIFIED: Get required recipe by name using the updated mapping method ---
+                 CraftingRecipe requiredRecipe = drugRecipeMapping.GetCraftingRecipeForDrug(activeOrder.prescribedDrug);
+                 // --- END MODIFIED ---
+
+                 if (matchResult.HasMatch && matchResult.MatchedRecipe != requiredRecipe)
+                 {
+                      // Found a match, but it's NOT the recipe required by the active prescription order
+                      Debug.LogWarning($"CraftingStation ({gameObject.name}): Recipe matched ({matchResult.MatchedRecipe.recipeName}) but it does NOT match the recipe required for the active prescription order ('{activeOrder.prescribedDrug}' requires '{requiredRecipe?.recipeName ?? "NULL"}'). Craft button will be enabled, but craft will be blocked on click.", this);
+                      // The button is enabled because *a* craft is possible, but the *specific* craft for the current objective is not.
+                      // The blocking logic is in OnCraftButtonClicked.
+                 }
+                 else if (matchResult.HasMatch && matchResult.MatchedRecipe == requiredRecipe)
+                 {
+                      // Found a match, AND it's the correct recipe for the active prescription order.
+                      Debug.Log($"CraftingStation ({gameObject.name}): Recipe matched ({matchResult.MatchedRecipe.recipeName}) and it IS the recipe required for the active prescription order ('{activeOrder.prescribedDrug}'). Craft button will be enabled.", this);
+                 }
+                 else if (!matchResult.HasMatch && requiredRecipe != null)
+                 {
+                     // No recipe matched, but there's an active prescription order with a required recipe.
+                     Debug.Log($"CraftingStation ({gameObject.name}): No recipe matched, but player has active prescription order for '{activeOrder.prescribedDrug}' which requires recipe '{requiredRecipe.recipeName}'. Craft button will be disabled.", this);
+                 }
+            }
+            // --- END NEW ---
+
+
             // --- Update Craft Button based on result ---
+            // This logic remains the same: enable the button if *any* recipe matches with > 0 batches.
+            // Validation against the prescription order happens when the button is clicked.
             if (uiHandler != null)
             {
                 uiHandler.SetCraftButtonInteractable(matchResult.HasMatch);
 
                 if (matchResult.HasMatch)
                 {
-                    Debug.Log($"CraftingStation ({gameObject.name}): Recipe matched: {currentMatchedRecipe.recipeName}! Can craft {maxCraftableBatches} batch(es).", this);
+                    // Log moved inside the NEW block above for clarity when prescription is active
+                    if (!(playerTracker != null && playerTracker.ActivePrescriptionOrder.HasValue))
+                    {
+                         Debug.Log($"CraftingStation ({gameObject.name}): Recipe matched: {currentMatchedRecipe.recipeName}! Can craft {maxCraftableBatches} batch(es).", this);
+                    }
                 }
             }
         }
@@ -418,6 +513,7 @@ namespace Systems.Inventory
         /// <summary>
         /// Called when the Craft button is clicked. Initiates the crafting process
         /// by transitioning to the Crafting state, which will start the minigame.
+        /// Includes validation against active prescription order if present.
         /// </summary>
         private void OnCraftButtonClicked()
         {
@@ -435,6 +531,36 @@ namespace Systems.Inventory
                     return; // Abort if still not ready
                 }
             }
+
+            // --- NEW: Validate against active prescription order if present ---
+            Systems.Player.PlayerPrescriptionTracker playerTracker = null;
+            GameObject playerGO = GameObject.FindGameObjectWithTag("Player"); // Assuming player has the "Player" tag
+            if (playerGO != null)
+            {
+                playerTracker = playerGO.GetComponent<Systems.Player.PlayerPrescriptionTracker>();
+            }
+
+            if (playerTracker != null && playerTracker.ActivePrescriptionOrder.HasValue)
+            {
+                 Game.Prescriptions.PrescriptionOrder activeOrder = playerTracker.ActivePrescriptionOrder.Value;
+                 // --- MODIFIED: Get required recipe by name using the updated mapping method ---
+                 CraftingRecipe requiredRecipe = drugRecipeMapping.GetCraftingRecipeForDrug(activeOrder.prescribedDrug);
+                 // --- END MODIFIED ---
+
+                 if (currentMatchedRecipe != requiredRecipe)
+                 {
+                      Debug.LogWarning($"CraftingStation ({gameObject.name}): Craft button clicked with active prescription order, but the matched recipe ({currentMatchedRecipe.recipeName}) does NOT match the required recipe for the order ('{activeOrder.prescribedDrug}' requires '{requiredRecipe?.recipeName ?? "NULL"}'). Blocking craft.", this);
+                      // TODO: Provide player feedback here (e.g., UI message)
+                      PlayerUIPopups.Instance?.ShowWrongPrescriptionMessage($"This station isn't for {activeOrder.prescribedDrug}!"); // Example feedback
+                      return; // Block the craft attempt
+                 }
+                 else
+                 {
+                      Debug.Log($"CraftingStation ({gameObject.name}): Craft button clicked with active prescription order. Matched recipe ({currentMatchedRecipe.recipeName}) IS the required recipe. Proceeding.", this);
+                 }
+            }
+            // --- END NEW ---
+
 
             // Proceed with starting the crafting state, which will trigger the minigame
             SetState(CraftingState.Crafting);
@@ -500,3 +626,4 @@ namespace Systems.Inventory
         }
     }
 }
+// --- END OF FILE CraftingStation.cs ---

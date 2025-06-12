@@ -638,6 +638,7 @@ GameObject:
   - component: {fileID: 4614193484094961147}
   - component: {fileID: 8946029754246460174}
   - component: {fileID: 1359511461587307478}
+  - component: {fileID: 3489143705046913110}
   m_Layer: 7
   m_Name: NPC
   m_TagString: NPC
@@ -873,6 +874,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bab59938b13b9e049998323856424fdb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  interactionPromptMessage: Open Inventory (E)
   inventoryUIRoot: {fileID: 3952946726980145951}
   inventoryComponent: {fileID: 7948363086062190}
 --- !u!114 &1457525958296894251
@@ -1054,6 +1056,19 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   initialActiveInteractableTypeName: OpenNPCInventory
+--- !u!114 &3489143705046913110
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4394407753789290286}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 31a1650a760bd8a4ab80007794a00826, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  interactionPromptMessage: Deliver prescription (E)
 --- !u!1 &4855562079567102611
 GameObject:
   m_ObjectHideFlags: 0

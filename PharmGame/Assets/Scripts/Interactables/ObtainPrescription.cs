@@ -6,6 +6,9 @@ using Systems.Interaction; // Needed for IInteractable and InteractionResponse
 using Game.Prescriptions; // Needed for PrescriptionOrder
 using Game.NPC; // Needed for NpcStateMachineRunner
 using Game.NPC.TI; // Needed for TiNpcData
+using Game.Events; // Needed for EventManager and new event
+using Systems.GameStates; // Needed for PromptEditor
+using Systems.Player; // Needed for PlayerPrescriptionTracker // <-- Added using directive
 
 namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interaction
 {
@@ -110,11 +113,36 @@ namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interact
 
             if (orderFound)
             {
-                // Set the flag
+                // Set the flag on this interactable
                 activePrescriptionOrder = true;
-                Debug.Log($"{gameObject.name}: activePrescriptionOrder set to true.", this);
+                Debug.Log($"{gameObject.name}: activePrescriptionOrder set to true on ObtainPrescription component.", this);
 
-                // Return the response containing the order details
+                // --- NEW: Assign the order to the PlayerPrescriptionTracker ---
+                GameObject playerGO = GameObject.FindGameObjectWithTag("Player"); // Assuming player has the "Player" tag
+                if (playerGO != null)
+                {
+                    PlayerPrescriptionTracker playerTracker = playerGO.GetComponent<PlayerPrescriptionTracker>();
+                    if (playerTracker != null)
+                    {
+                        playerTracker.SetActiveOrder(orderToDisplay);
+                        Debug.Log($"{gameObject.name}: Assigned prescription order to PlayerPrescriptionTracker.", this);
+                    }
+                    else
+                    {
+                        Debug.LogError($"{gameObject.name}: Player GameObject found but missing PlayerPrescriptionTracker component!", playerGO);
+                    }
+                }
+                else
+                {
+                    Debug.LogError($"{gameObject.name}: Player GameObject with tag 'Player' not found! Cannot assign prescription order to player tracker.", this);
+                }
+                // --- END NEW ---
+
+                // Publish event to signal order obtained (for NPC state transition)
+                Debug.Log($"{gameObject.name}: Publishing NpcPrescriptionOrderObtainedEvent.", this);
+                EventManager.Publish(new NpcPrescriptionOrderObtainedEvent(this.gameObject));
+
+                // Return the response containing the order details (for UI display via SimpleActionDispatcher)
                 return new ObtainPrescriptionResponse(orderToDisplay);
             }
             else
@@ -126,7 +154,6 @@ namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interact
             }
         }
 
-        // --- Optional: Add a method to reset the interaction state ---
         /// <summary>
         /// Resets the active prescription order flag and clears the UI text.
         /// Called when the NPC leaves the WaitingForPrescription state.
@@ -144,7 +171,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interact
             DeactivatePrompt();
             // Reset interaction state on disable
             ResetInteraction();
-            PlayerUIPopups.Instance?.HidePrescriptionOrder();
+            // Note: PlayerUIPopups.Instance?.HidePrescriptionOrder() should be called by WaitingForPrescriptionSO.OnExit
         }
 
         private void OnDestroy()
@@ -153,7 +180,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interact
             DeactivatePrompt();
             // Reset interaction state on destroy
             ResetInteraction();
-            PlayerUIPopups.Instance?.HidePrescriptionOrder();
+            // Note: PlayerUIPopups.Instance?.HidePrescriptionOrder() should be called by WaitingForPrescriptionSO.OnExit
          }
     }
 }

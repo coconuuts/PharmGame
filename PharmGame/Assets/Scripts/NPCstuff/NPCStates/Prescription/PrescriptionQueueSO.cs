@@ -1,3 +1,5 @@
+// --- START OF FILE PrescriptionQueueSO.cs ---
+
 // --- START OF FILE PrescriptionQueueSO.cs (Fixed Redundant Queue Join) ---
 
 using UnityEngine;
@@ -7,6 +9,9 @@ using Game.NPC; // Needed for CustomerState and GeneralState enums
 using Game.Prescriptions; // Needed for PrescriptionManager
 using Game.Events; // Needed for new event
 using CustomerManagement; // Needed for QueueType
+using System.Collections; // Needed for Coroutines // <-- Added using directive
+using Random = UnityEngine.Random; // Specify UnityEngine.Random // <-- Added using directive
+
 
 namespace Game.NPC.States // Place alongside other active states
 {
@@ -14,23 +19,31 @@ namespace Game.NPC.States // Place alongside other active states
     /// State for a Prescription Customer waiting in the prescription queue.
     /// Corresponds to CustomerState.PrescriptionQueue.
     /// MODIFIED: Removed redundant queue joining logic in OnEnter.
+    /// --- MODIFIED: Added impatience timer. ---
     /// </summary>
     [CreateAssetMenu(fileName = "CustomerPrescriptionQueueState", menuName = "NPC/Customer States/Prescription Queue", order = 4)] // Order after Waiting For Prescription
     public class PrescriptionQueueSO : NpcStateSO
     {
         public override System.Enum HandledState => CustomerState.PrescriptionQueue;
 
-        // Note: Impatience timer for queue waiting is handled by the BasicState simulation
-        // when the NPC is inactive. For active NPCs, impatience might be handled here,
-        // but the vision doesn't specify impatience *in the queue* for active prescription NPCs,
-        // only when WaitingForPrescription. Let's omit active impatience for now.
+        // --- NEW: Impatience Timer ---
+        [Header("Queue Waiting Settings")]
+        [Tooltip("Minimum and maximum time (real-time seconds) the NPC will wait in the queue before becoming impatient.")]
+        [SerializeField] private Vector2 impatientTimeRange = new Vector2(60f, 120f); // Adjust range as needed
+
+        // Timer fields are managed by the coroutine now
+        // private float impatientTimer;
+        // private float impatientDuration;
+
+        private Coroutine waitingRoutine; // Coroutine for the timer
+        // --- END NEW ---
 
 
         public override void OnEnter(NpcStateContext context)
         {
             base.OnEnter(context); // Call base OnEnter (logs entry, enables Agent)
 
-            // --- Get the assigned queue spot information from the NpcQueueHandler --- // <-- MODIFIED LOGIC
+            // --- Get the assigned queue spot information from the NpcQueueHandler ---
             int assignedSpotIndex = context.AssignedQueueSpotIndex; // Get index from context helper
             QueueType assignedQueueType = context.CurrentQueueMoveType; // Get type from context helper
 
@@ -83,7 +96,12 @@ namespace Game.NPC.States // Place alongside other active states
                  context.TransitionToState(CustomerState.Exiting); // Fallback
                  // The Runner's TransitionToState will handle stopping movement and resetting Runner flags.
             }
-            // --- END MODIFIED LOGIC ---
+
+            // --- Start impatience timer coroutine --- // <-- NEW
+            float impatientDuration = Random.Range(impatientTimeRange.x, impatientTimeRange.y); // Duration is local to OnEnter
+            Debug.Log($"{context.NpcObject.name}: Entering {name}. Starting impatience timer for {impatientDuration:F2} seconds.", context.NpcObject);
+            waitingRoutine = context.StartCoroutine(WaitingRoutine(context, impatientDuration)); // Start the timer coroutine
+            // --- END NEW ---
         }
 
         public override void OnUpdate(NpcStateContext context)
@@ -145,6 +163,14 @@ namespace Game.NPC.States // Place alongside other active states
         {
             base.OnExit(context); // Call base OnExit (logs exit, stops movement/rotation)
 
+            // Stop the timer coroutine
+            if (waitingRoutine != null)
+            {
+                context.StopCoroutine(waitingRoutine);
+                waitingRoutine = null;
+            }
+            // impatientTimer = 0f; // Timer is managed by the coroutine now
+
             // Note: Stop waiting animation
             // context.PlayAnimation("Idle");
 
@@ -168,6 +194,31 @@ namespace Game.NPC.States // Place alongside other active states
             // when the NPC is pooled/deactivated. If the NPC transitions to another state *without* pooling,
             // the QueueHandler's state should be reset by the handler itself or the Runner's reset logic.
             context.QueueHandler?.ClearQueueAssignment(); // Use the ClearQueueAssignment method on the handler
+        }
+
+        // Coroutine method for the impatience timer
+        private IEnumerator WaitingRoutine(NpcStateContext context, float duration) // Pass duration as parameter
+        {
+            Debug.Log($"{context.NpcObject.name}: WaitingRoutine started in {name}. Waiting for {duration:F2} seconds.", context.NpcObject);
+
+            float timer = 0f;
+            while (timer < duration)
+            {
+                 // Check if the state has changed externally (e.g., interruption, successful interaction)
+                 if (context.Runner.GetCurrentState() != this)
+                 {
+                      Debug.Log($"{context.NpcObject.name}: WaitingRoutine interrupted due to state change.", context.NpcObject);
+                      yield break; // Exit coroutine if state changes
+                 }
+                 timer += context.DeltaTime; // Use context.DeltaTime for frame-rate independent timing
+                 yield return null; // Wait for the next frame
+            }
+
+            // Timer finished, NPC becomes impatient
+            Debug.Log($"{context.NpcObject.name}: IMPATIENT in {name} state after {duration:F2} seconds. Transitioning to Exiting.", context.NpcObject);
+
+            // No need to publish NpcImpatientEvent here, just transition directly as per the vision.
+            context.TransitionToState(CustomerState.Exiting);
         }
     }
 }

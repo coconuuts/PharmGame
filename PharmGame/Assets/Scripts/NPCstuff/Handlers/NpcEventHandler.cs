@@ -1,5 +1,7 @@
 // --- START OF FILE NpcEventHandler.cs ---
 
+// --- START OF FILE NpcEventHandler.cs ---
+
 using UnityEngine;
 using Game.Events; // Needed for EventManager and event structs
 using Game.NPC; // Needed for CustomerState and GeneralState enums
@@ -54,6 +56,12 @@ namespace Game.NPC.Handlers // Placing handlers together
             EventManager.Subscribe<NpcStartedTransactionEvent>(HandleTransactionStarted);
             EventManager.Subscribe<NpcTransactionCompletedEvent>(HandleTransactionCompleted);
 
+            // Subscribe to Prescription Order Obtained event
+            EventManager.Subscribe<NpcPrescriptionOrderObtainedEvent>(HandlePrescriptionOrderObtained);
+            // --- NEW: Subscribe to Prescription Delivered event ---
+            EventManager.Subscribe<NpcPrescriptionDeliveredEvent>(HandlePrescriptionDelivered);
+            // --- END NEW ---
+
             // Subscribe to interruption events
             EventManager.Subscribe<NpcAttackedEvent>(HandleNpcAttacked);
             EventManager.Subscribe<NpcInteractedEvent>(HandleNpcInteracted);
@@ -70,14 +78,18 @@ namespace Game.NPC.Handlers // Placing handlers together
             // Unsubscribe from events
             EventManager.Unsubscribe<NpcImpatientEvent>(HandleNpcImpatient);
             EventManager.Unsubscribe<ReleaseNpcFromSecondaryQueueEvent>(HandleReleaseNpcFromSecondaryQueue);
-            EventManager.Unsubscribe<NpcStartedTransactionEvent>(HandleTransactionStarted); // TYPO FIX: Should be HandleStartedTransaction?? Reverted for consistency
-            EventManager.Unsubscribe<NpcStartedTransactionEvent>(HandleTransactionStarted); // FIX: Back to original name
+            EventManager.Unsubscribe<NpcStartedTransactionEvent>(HandleTransactionStarted);
             EventManager.Unsubscribe<NpcTransactionCompletedEvent>(HandleTransactionCompleted);
+
+            // Unsubscribe from Prescription Order Obtained event
+            EventManager.Unsubscribe<NpcPrescriptionOrderObtainedEvent>(HandlePrescriptionOrderObtained);
+            // --- NEW: Unsubscribe from Prescription Delivered event ---
+            EventManager.Unsubscribe<NpcPrescriptionDeliveredEvent>(HandlePrescriptionDelivered);
+            // --- END NEW ---
 
             // Unsubscribe from interruption events
             EventManager.Unsubscribe<NpcAttackedEvent>(HandleNpcAttacked);
-            EventManager.Unsubscribe<NpcInteractedEvent>(HandleNpcInteracted); // TYPO FIX: Should be HandleInteracted?? Reverted for consistency
-            EventManager.Unsubscribe<NpcInteractedEvent>(HandleNpcInteracted); // FIX: Back to original name
+            EventManager.Unsubscribe<NpcInteractedEvent>(HandleNpcInteracted);
             EventManager.Unsubscribe<TriggerNpcEmoteEvent>(HandleTriggerEmote);
             EventManager.Unsubscribe<NpcCombatEndedEvent>(HandleCombatEnded);
             EventManager.Unsubscribe<NpcInteractionEndedEvent>(HandleInteractionEnded);
@@ -138,6 +150,34 @@ namespace Game.NPC.Handlers // Placing handlers together
              Debug.Log($"{gameObject.name}: EventHandler handling NpcTransactionCompletedEvent. Telling Runner to Transition to Exiting.");
              runner.TransitionToState(runner.GetStateSO(CustomerState.Exiting));
         }
+
+        /// <summary>
+        /// Handles the NpcPrescriptionOrderObtainedEvent. Tells the Runner to transition to WaitingForDelivery.
+        /// </summary>
+        private void HandlePrescriptionOrderObtained(NpcPrescriptionOrderObtainedEvent eventArgs)
+        {
+             if (eventArgs.NpcObject != this.gameObject) return;
+             if (runner == null) { Debug.LogError($"NpcEventHandler on {gameObject.name}: Received NpcPrescriptionOrderObtainedEvent but runner is null! Cannot handle.", this); return; }
+
+             Debug.Log($"{gameObject.name}: EventHandler handling NpcPrescriptionOrderObtainedEvent. Telling Runner to Transition to WaitingForDelivery.");
+             // Transition to the new state
+             runner.TransitionToState(runner.GetStateSO(CustomerState.WaitingForDelivery));
+        }
+
+        /// <summary>
+        /// Handles the NpcPrescriptionDeliveredEvent. Tells the Runner to transition to Exiting.
+        /// </summary>
+        private void HandlePrescriptionDelivered(NpcPrescriptionDeliveredEvent eventArgs) // <-- NEW HANDLER
+        {
+             if (eventArgs.NpcObject != this.gameObject) return;
+             if (runner == null) { Debug.LogError($"NpcEventHandler on {gameObject.name}: Received NpcPrescriptionDeliveredEvent but runner is null! Cannot handle.", this); return; }
+
+             Debug.Log($"{gameObject.name}: EventHandler handling NpcPrescriptionDeliveredEvent. Telling Runner to Transition to Exiting.");
+             // Transition to the Exiting state after successful delivery
+             runner.TransitionToState(runner.GetStateSO(CustomerState.Exiting));
+        }
+        // --- END NEW HANDLER ---
+
 
         // --- Interruption Event Handlers (Now using NpcInterruptionHandler) ---
 

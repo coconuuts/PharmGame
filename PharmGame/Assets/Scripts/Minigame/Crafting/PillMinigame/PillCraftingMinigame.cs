@@ -1,8 +1,10 @@
+// --- START OF FILE PillCraftingMinigame.cs ---
+
 // Systems/CraftingMinigames/PillCraftingMinigame.cs
 using UnityEngine;
 using System; // Needed for Action event
 using System.Collections;
-using System.Collections.Generic;
+using System.Collections.Generic; // Needed for Dictionary
 using Systems.Inventory;
 using TMPro;
 using UnityEngine.UI;
@@ -23,7 +25,8 @@ namespace Systems.CraftingMinigames
     /// Manages game state (Pouring, Counting, Packaging), handles player input for counting,
     /// and delegates visual animations to PillCraftingAnimator.
     /// --- MODIFIED: Configuration data partially moved to ScriptableObject. ---
-    /// --- MODIFIED: Uses MinigameUIHandler for managing UI elements. --- // <--- ADDED
+    /// --- MODIFIED: Uses MinigameUIHandler for managing UI elements. ---
+    /// --- MODIFIED: Accepts target pill count from parameters dictionary. --- // <--- ADDED
     /// </summary>
     public class PillCraftingMinigame : CraftingMinigameBase
     {
@@ -59,14 +62,14 @@ namespace Systems.CraftingMinigames
         [SerializeField] private Transform pillReclaimPoint;
 
 
-        [Header("UI References (Component Reference)")] // <--- Header updated
+        [Header("UI References (Component Reference)")]
         [Tooltip("Reference to the MinigameUIHandler component for managing UI.")]
-        [SerializeField] private MinigameUIHandler uiHandler; // <--- ADDED
+        [SerializeField] private MinigameUIHandler uiHandler;
 
-        [Header("Input Handler (Component Reference)")] // <--- ADDED Header
+        [Header("Input Handler (Component Reference)")]
         [Tooltip("Reference to the ClickInteractor component for handling input.")]
         [SerializeField] private ClickInteractor clickInteractor;
-        [Header("Movement Handler (Component Reference)")] // <--- ADDED Header
+        [Header("Movement Handler (Component Reference)")]
         [Tooltip("Reference to the MinigameMovementManager component for handling movement.")]
         [SerializeField] private MinigameMovementManager movementManager;
 
@@ -85,7 +88,7 @@ namespace Systems.CraftingMinigames
 
 
         private int currentPillCountOnTable = 0;
-        private int targetPillCount = 0;
+        private int targetPillCount = 0; // This will now be set from parameters or fallback
 
         // Get animator reference in Awake and check UI Handler
         private void Awake()
@@ -113,7 +116,14 @@ namespace Systems.CraftingMinigames
              }
          }
 
-        public override void SetupAndStart(CraftingRecipe recipe, int batches)
+        /// <summary>
+        /// Sets up and starts the crafting minigame with recipe details, batches, and additional parameters.
+        /// --- MODIFIED: Accepts parameters dictionary and uses TargetPillCount from it. ---
+        /// </summary>
+        /// <param name="recipe">The CraftingRecipe being crafted.</param>
+        /// <param name="batches">The number of batches being crafted.</param>
+        /// <param name="parameters">A dictionary of additional parameters for minigame setup (e.g., target count from prescription).</param>
+        public override void SetupAndStart(CraftingRecipe recipe, int batches, Dictionary<string, object> parameters)
         {
             if (pillConfig == null)
             {
@@ -140,8 +150,37 @@ namespace Systems.CraftingMinigames
             currentPillCountOnTable = 0;
             uiHandler.RuntimeInitialize();
 
-            base.SetupAndStart(recipe, batches); // This calls SetMinigameState(Beginning)
+            // --- NEW: Get target pill count from parameters or use fallback ---
+            this.minigameParameters = parameters ?? new Dictionary<string, object>(); // Store parameters in base class field
+
+            if (this.minigameParameters.TryGetValue("TargetPillCount", out object targetValue))
+            {
+                if (targetValue is int prescribedTarget)
+                {
+                    targetPillCount = prescribedTarget;
+                    Debug.Log($"PillCraftingMinigame ({gameObject.name}): Using prescribed target pill count from parameters: {targetPillCount}.", this);
+                }
+                else
+                {
+                    Debug.LogWarning($"PillCraftingMinigame ({gameObject.name}): Parameter 'TargetPillCount' found, but value is not an integer ({targetValue?.GetType().Name ?? "NULL"}). Falling back to random target.", this);
+                    targetPillCount = UnityEngine.Random.Range(pillConfig.minTargetPills, pillConfig.maxTargetPills + 1);
+                    targetPillCount = Mathf.Max(1, targetPillCount); // Ensure target is at least 1
+                    Debug.Log($"PillCraftingMinigame ({gameObject.name}): Fallback random Target Pill Count generated: {targetPillCount}.", this);
+                }
+            }
+            else
+            {
+                Debug.Log($"PillCraftingMinigame ({gameObject.name}): Parameter 'TargetPillCount' not found. Falling back to random target.", this);
+                targetPillCount = UnityEngine.Random.Range(pillConfig.minTargetPills, pillConfig.maxTargetPills + 1);
+                targetPillCount = Mathf.Max(1, targetPillCount); // Ensure target is at least 1
+                Debug.Log($"PillCraftingMinigame ({gameObject.name}): Fallback random Target Pill Count generated: {targetPillCount}.", this);
+            }
+            // --- END NEW ---
+
+
+            base.SetupAndStart(recipe, batches, parameters); // Call base method (now accepts parameters) - This calls SetMinigameState(Beginning)
         }
+        // --- END MODIFIED ---
 
          public override void EndMinigame(bool wasAborted)
          {
@@ -183,9 +222,7 @@ namespace Systems.CraftingMinigames
         {
             Debug.Log($"PillCraftingMinigame ({gameObject.name}): Entering Beginning (Pouring) State.", this);
 
-            targetPillCount = UnityEngine.Random.Range(pillConfig.minTargetPills, pillConfig.maxTargetPills + 1);
-            targetPillCount = Mathf.Max(1, targetPillCount); // Ensure target is at least 1
-            Debug.Log($"PillCraftingMinigame ({gameObject.name}): Target Pill Count generated: {targetPillCount}.", this);
+            // Target pill count is now set in SetupAndStart
 
             currentPillCountOnTable = 0;
 
@@ -313,9 +350,11 @@ namespace Systems.CraftingMinigames
             yield return new WaitForSeconds(0.25f); // Initial brief wait
 
 
+            // --- MODIFIED: Calculate total pills to spawn based on target + excess ---
             int excessPillsToPour = UnityEngine.Random.Range(pillConfig.minExcessPills, pillConfig.maxExcessPills + 1);
-            int totalPillsToSpawn = targetPillCount + excessPillsToPour;
+            int totalPillsToSpawn = targetPillCount + excessPillsToPour; // Use the now-set targetPillCount
             Debug.Log($"PillCraftingMinigame ({gameObject.name}): Spawning {totalPillsToSpawn} pills (Target: {targetPillCount}, Excess: {excessPillsToPour}).", this);
+            // --- END MODIFIED ---
 
             // Start the pouring animation sequence
              Sequence pouringAnimSequence = pillCraftingAnimator.AnimatePouring();
@@ -578,7 +617,7 @@ namespace Systems.CraftingMinigames
             if (uiHandler != null)
             {
                 uiHandler.UpdateText($"Pills: {currentPillCountOnTable}/{targetPillCount}");
-                 uiHandler.SetFinishButtonInteractable(currentPillCountOnTable == targetPillCount); 
+                 uiHandler.SetFinishButtonInteractable(currentPillCountOnTable == targetPillCount);
             }
         }
 
@@ -621,7 +660,7 @@ namespace Systems.CraftingMinigames
                 }
                 else
                 {
-                    Debug.LogWarning($"PillCraftingMinigame ({gameObject.name}): Finish Counting button clicked, but count is incorrect. Count: {currentPillCountOnTable}, Target: {targetPillCount}.", this);
+                    Debug.LogWarning($"PillCraftingMinigame ({gameObject.name}): Finish Counting button clicked, but count is incorrect. Count: {currentPillCountOnTable}, Target: {targetPillCount}. Signalling internal failure.", this);
                     minigameSuccessStatus = false; // Explicitly set failure
                      SetMinigameState(MinigameState.End); // Still transition to End state (failure)
                 }
@@ -653,10 +692,10 @@ namespace Systems.CraftingMinigames
             }
             else
             {
-                Debug.LogError($"PillCraftingMinigame ({gameObject.name}): Failed to get prescription container from pool! Signalling internal failure.", this);
-                minigameSuccessStatus = false;
-                EndMinigame(false);
-                yield break;
+                 Debug.LogError($"PillCraftingMinigame ({gameObject.name}): Failed to get prescription container from pool! Signalling internal failure.", this);
+                 minigameSuccessStatus = false;
+                 EndMinigame(false);
+                 yield break;
             }
 
             instantiatedPrescriptionContainerLid = PoolingManager.Instance.GetPooledObject(pillConfig.prescriptionContainerLidPrefab);
@@ -720,7 +759,7 @@ namespace Systems.CraftingMinigames
 
             yield return new WaitForSeconds(0.2f);
 
-            EndMinigame(false);
+            EndMinigame(false); // Signal completion (success/failure status is already set)
 
             Debug.Log($"PillCraftingMinigame ({gameObject.name}) PackagingSequence: Coroutine finished.");
         }
@@ -820,3 +859,4 @@ namespace Systems.CraftingMinigames
         }
     }
 }
+// --- END OF FILE PillCraftingMinigame.cs ---

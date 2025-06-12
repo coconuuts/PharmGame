@@ -1,8 +1,11 @@
 // --- START OF FILE NPCCoreEvents.cs ---
 
+// --- START OF FILE NPCCoreEvents.cs ---
+
 using UnityEngine; // Required for GameObject
 using Game.NPC;
 using CustomerManagement; // Needed for QueueType
+using Game.Prescriptions; // Needed for PrescriptionOrder // <-- Added using directive
 
 namespace Game.Events // Keep events in their dedicated namespace
 {
@@ -152,12 +155,12 @@ namespace Game.Events // Keep events in their dedicated namespace
         }
     }
 
-    // --- NEW: Prescription Queue Events --- // <-- NEW HEADER
+    // --- Prescription Queue Events ---
     /// <summary>
     /// Published by a PrescriptionEnteringStateSO when an NPC is moving to or occupying the prescription claim spot.
     /// Used by the PrescriptionManager to track claim spot occupancy.
     /// </summary>
-    public struct ClaimPrescriptionSpotEvent // <-- NEW EVENT
+    public struct ClaimPrescriptionSpotEvent
     {
         public GameObject NpcObject; // The GameObject of the NPC claiming the spot.
 
@@ -171,13 +174,43 @@ namespace Game.Events // Keep events in their dedicated namespace
     /// Published by a WaitingForPrescriptionStateSO when an NPC vacates the prescription claim spot.
     /// Used by the PrescriptionManager to track claim spot occupancy.
     /// </summary>
-    public struct FreePrescriptionClaimSpotEvent // <-- NEW EVENT
+    public struct FreePrescriptionClaimSpotEvent
     {
         public GameObject NpcObject; // The GameObject of the NPC freeing the spot.
 
         public FreePrescriptionClaimSpotEvent(GameObject npcObject)
         {
             NpcObject = npcObject;
+        }
+    }
+
+    /// <summary>
+    /// Published by the ObtainPrescription interactable when the player successfully obtains the prescription order.
+    /// Used by the NpcEventHandler to trigger the state transition to WaitingForDelivery.
+    /// </summary>
+    public struct NpcPrescriptionOrderObtainedEvent
+    {
+        public GameObject NpcObject; // The GameObject of the NPC whose order was obtained.
+
+        public NpcPrescriptionOrderObtainedEvent(GameObject npcObject)
+        {
+            NpcObject = npcObject;
+        }
+    }
+
+    /// <summary>
+    /// Published by the DeliverPrescription interactable when the player successfully delivers the crafted item.
+    /// Used by the NpcEventHandler to trigger the state transition (e.g., to Exiting).
+    /// </summary>
+    public struct NpcPrescriptionDeliveredEvent // <-- NEW EVENT
+    {
+        public GameObject NpcObject; // The GameObject of the NPC that received the delivery.
+        public PrescriptionOrder OrderDetails; // The details of the order that was fulfilled. // Optional, but useful for logging/tracking
+
+        public NpcPrescriptionDeliveredEvent(GameObject npcObject, PrescriptionOrder orderDetails)
+        {
+            NpcObject = npcObject;
+            OrderDetails = orderDetails;
         }
     }
     // --- END NEW ---

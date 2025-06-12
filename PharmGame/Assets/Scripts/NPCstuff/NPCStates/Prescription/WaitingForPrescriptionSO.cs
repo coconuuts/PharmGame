@@ -1,3 +1,5 @@
+// --- START OF FILE WaitingForPrescriptionSO.cs ---
+
 // --- START OF FILE WaitingForPrescriptionSO.cs (Modified for Caching Interaction Components) ---
 
 using UnityEngine;
@@ -5,11 +7,12 @@ using System;
 using System.Collections;
 using Game.NPC.States; // Needed for NpcStateSO and NpcStateContext
 using Game.NPC; // Needed for CustomerState and GeneralState enums
-using Game.Prescriptions; // Needed for PrescriptionOrder // <-- NEW: Added using directive
+using Game.Prescriptions; // Needed for PrescriptionOrder
 using Random = UnityEngine.Random; // Specify UnityEngine.Random
-using Game.Events; // Needed for new event // <-- NEW: Added using directive
-using Systems.Interaction; // Needed for MultiInteractableManager // <-- NEW: Added using directive
-using Game.Interaction; // Needed for ObtainPrescription // <-- NEW: Added using directive
+using Game.Events; // Needed for EventManager and new event
+using Systems.Interaction; // Needed for MultiInteractableManager
+using Game.Interaction; // Needed for ObtainPrescription
+using Systems.Player; // Needed for PlayerPrescriptionTracker // <-- Added using directive
 
 
 namespace Game.NPC.States // Place alongside other active states
@@ -21,6 +24,7 @@ namespace Game.NPC.States // Place alongside other active states
     /// MODIFIED: Activates the ObtainPrescription interactable on Enter and deactivates on Exit.
     /// UI display is now handled by PlayerUIPopups.
     /// Interaction components are accessed via context (cached on Runner).
+    /// --- MODIFIED: FreePrescriptionClaimSpotEvent is now published by the impatience coroutine on exit to Exiting. ---
     /// </summary>
     [CreateAssetMenu(fileName = "CustomerWaitingForPrescriptionState", menuName = "NPC/Customer States/Waiting For Prescription", order = 3)] // Order after Prescription Entering
     public class WaitingForPrescriptionSO : NpcStateSO
@@ -32,8 +36,9 @@ namespace Game.NPC.States // Place alongside other active states
         [Tooltip("Minimum and maximum time (real-time seconds) the NPC will wait before becoming impatient.")]
         [SerializeField] private Vector2 impatientTimeRange = new Vector2(15f, 30f); // Adjust range as needed
 
-        private float impatientTimer;
-        private float impatientDuration;
+        // Timer fields are managed by the coroutine now
+        // private float impatientTimer;
+        // private float impatientDuration;
 
         private Coroutine waitingRoutine; // Coroutine for the timer
 
@@ -49,11 +54,12 @@ namespace Game.NPC.States // Place alongside other active states
             // context.PlayAnimation("WaitingAtCounter"); // Placeholder animation name
 
             // Start impatience timer coroutine
-            impatientDuration = Random.Range(impatientTimeRange.x, impatientTimeRange.y);
-            impatientTimer = 0f; // Timer is managed by the coroutine now
+            float impatientDuration = Random.Range(impatientTimeRange.x, impatientTimeRange.y); // Duration is local to OnEnter
             Debug.Log($"{context.NpcObject.name}: Entering {name}. Starting impatience timer for {impatientDuration:F2} seconds.", context.NpcObject);
 
-            waitingRoutine = context.StartCoroutine(WaitingRoutine(context)); // Start the timer coroutine
+            waitingRoutine = context.StartCoroutine(WaitingRoutine(context, impatientDuration)); // Start the timer coroutine
+            // impatientTimer = 0f; // Timer is managed by the coroutine now
+
 
             // --- Log Prescription Order Data ---
             PrescriptionOrder assignedOrder;
@@ -108,7 +114,7 @@ namespace Game.NPC.States // Place alongside other active states
                  Debug.LogWarning($"CustomerAI ({context.NpcObject.name}): PrescriptionManager or claim point is null! Cannot rotate.", context.NpcObject);
              }
 
-            // --- Activate the ObtainPrescription interactable using cached components --- // <-- MODIFIED LOGIC
+            // --- Activate the ObtainPrescription interactable using cached components ---
             MultiInteractableManager multiManager = context.GetMultiInteractableManager(); // Get from context helper
             ObtainPrescription obtainPrescriptionComponent = context.GetObtainPrescription(); // Get from context helper
 
@@ -146,12 +152,12 @@ namespace Game.NPC.States // Place alongside other active states
                 context.StopCoroutine(waitingRoutine);
                 waitingRoutine = null;
             }
-            impatientTimer = 0f; // Reset timer
+            // impatientTimer = 0f; // Timer is managed by the coroutine now
 
             // Note: Stop waiting animation
             // context.PlayAnimation("Idle");
 
-            // --- Deactivate the ObtainPrescription interactable and reset its state using cached components --- // <-- MODIFIED LOGIC
+            // --- Deactivate the ObtainPrescription interactable and reset its state using cached components ---
             MultiInteractableManager multiManager = context.GetMultiInteractableManager(); // Get from context helper
             ObtainPrescription obtainPrescriptionComponent = context.GetObtainPrescription(); // Get from context helper
 
@@ -194,47 +200,32 @@ namespace Game.NPC.States // Place alongside other active states
             // --- Clear pending prescription flag and order data ---
             // This should happen when the NPC *completes* the prescription flow (by exiting this state).
             // This ensures they don't try to get the same prescription again immediately.
-            if (context.Runner != null)
-            {
-                 if (context.Runner.IsTrueIdentityNpc && context.TiData != null)
-                 {
-                      Debug.Log($"{context.NpcObject.name}: TI NPC exiting prescription flow. Clearing pendingPrescription flag and assigned order on TiData.", context.NpcObject);
-                      context.TiData.pendingPrescription = false;
-                      // Decide if assignedOrder should be cleared or kept for history. Let's clear it for now.
-                      context.TiData.assignedOrder = new PrescriptionOrder(); // Reset struct
-                      // Need to notify PrescriptionManager to remove from assignedTiOrders dictionary
-                      PrescriptionManager.Instance?.RemoveAssignedTiOrder(context.TiData.Id); // Need new PM method
-                 }
-                 else if (!context.Runner.IsTrueIdentityNpc)
-                 {
-                      Debug.Log($"{context.NpcObject.name}: Transient NPC exiting prescription flow. Clearing pendingPrescription flag and assigned order on Runner.", context.NpcObject);
-                      context.Runner.hasPendingPrescriptionTransient = false;
-                      context.Runner.assignedOrderTransient = new PrescriptionOrder(); // Reset struct
-                      // Need to notify PrescriptionManager to remove from assignedTransientOrders dictionary
-                      PrescriptionManager.Instance?.RemoveAssignedTransientOrder(context.NpcObject); // Need new PM method
-                 }
-            } else {
-                 Debug.LogError($"{context.NpcObject.name}: WaitingForPrescriptionSO OnExit: Runner is null! Cannot clear pending prescription data.", context.NpcObject);
-            }
-            // --- END Clear pending prescription flag and order data ---
+            // NOTE: This logic should *only* happen if the NPC is exiting the *entire* prescription flow,
+            // not if they are transitioning to WaitingForDelivery.
+            // Let's move this clearing logic to the OnExit of WaitingForDeliverySO, as that's the final state before Exiting.
+            // If the NPC exits WaitingForPrescription directly to Exiting (due to impatience), the order should still be cleared.
+            // This clearing logic should happen when leaving *either* WaitingForPrescription *or* WaitingForDelivery.
+            // Let's put it in a helper method and call it from both OnExit methods.
+            // --- MODIFIED: Removed order clearing from here ---
+            // --- END MODIFIED ---
 
 
             // --- Publish event to free the claim spot ---
             // This event signals that the NPC is leaving the claim spot.
             // The PrescriptionManager will listen for this to update its IsPrescriptionClaimSpotOccupied status.
             // This should happen regardless of the reason for exiting (impatience, successful interaction - future).
-            Debug.Log($"{context.NpcObject.name}: Exiting {name}. Publishing FreePrescriptionClaimSpotEvent.", context.NpcObject);
-            context.PublishEvent(new FreePrescriptionClaimSpotEvent(context.NpcObject));
-            // --- END NEW LOGIC ---
+            // --- MODIFIED: Removed event from here, it's now published by the impatience coroutine when exiting to Exiting ---
+            Debug.Log($"{context.NpcObject.name}: Exiting {name}. Claim spot freeing handled by impatience coroutine or next state.", context.NpcObject);
+            // --- END MODIFIED ---
         }
 
         // Coroutine method for the impatience timer
-        private IEnumerator WaitingRoutine(NpcStateContext context)
+        private IEnumerator WaitingRoutine(NpcStateContext context, float duration) // Pass duration as parameter
         {
-            Debug.Log($"{context.NpcObject.name}: WaitingRoutine started in {name}. Waiting for {impatientDuration:F2} seconds.", context.NpcObject);
+            Debug.Log($"{context.NpcObject.name}: WaitingRoutine started in {name}. Waiting for {duration:F2} seconds.", context.NpcObject);
 
             float timer = 0f;
-            while (timer < impatientDuration)
+            while (timer < duration)
             {
                  // Check if the state has changed externally (e.g., interruption, successful interaction)
                  if (context.Runner.GetCurrentState() != this)
@@ -247,7 +238,13 @@ namespace Game.NPC.States // Place alongside other active states
             }
 
             // Timer finished, NPC becomes impatient
-            Debug.Log($"{context.NpcObject.name}: IMPATIENT in {name} state after {impatientDuration:F2} seconds. Transitioning to Exiting.", context.NpcObject);
+            Debug.Log($"{context.NpcObject.name}: IMPATIENT in {name} state after {duration:F2} seconds. Transitioning to Exiting.", context.NpcObject);
+
+            // --- NEW: Publish event to free the claim spot just before exiting due to impatience ---
+            Debug.Log($"{context.NpcObject.name}: Impatience timer finished. Publishing FreePrescriptionClaimSpotEvent.", context.NpcObject);
+            context.PublishEvent(new FreePrescriptionClaimSpotEvent(context.NpcObject));
+            // --- END NEW ---
+
             // No need to publish NpcImpatientEvent here, just transition directly as per the vision.
             context.TransitionToState(CustomerState.Exiting);
         }

@@ -21,6 +21,7 @@ namespace Game.NPC
         LookToPrescription,
         PrescriptionEntering, 
         WaitingForPrescription, 
+        WaitingForDelivery,
         PrescriptionQueue,
     }
 }
