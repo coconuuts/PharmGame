@@ -34,13 +34,7 @@ namespace Game.NPC.States // Place alongside other active states
         [Tooltip("Minimum and maximum time (real-time seconds) the NPC will wait before becoming impatient.")]
         [SerializeField] private Vector2 impatientTimeRange = new Vector2(20f, 40f); // Adjust range as needed (maybe slightly longer than initial wait)
 
-        // Timer fields are managed by the coroutine now
-        // private float impatientTimer;
-        // private float impatientDuration;
-
         private Coroutine waitingRoutine; // Coroutine for the timer
-        // --- END NEW ---
-
 
         public override void OnEnter(NpcStateContext context)
         {
@@ -55,58 +49,53 @@ namespace Game.NPC.States // Place alongside other active states
 
             Debug.Log($"{context.NpcObject.name}: Entering {name}. Waiting for player delivery.", context.NpcObject);
 
-            // --- Start impatience timer coroutine --- // <-- NEW
+            // --- Start impatience timer coroutine --- 
             float impatientDuration = Random.Range(impatientTimeRange.x, impatientTimeRange.y); // Duration is local to OnEnter
             Debug.Log($"{context.NpcObject.name}: Entering {name}. Starting impatience timer for {impatientDuration:F2} seconds.", context.NpcObject);
             waitingRoutine = context.StartCoroutine(WaitingRoutine(context, impatientDuration)); // Start the timer coroutine
-            // --- END NEW ---
-
 
             // --- Manage Interactables: Deactivate ObtainPrescription, Activate DeliverPrescription ---
             MultiInteractableManager multiManager = context.GetMultiInteractableManager(); // Get from context helper
             ObtainPrescription obtainPrescriptionComponent = context.GetObtainPrescription(); // Get from context helper
-            // Need a reference to the DeliverPrescription component (will add next)
-            DeliverPrescription deliverPrescriptionComponent = context.NpcObject.GetComponent<DeliverPrescription>(); // Assuming it's on the same GO
+            DeliverPrescription deliverPrescriptionComponent = context.NpcObject.GetComponent<DeliverPrescription>();
 
             if (multiManager != null)
             {
-                 // Deactivate ObtainPrescription (should be handled by WaitingForPrescriptionSO.OnExit, but defensive)
-                 if (obtainPrescriptionComponent != null && multiManager.CurrentActiveInteractable == obtainPrescriptionComponent)
-                 {
-                      Debug.Log($"{context.NpcObject.name}: Deactivating ObtainPrescription on entering WaitingForDelivery.", context.NpcObject);
-                      multiManager.DeactivateCurrentInteractable(); // Deactivates the current one
-                 }
-                 // Activate DeliverPrescription
-                 if (deliverPrescriptionComponent != null)
-                 {
-                      Debug.Log($"{context.NpcObject.name}: Activating DeliverPrescription interactable.", context.NpcObject);
-                      multiManager.SetActiveInteractable(deliverPrescriptionComponent); // Set DeliverPrescription as the active interactable
-                 }
-                 else
-                 {
-                      Debug.LogError($"{context.NpcObject.name}: DeliverPrescription component not found on NPC! Cannot activate delivery interaction.", context.NpcObject);
-                      // Decide fallback: Maybe transition to Exiting if delivery is critical?
-                      // For now, just log error and NPC remains in this state without delivery interaction.
-                 }
+                // Deactivate ObtainPrescription (should be handled by WaitingForPrescriptionSO.OnExit, but defensive)
+                if (obtainPrescriptionComponent != null && multiManager.CurrentActiveInteractable == obtainPrescriptionComponent)
+                {
+                    Debug.Log($"{context.NpcObject.name}: Deactivating ObtainPrescription on entering WaitingForDelivery.", context.NpcObject);
+                    multiManager.DeactivateCurrentInteractable(); // Deactivates the current one
+                }
+                // Activate DeliverPrescription
+                if (deliverPrescriptionComponent != null)
+                {
+                    Debug.Log($"{context.NpcObject.name}: Activating DeliverPrescription interactable.", context.NpcObject);
+                    multiManager.SetActiveInteractable(deliverPrescriptionComponent); // Set DeliverPrescription as the active interactable
+                }
+                else
+                {
+                    Debug.LogError($"{context.NpcObject.name}: DeliverPrescription component not found on NPC! Cannot activate delivery interaction.", context.NpcObject);
+                    // Decide fallback: Maybe transition to Exiting if delivery is critical?
+                    // For now, just log error and NPC remains in this state without delivery interaction.
+                }
             }
             else
             {
                 Debug.LogError($"{context.NpcObject.name}: MultiInteractableManager not found! Cannot manage interactables.", context.NpcObject);
             }
-            // --- END Manage Interactables ---
 
-            // Optional: Rotate towards the player interaction point if known (same as claim point)
-             PrescriptionManager prescriptionManager = PrescriptionManager.Instance;
-             if (prescriptionManager != null && prescriptionManager.GetPrescriptionClaimPoint() != null)
-             {
-                 Quaternion targetRotation = prescriptionManager.GetPrescriptionClaimPoint().rotation;
-                 Debug.Log($"CustomerAI ({context.NpcObject.name}): Starting rotation towards claim point rotation {targetRotation.eulerAngles} in WaitingForDelivery.", context.NpcObject);
-                 context.RotateTowardsTarget(targetRotation); // Use context helper
-             }
-             else
-             {
-                 Debug.LogWarning($"CustomerAI ({context.NpcObject.name}): PrescriptionManager or claim point is null! Cannot rotate.", context.NpcObject);
-             }
+            PrescriptionManager prescriptionManager = PrescriptionManager.Instance;
+            if (prescriptionManager != null && prescriptionManager.GetPrescriptionClaimPoint() != null)
+            {
+                Quaternion targetRotation = prescriptionManager.GetPrescriptionClaimPoint().rotation;
+                Debug.Log($"CustomerAI ({context.NpcObject.name}): Starting rotation towards claim point rotation {targetRotation.eulerAngles} in WaitingForDelivery.", context.NpcObject);
+                context.RotateTowardsTarget(targetRotation); // Use context helper
+            }
+            else
+            {
+                Debug.LogWarning($"CustomerAI ({context.NpcObject.name}): PrescriptionManager or claim point is null! Cannot rotate.", context.NpcObject);
+            }
         }
 
         public override void OnUpdate(NpcStateContext context)
@@ -129,10 +118,6 @@ namespace Game.NPC.States // Place alongside other active states
                 context.StopCoroutine(waitingRoutine);
                 waitingRoutine = null;
             }
-            // impatientTimer = 0f; // Timer is managed by the coroutine now
-
-            // Note: Stop waiting animation
-            // context.PlayAnimation("Idle");
 
             // --- Deactivate the DeliverPrescription interactable on exit ---
             MultiInteractableManager multiManager = context.GetMultiInteractableManager(); // Get from context helper
@@ -140,19 +125,19 @@ namespace Game.NPC.States // Place alongside other active states
 
             if (multiManager != null)
             {
-                 if (deliverPrescriptionComponent != null && multiManager.CurrentActiveInteractable == deliverPrescriptionComponent)
-                 {
-                      Debug.Log($"{context.NpcObject.name}: Deactivating DeliverPrescription on exiting WaitingForDelivery.", context.NpcObject);
-                      multiManager.DeactivateCurrentInteractable(); // Deactivates the current one
-                 }
+                if (deliverPrescriptionComponent != null && multiManager.CurrentActiveInteractable == deliverPrescriptionComponent)
+                {
+                    Debug.Log($"{context.NpcObject.name}: Deactivating DeliverPrescription on exiting WaitingForDelivery.", context.NpcObject);
+                    multiManager.DeactivateCurrentInteractable(); // Deactivates the current one
+                }
             }
             else
             {
-                 Debug.LogWarning($"{context.NpcObject.name}: MultiInteractableManager not found on exit! Cannot deactivate interactable.", context.NpcObject);
+                Debug.LogWarning($"{context.NpcObject.name}: MultiInteractableManager not found on exit! Cannot deactivate interactable.", context.NpcObject);
             }
-            // --- END Deactivate Interactable ---
 
-            // --- NEW: Clear player's active prescription order ---
+            // --- Clear player's active prescription order ---
+            PlayerUIPopups.Instance?.HidePopup("Prescription Order");
             GameObject playerGO = GameObject.FindGameObjectWithTag("Player"); // Assuming player has the "Player" tag
             PlayerPrescriptionTracker playerTracker = null;
             if (playerGO != null)
@@ -162,10 +147,11 @@ namespace Game.NPC.States // Place alongside other active states
 
             if (playerTracker != null && playerTracker.ActivePrescriptionOrder.HasValue)
             {
-                 Debug.Log($"{context.NpcObject.name}: Exiting {name}. Clearing player's active prescription order.", context.NpcObject);
-                 playerTracker.ClearActiveOrder();
-                 // Also hide the UI popup if it's still showing
-                 PlayerUIPopups.Instance?.HidePrescriptionOrder();
+                Debug.Log($"{context.NpcObject.name}: Exiting {name}. Clearing player's active prescription order.", context.NpcObject);
+                playerTracker.ClearActiveOrder();
+                // Also hide the UI popup if it's still showing
+                PlayerUIPopups.Instance?.HidePopup("Prescription Order");
+
             }
             // Note: Clearing the order from the PrescriptionManager's tracking dictionaries
             // happens in DeliverPrescription.Interact() on *successful* delivery.

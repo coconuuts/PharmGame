@@ -22,7 +22,6 @@ namespace Game.NPC.States // Place alongside other active states
     /// An impatience timer runs, after which the NPC exits.
     /// Corresponds to CustomerState.WaitingForPrescription.
     /// MODIFIED: Activates the ObtainPrescription interactable on Enter and deactivates on Exit.
-    /// UI display is now handled by PlayerUIPopups.
     /// Interaction components are accessed via context (cached on Runner).
     /// --- MODIFIED: FreePrescriptionClaimSpotEvent is now published by the impatience coroutine on exit to Exiting. ---
     /// </summary>
@@ -183,38 +182,7 @@ namespace Game.NPC.States // Place alongside other active states
             {
                  Debug.LogWarning($"{context.NpcObject.name}: ObtainPrescription component not found on exit! Cannot reset its state.", context.NpcObject);
             }
-            // --- END MODIFIED LOGIC ---
 
-
-            // --- NEW: Hide the UI via PlayerUIPopups ---
-            if (PlayerUIPopups.Instance != null)
-            {
-                 Debug.Log($"{context.NpcObject.name}: Calling PlayerUIPopups.HidePrescriptionOrder().", context.NpcObject);
-                 PlayerUIPopups.Instance.HidePrescriptionOrder();
-            } else {
-                 Debug.LogWarning($"{context.NpcObject.name}: PlayerUIPopups.Instance is null! Cannot hide prescription order UI on exit.", context.NpcObject);
-            }
-            // --- END NEW LOGIC ---
-
-
-            // --- Clear pending prescription flag and order data ---
-            // This should happen when the NPC *completes* the prescription flow (by exiting this state).
-            // This ensures they don't try to get the same prescription again immediately.
-            // NOTE: This logic should *only* happen if the NPC is exiting the *entire* prescription flow,
-            // not if they are transitioning to WaitingForDelivery.
-            // Let's move this clearing logic to the OnExit of WaitingForDeliverySO, as that's the final state before Exiting.
-            // If the NPC exits WaitingForPrescription directly to Exiting (due to impatience), the order should still be cleared.
-            // This clearing logic should happen when leaving *either* WaitingForPrescription *or* WaitingForDelivery.
-            // Let's put it in a helper method and call it from both OnExit methods.
-            // --- MODIFIED: Removed order clearing from here ---
-            // --- END MODIFIED ---
-
-
-            // --- Publish event to free the claim spot ---
-            // This event signals that the NPC is leaving the claim spot.
-            // The PrescriptionManager will listen for this to update its IsPrescriptionClaimSpotOccupied status.
-            // This should happen regardless of the reason for exiting (impatience, successful interaction - future).
-            // --- MODIFIED: Removed event from here, it's now published by the impatience coroutine when exiting to Exiting ---
             Debug.Log($"{context.NpcObject.name}: Exiting {name}. Claim spot freeing handled by impatience coroutine or next state.", context.NpcObject);
             // --- END MODIFIED ---
         }

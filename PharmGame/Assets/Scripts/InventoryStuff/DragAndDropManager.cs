@@ -5,6 +5,8 @@ using UnityEngine.UI;
 using TMPro;
 using System.Collections.Generic;
 using System;
+using Systems.GameStates; // Needed to access MenuManager and GameState
+using Systems.UI; // Needed for PlayerUIPopups
 
 namespace Systems.Inventory
 {
@@ -36,22 +38,32 @@ namespace Systems.Inventory
         public event Action OnDragDropCompleted;
 
         // List of all active inventories in the scene (inventories register themselves)
-        private static List<Inventory> allInventories = new List<Inventory>();
+        private static List<Inventory> allInventories_static = new List<Inventory>(); // Renamed to avoid conflict if a local variable is named allInventories
 
         public static void RegisterInventory(Inventory inventory)
         {
-            if (!allInventories.Contains(inventory))
+            if (inventory != null && !allInventories_static.Contains(inventory))
             {
-                allInventories.Add(inventory);
+                allInventories_static.Add(inventory);
+                Debug.Log($"DragAndDropManager: Registered inventory '{inventory.Id}' ({inventory.gameObject.name}). Total registered: {allInventories_static.Count}");
             }
+             else if (inventory == null)
+             {
+                  Debug.LogWarning("DragAndDropManager: Attempted to register a null inventory.");
+             }
         }
 
         public static void UnregisterInventory(Inventory inventory)
         {
-            if (allInventories.Contains(inventory))
+            if (inventory != null && allInventories_static.Contains(inventory))
             {
-                allInventories.Remove(inventory);
+                allInventories_static.Remove(inventory);
+                 Debug.Log($"DragAndDropManager: Unregistered inventory '{inventory.Id}' ({inventory.gameObject.name}). Total registered: {allInventories_static.Count}");
             }
+             else if (inventory == null)
+             {
+                  Debug.LogWarning("DragAndDropManager: Attempted to unregister a null inventory.");
+             }
         }
 
 
@@ -107,11 +119,15 @@ namespace Systems.Inventory
                 IsDragging = false;
                 OnDragStateChanged?.Invoke(false);
             }
+
+            // Clear the static list on shutdown if needed, though typically not necessary
+            // allInventories_static.Clear();
         }
 
         /// <summary>
         /// Called by an InventorySlotUI when a pointer is pressed down.
         /// Initiates a drag if an item is present.
+        /// NOTE: This method is only called if Shift is NOT held down (handled in InventorySlotUI.OnPointerDown).
         /// </summary>
         public void StartDrag(InventorySlotUI slotUI, PointerEventData eventData)
         {
@@ -227,14 +243,23 @@ namespace Systems.Inventory
                 int targetSlotIndex = targetSlotUI.SlotIndex;
 
                 // Ensure target index is within the physical slot range of the target inventory
-                if (targetSlotIndex >= 0 && targetSlotIndex < targetInventory.Combiner.PhysicalSlotCount)
+                if (targetInventory.Combiner == null || targetSlotIndex < 0 || targetSlotIndex >= targetInventory.Combiner.PhysicalSlotCount)
+                {
+                     // Dropped over a valid inventory's UI element, but not a physical slot index
+                     Debug.Log($"DragAndDropManager: Drop detected over target inventory '{targetInventory.Id}' but outside valid physical slots ({targetInventory.Combiner.PhysicalSlotCount}). Target Index: {targetSlotIndex}. Returning item to source.");
+                     ReturnItemToSource();
+                     dropSuccessfullyProcessed = true;
+                }
+                else
                 {
                     // --- Item Label Filtering Check ---
+                    // Note: This check is also done by Combiner.AddItem/TryAddQuantity, but doing it here
+                    // allows for the "Cannot Transfer" popup *before* any data manipulation.
                     if (!targetInventory.CanAddItem(itemBeingDragged)) // Simplified check assuming targetInventory is not null here
                     {
                         ReturnItemToSource(); // Item returned to its original spot
                         dropSuccessfullyProcessed = true;
-                        PlayerUIPopups.Instance.SetInvalidItemActive(true);
+                        PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "This item cannot go in that inventory."); // Refined message
                     }
                     else
                     {
@@ -244,6 +269,7 @@ namespace Systems.Inventory
                         if (targetObservableArray != null)
                         {
                             Debug.Log($"DragAndDropManager: Item '{itemBeingDragged.details?.Name ?? "Unknown"}' allowed in target inventory '{targetInventory.Id}'. Proceeding with HandleDrop.");
+                            // HandleDrop is called on the TARGET array, but it needs the SOURCE array and original index
                             targetObservableArray.HandleDrop(itemBeingDragged, targetSlotIndex, sourceInventory.InventoryState, sourceSlotIndex);
                             dropSuccessfullyProcessed = true;
                         }
@@ -254,27 +280,18 @@ namespace Systems.Inventory
                         }
                     }
                 }
-                else
-                {
-                    // Dropped over a valid inventory's UI element, but not a physical slot index
-                    Debug.Log($"DragAndDropManager: Drop detected over target inventory '{targetInventory.Id}' but outside valid physical slots ({targetInventory.Combiner.PhysicalSlotCount}). Target Index: {targetSlotIndex}. Returning item to source.");
-                    ReturnItemToSource();
-                    dropSuccessfullyProcessed = true;
-                }
             }
             // else: targetSlotUI was null (dropped outside any inventory UI) - handled below
 
             // --- Handle cases where the drop was NOT successfully processed by a target slot ---
-            // This means targetSlotUI was null OR targetObservableArray was null
+            // This means targetSlotUI was null OR targetObservableArray was null OR filtering failed
             if (!dropSuccessfullyProcessed)
             {
                 Debug.Log("DragAndDropManager: Drop target not found or invalid (e.g., dropped outside any slot). Returning item to source.");
                 ReturnItemToSource(); // Return the item to its source slot
-                dropSuccessfullyProcessed = true; // Ensure this path also flags as processed
+                // Note: If filtering failed, the popup was already shown. If dropped outside, no popup needed here.
             }
 
-
-            // --- **** IMPORTANT: RESET DRAG STATE AND CLEANUP HERE **** ---
             // Resetting these *before* potentially triggering completion events
             // minimizes the window where a new drag could incorrectly start.
             IsDragging = false;
@@ -285,8 +302,6 @@ namespace Systems.Inventory
             itemBeingDragged = null;
             sourceInventory = null;
             sourceSlotIndex = -1;
-            // --- **** END RESET/CLEANUP **** ---
-
 
             // Now trigger the completion event AFTER state is fully reset
             OnDragDropCompleted?.Invoke();
@@ -345,10 +360,14 @@ namespace Systems.Inventory
                 ObservableArray<Item> sourceObservableArray = sourceInventory.InventoryState;
                 if (sourceObservableArray != null)
                 {
-
-                    // Call HandleDrop on the *source* array, targeting the original slot.
-                    // The HandleDrop method handles the internal logic (putting it back, potentially clearing ghost).
-                    sourceObservableArray.HandleDrop(itemBeingDragged, sourceSlotIndex, sourceObservableArray, sourceSlotIndex); // source and target arrays are the same
+                     // This method is specifically for the drag-and-drop flow where the item is in the ghost slot.
+                     // The quick transfer logic handles its own return directly using AddItem.
+                     // Ensure itemBeingDragged is actually the one in the ghost slot before proceeding.
+                     // This check is implicit because itemBeingDragged is only set during StartDrag.
+                     // If this method is called, we assume a drag was active.
+                     // We use HandleDrop on the SOURCE array to move the item from the ghost slot
+                     // back to its original physical slot.
+                     sourceObservableArray.HandleDrop(itemBeingDragged, sourceSlotIndex, sourceObservableArray, sourceSlotIndex); // source and target arrays are the same
                 }
                 else
                 {
@@ -362,7 +381,7 @@ namespace Systems.Inventory
             }
             // Note: Drag state (itemBeingDragged, etc.) is cleared in EndDrag after this method returns.
         }
-        
+
         public void AbortDrag()
         {
             // Only abort if a drag is actually in progress

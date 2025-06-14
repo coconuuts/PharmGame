@@ -1132,12 +1132,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fc4a39b2320ff494c8c389131b1e9ce1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  invalidItem: {fileID: 928554872}
-  wrongPrescriptionPopupRoot: {fileID: 0}
-  wrongPrescriptionMessageText: {fileID: 0}
-  wrongPrescriptionPopupDuration: 3
-  prescriptionOrderUIRoot: {fileID: 158870078}
-  prescriptionOrderDetailsText: {fileID: 158870080}
+  popups:
+  - popupName: Prescription Order
+    rootObject: {fileID: 158870078}
+    textComponent: {fileID: 158870080}
+    isTimed: 0
+    duration: 0
+  - popupName: Wrong Prescription
+    rootObject: {fileID: 928554872}
+    textComponent: {fileID: 928554874}
+    isTimed: 1
+    duration: 5
 --- !u!114 &99645956
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7803,8 +7808,8 @@ MonoBehaviour:
   npcPrefabs:
   - {fileID: 4394407753789290286, guid: 488534cc76898354d8320c55d1770728, type: 3}
   maxCustomersInStore: 7
-  minSpawnInterval: 5
-  maxSpawnInterval: 6
+  minSpawnInterval: 20
+  maxSpawnInterval: 21
   spawnPoints:
   - {fileID: 600981058}
   BrowseLocations:
@@ -9992,6 +9997,17 @@ GameObject:
   m_CorrespondingSourceObject: {fileID: 2506893108741231547, guid: 8202459e60c16e64a96afbd191a02aa8, type: 3}
   m_PrefabInstance: {fileID: 3932140101012895896}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &928554874 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 8783740895804377731, guid: 8202459e60c16e64a96afbd191a02aa8, type: 3}
+  m_PrefabInstance: {fileID: 3932140101012895896}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 928554872}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &930696119
 GameObject:
   m_ObjectHideFlags: 0

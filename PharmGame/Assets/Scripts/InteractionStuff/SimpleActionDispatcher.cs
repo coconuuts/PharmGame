@@ -39,14 +39,13 @@ namespace Systems.GameStates // Place in the same namespace as MenuManager and S
             {
                 Debug.Log($"SimpleActionDispatcher: Received ObtainPrescriptionResponse for order: {obtainPrescriptionResponse.OrderDetails}. Displaying UI.");
 
-                // --- NEW: Call PlayerUIPopups to display the order ---
+                // --- Call PlayerUIPopups to display the order ---
                 if (PlayerUIPopups.Instance != null)
                 {
-                    PlayerUIPopups.Instance.DisplayPrescriptionOrder(obtainPrescriptionResponse.OrderDetails);
+                    PlayerUIPopups.Instance.ShowPopup("Prescription Order", obtainPrescriptionResponse.OrderDetails.ToString());
                 } else {
                     Debug.LogError("SimpleActionDispatcher: PlayerUIPopups.Instance is null! Cannot display prescription order UI.");
                 }
-                // --- END NEW ---
             }
             else
             {

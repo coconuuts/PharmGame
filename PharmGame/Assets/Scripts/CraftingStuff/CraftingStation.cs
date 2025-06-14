@@ -532,36 +532,6 @@ namespace Systems.Inventory
                 }
             }
 
-            // --- NEW: Validate against active prescription order if present ---
-            Systems.Player.PlayerPrescriptionTracker playerTracker = null;
-            GameObject playerGO = GameObject.FindGameObjectWithTag("Player"); // Assuming player has the "Player" tag
-            if (playerGO != null)
-            {
-                playerTracker = playerGO.GetComponent<Systems.Player.PlayerPrescriptionTracker>();
-            }
-
-            if (playerTracker != null && playerTracker.ActivePrescriptionOrder.HasValue)
-            {
-                 Game.Prescriptions.PrescriptionOrder activeOrder = playerTracker.ActivePrescriptionOrder.Value;
-                 // --- MODIFIED: Get required recipe by name using the updated mapping method ---
-                 CraftingRecipe requiredRecipe = drugRecipeMapping.GetCraftingRecipeForDrug(activeOrder.prescribedDrug);
-                 // --- END MODIFIED ---
-
-                 if (currentMatchedRecipe != requiredRecipe)
-                 {
-                      Debug.LogWarning($"CraftingStation ({gameObject.name}): Craft button clicked with active prescription order, but the matched recipe ({currentMatchedRecipe.recipeName}) does NOT match the required recipe for the order ('{activeOrder.prescribedDrug}' requires '{requiredRecipe?.recipeName ?? "NULL"}'). Blocking craft.", this);
-                      // TODO: Provide player feedback here (e.g., UI message)
-                      PlayerUIPopups.Instance?.ShowWrongPrescriptionMessage($"This station isn't for {activeOrder.prescribedDrug}!"); // Example feedback
-                      return; // Block the craft attempt
-                 }
-                 else
-                 {
-                      Debug.Log($"CraftingStation ({gameObject.name}): Craft button clicked with active prescription order. Matched recipe ({currentMatchedRecipe.recipeName}) IS the required recipe. Proceeding.", this);
-                 }
-            }
-            // --- END NEW ---
-
-
             // Proceed with starting the crafting state, which will trigger the minigame
             SetState(CraftingState.Crafting);
         }

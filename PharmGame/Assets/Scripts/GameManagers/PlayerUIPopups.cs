@@ -1,236 +1,239 @@
 // --- START OF FILE PlayerUIPopups.cs ---
 
-// --- START OF FILE PlayerUIPopups.cs ---
-
 using UnityEngine;
 using TMPro; // Required for TMP_Text
 using System.Collections; // Required for using Coroutines
-using Game.Prescriptions; // Needed for PrescriptionOrder
+using System.Collections.Generic; // Required for List
+using Game.Prescriptions; // Needed for PrescriptionOrder (if still used elsewhere, otherwise remove)
 
 public class PlayerUIPopups : MonoBehaviour
 {
-    [Header("Invalid Item Popup")]
-    [Tooltip("The root GameObject for the generic 'Invalid Item' popup.")] // Added tooltip for clarity
-    [SerializeField] private GameObject invalidItem;
+    // --- Configuration Class for Each Popup Type ---
+    [System.Serializable] // Make this class visible and editable in the Inspector
+    public class UIPopupConfig
+    {
+        [Tooltip("A unique name for this popup type (e.g., 'InvalidItem', 'WrongPrescription', 'PrescriptionOrder').")]
+        public string popupName;
 
-    // --- NEW: Wrong Prescription Popup ---
-    [Header("Wrong Prescription Popup")]
-    [Tooltip("The root GameObject for the 'Wrong Prescription' popup.")]
-    [SerializeField] private GameObject wrongPrescriptionPopupRoot;
-    [Tooltip("The TMP Text component to display the 'Wrong Prescription' message.")]
-    [SerializeField] private TMPro.TMP_Text wrongPrescriptionMessageText;
-    [Tooltip("Duration (in seconds) the 'Wrong Prescription' popup stays visible.")]
-    [SerializeField] private float wrongPrescriptionPopupDuration = 3f; // Configurable duration
-    // --- END NEW ---
+        [Tooltip("The root GameObject for this specific popup UI.")]
+        public GameObject rootObject;
 
+        [Tooltip("Optional: The TMP Text component within this popup to display messages. Leave null if no text is needed.")]
+        public TMPro.TMP_Text textComponent;
 
-    [Header("Prescription Order UI")]
-    [Tooltip("The root GameObject for the prescription order details UI.")]
-    [SerializeField] private GameObject prescriptionOrderUIRoot;
-    [Tooltip("The TMP Text component to display the prescription order details.")]
-    [SerializeField] private TMPro.TMP_Text prescriptionOrderDetailsText;
+        [Tooltip("If true, the popup will automatically hide after the duration. If false, it must be hidden manually.")]
+        public bool isTimed = false;
 
+        [Tooltip("Duration (in seconds) the popup stays visible if 'Is Timed' is true.")]
+        [SerializeField] private float duration = 3f; // Default duration
 
-    private static PlayerUIPopups instance; // Keeping from original script
+        // Public property for duration, allows getting the private field
+        public float Duration => duration;
 
-    private Coroutine disableInvalidItemCoroutine; // To keep track of the running coroutine
-    private Coroutine disableWrongPrescriptionCoroutine; // <-- NEW: Coroutine for wrong prescription popup
+        // --- Internal state managed by the PlayerUIPopups script ---
+        [HideInInspector] // Hide this in the Inspector as it's managed by code
+        public Coroutine activeCoroutine; // To keep track of the running coroutine for timed popups
+    }
+    // --- End Configuration Class ---
+
+    [Tooltip("List of all configurable UI popups.")]
+    [SerializeField] private List<UIPopupConfig> popups = new List<UIPopupConfig>();
+
+    private static PlayerUIPopups instance; // Singleton instance
 
     private void Awake()
     {
-        // Singleton pattern to ensure only one instance exists
+        // Singleton pattern
         if (instance == null)
         {
             instance = this;
+            // Optional: DontDestroyOnLoad(gameObject); // Uncomment if you need this object across scenes
         }
         else if (instance != this)
         {
+            Debug.LogWarning("Multiple PlayerUIPopups instances found. Destroying duplicate.", gameObject);
             Destroy(gameObject); // Destroy duplicate
-            return;
+            return; // Exit to prevent further execution in this duplicate
         }
     }
 
     public void Start()
     {
-        // Ensure popups are initially inactive
-        if (invalidItem != null)
+        // Ensure all configured popups are initially inactive
+        foreach (var config in popups)
         {
-            invalidItem.SetActive(false);
-        }
-        // --- NEW: Ensure wrong prescription UI is initially inactive ---
-        if (wrongPrescriptionPopupRoot != null)
-        {
-            wrongPrescriptionPopupRoot.SetActive(false);
-        }
-        // --- END NEW ---
-        // Ensure prescription UI is initially inactive
-        if (prescriptionOrderUIRoot != null)
-        {
-            prescriptionOrderUIRoot.SetActive(false);
+            if (config.rootObject != null)
+            {
+                config.rootObject.SetActive(false);
+            }
+            else
+            {
+                Debug.LogWarning($"PlayerUIPopups: Popup config '{config.popupName}' has no Root Object assigned!", this);
+            }
         }
     }
 
+    // Public static property to access the singleton instance
     public static PlayerUIPopups Instance
     {
         get
         {
             if (instance == null)
             {
-                Debug.LogError("PlayerUIPopups Instance is null.  There needs to be one in the scene.");
+                // Try to find an existing instance if it's null (might happen if accessed before Awake)
+                instance = FindObjectOfType<PlayerUIPopups>();
+                if (instance == null)
+                {
+                    Debug.LogError("PlayerUIPopups Instance is null and none was found in the scene. Make sure there is a PlayerUIPopups GameObject.");
+                }
             }
             return instance;
         }
     }
 
     /// <summary>
-    /// Sets the invalid item popup active for a specified duration (currently 5 seconds)
-    /// or deactivates it immediately.
+    /// Finds a popup configuration by its unique name.
     /// </summary>
-    /// <param name="isActive">True to show the popup for the duration, false to hide immediately.</param>
-    public void SetInvalidItemActive(bool isActive)
+    private UIPopupConfig GetPopupConfig(string popupName)
     {
-        if (invalidItem == null)
+        foreach (var config in popups)
         {
-            Debug.LogWarning("InvalidItem GameObject is not assigned in PlayerUIPopups.");
-            return;
-        }
-
-        if (isActive)
-        {
-            // If the popup is already active and the coroutine is running, stop it
-            // before starting a new one. This prevents multiple coroutines running
-            // and ensures the popup stays for the full 5 seconds from the *last* call.
-            if (disableInvalidItemCoroutine != null)
+            if (config.popupName == popupName)
             {
-                StopCoroutine(disableInvalidItemCoroutine);
+                return config;
             }
-
-            invalidItem.SetActive(true);
-            disableInvalidItemCoroutine = StartCoroutine(DisablePopUpAfterDelay(invalidItem, 3f)); // Pass the GameObject and duration
         }
-        else
+        Debug.LogError($"PlayerUIPopups: Popup config with name '{popupName}' not found. Make sure it's added and named correctly in the Inspector.", this);
+        return null; // Return null if not found
+    }
+
+    /// <summary>
+    /// Displays a UI popup based on its configured name.
+    /// </summary>
+    /// <param name="popupName">The unique name of the popup as defined in the Inspector.</param>
+    /// <param name="message">Optional: The text message to display if the popup has a text component.</param>
+    /// <param name="overrideDuration">Optional: Override the configured duration for timed popups.</param>
+    public void ShowPopup(string popupName, string message = null, float? overrideDuration = null)
+    {
+        UIPopupConfig config = GetPopupConfig(popupName);
+
+        if (config == null || config.rootObject == null)
         {
-            // If SetActive(false) is called, stop any running coroutine
-            // and immediately deactivate the popup.
-            if (disableInvalidItemCoroutine != null)
+            // Error already logged in GetPopupConfig if config is null
+            if (config != null && config.rootObject == null)
             {
-                StopCoroutine(disableInvalidItemCoroutine);
-                disableInvalidItemCoroutine = null; // Nullify the reference
+                 Debug.LogWarning($"PlayerUIPopups: Cannot show popup '{popupName}' because its Root Object is not assigned.", this);
             }
-            invalidItem.SetActive(false);
-        }
-    }
-
-    /// <summary>
-    /// Generic coroutine to wait for a specified duration and then deactivate a GameObject.
-    /// </summary>
-    /// <param name="gameObjectToDisable">The GameObject to deactivate.</param>
-    /// <param name="delay">The duration in seconds to wait before deactivating.</param>
-    /// <returns>The Coroutine instance.</returns>
-    private IEnumerator DisablePopUpAfterDelay(GameObject gameObjectToDisable, float delay) // Made generic
-    {
-        yield return new WaitForSeconds(delay);
-
-        // After the delay, deactivate the item
-        if (gameObjectToDisable != null)
-        {
-            gameObjectToDisable.SetActive(false);
-        }
-
-        // Clear the specific coroutine reference based on which popup it was
-        if (gameObjectToDisable == invalidItem) disableInvalidItemCoroutine = null;
-        else if (gameObjectToDisable == wrongPrescriptionPopupRoot) disableWrongPrescriptionCoroutine = null;
-        // Add other popup references here if they use this generic coroutine
-    }
-
-
-    // --- NEW: Methods for Wrong Prescription Popup ---
-    /// <summary>
-    /// Displays a specific message in the 'Wrong Prescription' UI popup for a set duration.
-    /// </summary>
-    /// <param name="message">The message to display.</param>
-    public void ShowWrongPrescriptionMessage(string message)
-    {
-        if (wrongPrescriptionPopupRoot == null || wrongPrescriptionMessageText == null)
-        {
-            Debug.LogWarning("Wrong Prescription UI references (Root or Text) are not assigned in PlayerUIPopups. Cannot display message.");
             return;
         }
 
-        // Stop any existing coroutine for this popup to reset the timer
-        if (disableWrongPrescriptionCoroutine != null)
+        // Set text if a message is provided and the popup has a text component
+        if (message != null)
         {
-            StopCoroutine(disableWrongPrescriptionCoroutine);
+            if (config.textComponent != null)
+            {
+                config.textComponent.text = message;
+            }
+            else
+            {
+                Debug.LogWarning($"PlayerUIPopups: Message provided for popup '{popupName}', but it has no Text Component assigned.", this);
+            }
         }
 
-        wrongPrescriptionMessageText.text = message;
-        wrongPrescriptionPopupRoot.SetActive(true);
-        Debug.Log($"PlayerUIPopups: Displaying wrong prescription message: '{message}'", this);
+        // Stop any existing coroutine for this popup (to reset the timer if timed)
+        if (config.activeCoroutine != null)
+        {
+            StopCoroutine(config.activeCoroutine);
+            config.activeCoroutine = null; // Clear the reference
+        }
 
-        // Start the coroutine to hide the popup after the configured duration
-        disableWrongPrescriptionCoroutine = StartCoroutine(DisablePopUpAfterDelay(wrongPrescriptionPopupRoot, wrongPrescriptionPopupDuration));
+        // Activate the root object
+        if (!config.rootObject.activeSelf) // Only activate if not already active
+        {
+             config.rootObject.SetActive(true);
+             Debug.Log($"PlayerUIPopups: Showing popup '{popupName}'.", this);
+        }
+
+
+        // If it's a timed popup, start the coroutine to hide it later
+        if (config.isTimed)
+        {
+            float actualDuration = overrideDuration ?? config.Duration; // Use override if provided, otherwise use config duration
+            if (actualDuration > 0)
+            {
+                 config.activeCoroutine = StartCoroutine(DisablePopUpAfterDelay(config, actualDuration));
+            }
+            else
+            {
+                Debug.LogWarning($"PlayerUIPopups: Timed popup '{popupName}' has duration 0 or less. It will not automatically hide.", this);
+            }
+        }
+        // If not timed, it stays active until HidePopup is called.
     }
 
     /// <summary>
-    /// Hides the 'Wrong Prescription' UI popup immediately.
+    /// Hides a UI popup based on its configured name.
     /// </summary>
-    public void HideWrongPrescriptionMessage()
+    /// <param name="popupName">The unique name of the popup as defined in the Inspector.</param>
+    public void HidePopup(string popupName)
     {
-        if (wrongPrescriptionPopupRoot == null) return;
+        UIPopupConfig config = GetPopupConfig(popupName);
 
-        // Stop the coroutine if it's running
-        if (disableWrongPrescriptionCoroutine != null)
+        if (config == null || config.rootObject == null)
         {
-            StopCoroutine(disableWrongPrescriptionCoroutine);
-            disableWrongPrescriptionCoroutine = null; // Nullify the reference
-        }
-
-        if (wrongPrescriptionPopupRoot.activeSelf)
-        {
-             wrongPrescriptionPopupRoot.SetActive(false);
-             Debug.Log("PlayerUIPopups: Hiding wrong prescription message UI.", this);
-        }
-    }
-    // --- END NEW ---
-
-
-    // --- Methods for Prescription Order UI ---
-
-    /// <summary>
-    /// Displays the prescription order details in the UI popup.
-    /// </summary>
-    /// <param name="order">The PrescriptionOrder to display.</param>
-    public void DisplayPrescriptionOrder(PrescriptionOrder order)
-    {
-        if (prescriptionOrderUIRoot == null || prescriptionOrderDetailsText == null)
-        {
-            Debug.LogWarning("Prescription Order UI references (Root or Text) are not assigned in PlayerUIPopups. Cannot display order details.");
-            return;
-        }
-
-        prescriptionOrderDetailsText.text = order.ToString(); // Use the struct's ToString for display
-        prescriptionOrderUIRoot.SetActive(true);
-        Debug.Log($"PlayerUIPopups: Displaying prescription order details for: {order.patientName}", this);
-    }
-
-    /// <summary>
-    /// Hides the prescription order details UI popup and clears the text.
-    /// </summary>
-    public void HidePrescriptionOrder()
-    {
-        if (prescriptionOrderUIRoot == null || prescriptionOrderDetailsText == null)
-        {
-             // Log as warning only if we expected it to be active
-             if (prescriptionOrderUIRoot != null && prescriptionOrderUIRoot.activeSelf)
+             // Error already logged in GetPopupConfig if config is null
+             if (config != null && config.rootObject == null)
              {
-                 Debug.LogWarning("PlayerUIPopups: Prescription Order UI references (Root or Text) are not assigned, but HidePrescriptionOrder was called while UI was active. Cannot hide/clear.", this);
+                 Debug.LogWarning($"PlayerUIPopups: Cannot hide popup '{popupName}' because its Root Object is not assigned.", this);
              }
             return;
         }
 
-        prescriptionOrderDetailsText.text = ""; // Clear the text
-        prescriptionOrderUIRoot.SetActive(false);
-        Debug.Log("PlayerUIPopups: Hiding prescription order details UI.", this);
+        // Stop the coroutine if it's running for this specific popup
+        if (config.activeCoroutine != null)
+        {
+            StopCoroutine(config.activeCoroutine);
+            config.activeCoroutine = null; // Clear the reference
+        }
+
+        // Deactivate the root object if it's active
+        if (config.rootObject.activeSelf)
+        {
+             config.rootObject.SetActive(false);
+             Debug.Log($"PlayerUIPopups: Hiding popup '{popupName}'.", this);
+        }
+
+
+        // Optional: Clear the text when hiding
+        if (config.textComponent != null)
+        {
+            config.textComponent.text = "";
+        }
+    }
+
+    /// <summary>
+    /// Coroutine to wait for a specified duration and then deactivate a popup's root object.
+    /// This version takes the popup config directly.
+    /// </summary>
+    /// <param name="config">The configuration of the popup to disable.</param>
+    /// <param name="delay">The duration in seconds to wait before deactivating.</param>
+    private IEnumerator DisablePopUpAfterDelay(UIPopupConfig config, float delay)
+    {
+        yield return new WaitForSeconds(delay);
+
+        // After the delay, deactivate the item if it's still the same popup that was shown
+        // We check rootObject != null just in case it was destroyed during the delay
+        if (config != null && config.rootObject != null && config.rootObject.activeSelf)
+        {
+            config.rootObject.SetActive(false);
+            Debug.Log($"PlayerUIPopups: Auto-hiding timed popup '{config.popupName}' after {delay} seconds.", this);
+        }
+
+        // Clear the coroutine reference *within the config* when it finishes naturally
+        if (config != null)
+        {
+             config.activeCoroutine = null;
+        }
     }
 }
 // --- END OF FILE PlayerUIPopups.cs ---

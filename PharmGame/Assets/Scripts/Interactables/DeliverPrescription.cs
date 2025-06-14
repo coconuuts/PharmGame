@@ -2,7 +2,7 @@
 
 using UnityEngine;
 using Systems.Interaction; // Needed for IInteractable and InteractionResponse
-using Systems.GameStates; // Needed for PromptEditor, MenuManager
+using Systems.GameStates; // Needed for PromptEditor, MenuManager, PlayerUIPopups // <-- Added PlayerUIPopups
 using Systems.Player; // Needed for PlayerPrescriptionTracker
 using Game.Prescriptions; // Needed for PrescriptionOrder, PrescriptionManager
 using Systems.Inventory; // Needed for Inventory, Item, ItemDetails, ItemLabel, Combiner
@@ -13,7 +13,8 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
 {
     /// <summary>
     /// IInteractable component for NPCs in the WaitingForDelivery state,
-    /// allowing the player to deliver the crafted prescription item.
+    /// allowing the player to deliver the crafted item.
+    /// --- MODIFIED: Updated PlayerUIPopups calls to generic methods. --- // <-- Added comment
     /// </summary>
     [RequireComponent(typeof(NpcStateMachineRunner))] // Ensure Runner is present
     public class DeliverPrescription : MonoBehaviour, IInteractable
@@ -88,8 +89,6 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
             if (playerTracker == null || !playerTracker.ActivePrescriptionOrder.HasValue)
             {
                  Debug.LogWarning($"{gameObject.name}: Player does not have an active prescription order. Cannot deliver.", this);
-                 // Provide player feedback
-                 PlayerUIPopups.Instance?.ShowWrongPrescriptionMessage("You don't have an active prescription order!"); // More specific feedback
                  return null; // No active order, interaction fails
             }
 
@@ -102,8 +101,6 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
             if (prescriptionManager == null)
             {
                  Debug.LogError($"{gameObject.name}: PrescriptionManager.Instance is null! Cannot validate delivery item.", this);
-                 // Provide player feedback
-                 PlayerUIPopups.Instance?.SetInvalidItemActive(true); // Generic error feedback for system issue
                  return null; // Cannot validate, interaction fails
             }
 
@@ -111,8 +108,6 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
             if (expectedItemDetails == null)
             {
                  Debug.LogError($"{gameObject.name}: Could not get expected ItemDetails from PrescriptionManager for drug '{activeOrder.prescribedDrug}'. Mapping missing or invalid?", this);
-                 // Provide player feedback
-                 PlayerUIPopups.Instance?.SetInvalidItemActive(true); // Generic error feedback for system issue
                  return null; // Cannot validate, interaction fails
             }
             Debug.Log($"{gameObject.name}: Expected delivery item: '{expectedItemDetails.Name}' with label '{expectedItemDetails.itemLabel}'.", this);
@@ -130,8 +125,6 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
             if (playerInventory?.Combiner?.InventoryState == null)
             {
                  Debug.LogError($"{gameObject.name}: Player Toolbar Inventory or its Combiner/State not found! Cannot check inventory.", this);
-                 // Provide player feedback
-                 PlayerUIPopups.Instance?.SetInvalidItemActive(true); // Generic error feedback for system issue
                  return null; // Cannot check inventory, interaction fails
             }
             Debug.Log($"{gameObject.name}: Found Player Toolbar Inventory.", this);
@@ -178,69 +171,61 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
 
                 if (removedCount == 1)
                 {
-                     Debug.Log($"{gameObject.name}: Successfully consumed 1 '{expectedItemDetails.Name}' from player inventory.", this);
+                    Debug.Log($"{gameObject.name}: Successfully consumed 1 '{expectedItemDetails.Name}' from player inventory.", this);
 
-                     // Clear the active prescription order from the PlayerPrescriptionTracker.
-                     // This is also handled in WaitingForDeliverySO.OnExit, but clearing it here immediately
-                     // upon successful delivery is also correct. It won't cause issues if called twice.
-                     playerTracker.ClearActiveOrder();
+                    // Clear the active prescription order from the PlayerPrescriptionTracker.
+                    // This is also handled in WaitingForDeliverySO.OnExit, but clearing it here immediately
+                    // upon successful delivery is also correct. It won't cause issues if called twice.
+                    playerTracker.ClearActiveOrder();
 
-                     // Notify the PrescriptionManager to clear the assigned order from its tracking.
-                     if (prescriptionManager != null && runner != null)
-                     {
-                          if (runner.IsTrueIdentityNpc && runner.TiData != null)
-                          {
-                               prescriptionManager.RemoveAssignedTiOrder(runner.TiData.Id);
-                               Debug.Log($"{gameObject.name}: Notified PrescriptionManager to remove assigned TI order for '{runner.TiData.Id}'.", this);
-                          }
-                          else if (!runner.IsTrueIdentityNpc)
-                          {
-                               // Use this.gameObject to reference the NPC's GameObject
-                               prescriptionManager.RemoveAssignedTransientOrder(this.gameObject);
-                               Debug.Log($"{gameObject.name}: Notified PrescriptionManager to remove assigned Transient order for '{this.gameObject.name}'.", this);
-                          }
-                          else
-                          {
-                               Debug.LogError($"{gameObject.name}: Runner is TI but TiData is null, or Runner is null. Cannot notify PrescriptionManager to remove assigned order.", this);
-                          }
-                     }
-                     else
-                     {
-                          Debug.LogError($"{gameObject.name}: PrescriptionManager or Runner is null! Cannot notify manager to remove assigned order.", this);
-                     }
-
-
-                     // Publish an event to signal delivery completion (for NPC state transition).
-                     Debug.Log($"{gameObject.name}: Publishing NpcPrescriptionDeliveredEvent.", this);
-                     EventManager.Publish(new NpcPrescriptionDeliveredEvent(this.gameObject, activeOrder)); // Pass NPC object and order details
+                    // Notify the PrescriptionManager to clear the assigned order from its tracking.
+                    if (prescriptionManager != null && runner != null)
+                    {
+                        if (runner.IsTrueIdentityNpc && runner.TiData != null)
+                        {
+                            prescriptionManager.RemoveAssignedTiOrder(runner.TiData.Id);
+                            Debug.Log($"{gameObject.name}: Notified PrescriptionManager to remove assigned TI order for '{runner.TiData.Id}'.", this);
+                        }
+                        else if (!runner.IsTrueIdentityNpc)
+                        {
+                            // Use this.gameObject to reference the NPC's GameObject
+                            prescriptionManager.RemoveAssignedTransientOrder(this.gameObject);
+                            Debug.Log($"{gameObject.name}: Notified PrescriptionManager to remove assigned Transient order for '{this.gameObject.name}'.", this);
+                        }
+                        else
+                        {
+                            Debug.LogError($"{gameObject.name}: Runner is TI but TiData is null, or Runner is null. Cannot notify PrescriptionManager to remove assigned order.", this);
+                        }
+                    }
+                    else
+                    {
+                        Debug.LogError($"{gameObject.name}: PrescriptionManager or Runner is null! Cannot notify manager to remove assigned order.", this);
+                    }
 
 
-                     // Provide positive player feedback.
-                     // TODO: Implement a proper success popup/message
-                     Debug.Log("DELIVERY SUCCESS! (Placeholder UI Feedback)");
-                     // PlayerUIPopups.Instance?.ShowDeliverySuccessMessage("Prescription Delivered!"); // Placeholder
+                    // Publish an event to signal delivery completion (for NPC state transition).
+                    Debug.Log($"{gameObject.name}: Publishing NpcPrescriptionDeliveredEvent.", this);
+                    EventManager.Publish(new NpcPrescriptionDeliveredEvent(this.gameObject, activeOrder)); // Pass NPC object and order details
 
 
-                     // Return a success InteractionResponse.
-                     // Define a new response type if needed, or return null for simple action.
-                     // Let's return null for now, as the event triggers the state change.
-                     return null; // Indicates successful interaction, event handles state change
+                    // Provide positive player feedback.
+                    // TODO: Implement a proper success popup/message
+                    Debug.Log("DELIVERY SUCCESS! (Placeholder UI Feedback)");
+                    return null; // Indicates successful interaction, event handles state change
 
                 }
                 else
                 {
-                     // This should not happen if foundCorrectItem was true and quantity was >= 1, but defensive check.
-                     Debug.LogError($"{gameObject.name}: Failed to consume 1 item from player inventory after finding it! Removed count: {removedCount}. Logic error.", this);
-                     // Provide player feedback
-                     PlayerUIPopups.Instance?.SetInvalidItemActive(true); // Generic error feedback for system issue
-                     return null; // Indicate failure
+                    // This should not happen if foundCorrectItem was true and quantity was >= 1, but defensive check.
+                    Debug.LogError($"{gameObject.name}: Failed to consume 1 item from player inventory after finding it! Removed count: {removedCount}. Logic error.", this);
+                    return null; // Indicate failure
                 }
             }
             else
             {
                 Debug.LogWarning($"{gameObject.name}: Correct delivery item not found in player inventory.", this);
                 // Provide negative player feedback.
-                PlayerUIPopups.Instance?.ShowWrongPrescriptionMessage("I don't have the right prescription yet!"); // Specific feedback
+                PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "I don't have the right prescription yet!"); // Use the configured name and pass message
 
                 // Return a failure InteractionResponse (null indicates no state change or complex action)
                 return null;

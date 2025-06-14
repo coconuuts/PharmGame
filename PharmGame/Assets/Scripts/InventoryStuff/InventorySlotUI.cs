@@ -166,10 +166,22 @@ namespace Systems.Inventory
         {
             if (eventData.button == PointerEventData.InputButton.Left)
             {
-                // DragAndDropManager handles its own state checks and should only start drag in appropriate game states
                 if (DragAndDropManager.Instance != null)
                 {
-                    DragAndDropManager.Instance.StartDrag(this, eventData);
+                    // --- MODIFICATION START ---
+                    // Check if Shift key is held down for quick transfer
+                    if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
+                    {
+                        Debug.Log($"InventorySlotUI ({gameObject.name}, Index: {SlotIndex}): Shift + Left Click detected. Attempting quick transfer.", this);
+                        ItemTransferHandler.Instance.AttemptQuickTransfer(this); // Call the new quick transfer method
+                    }
+                    else
+                    {
+                        // If Shift is not held, proceed with normal drag start
+                        Debug.Log($"InventorySlotUI ({gameObject.name}, Index: {SlotIndex}): Left Click detected. Attempting drag start.", this);
+                        DragAndDropManager.Instance.StartDrag(this, eventData);
+                    }
+                    // --- MODIFICATION END ---
                 }
                 else Debug.LogError("InventorySlotUI: DragAndDropManager Instance is null!", this);
             }
