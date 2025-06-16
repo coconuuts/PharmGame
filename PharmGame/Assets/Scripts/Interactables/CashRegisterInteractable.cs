@@ -1,12 +1,15 @@
+// --- START OF FILE CashRegisterInteractable.cs ---
+
 using UnityEngine;
-using Systems.Interaction; // Needed for IInteractable and InteractionResponse
-using Game.NPC;     
+using Systems.Interaction; // Needed for IInteractable and InteractionResponse, and the new InteractionManager
+using Game.NPC;
 using Game.NPC.States;
 using System.Collections.Generic; // Needed for List
 using Systems.Inventory; // Needed for ItemDetails (for item list)
 using System.Linq; // Needed for Sum
 using Systems.Economy;
 using Game.Events;
+using Systems.GameStates; // Needed for PromptEditor
 
 public class CashRegisterInteractable : MonoBehaviour, IInteractable
 {
@@ -22,6 +25,9 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
 
     [Tooltip("The collider component that acts as the trigger for player interaction.")]
     [SerializeField] private Collider interactionTriggerCollider; // Assign your trigger collider here
+
+    [Tooltip("Should this interactable be enabled by default when registered?")]
+    [SerializeField] private bool enableOnStart = false;
 
 
     [Header("Prompt Settings")]
@@ -45,6 +51,20 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
 
     private void Awake()
     {
+         // --- NEW: Register with the singleton InteractionManager ---
+         if (Systems.Interaction.InteractionManager.Instance != null) // Use full namespace if needed
+         {
+             Systems.Interaction.InteractionManager.Instance.RegisterInteractable(this);
+         }
+         else
+         {
+             // This error is critical as the component won't be managed
+             Debug.LogError($"CashRegisterInteractable on {gameObject.name}: InteractionManager.Instance is null in Awake! Cannot register.", this);
+             // Optionally disable here if registration is absolutely required for function
+             // enabled = false;
+         }
+         // --- END NEW ---
+
          // Ensure trigger collider is assigned
          if (interactionTriggerCollider == null)
          {
@@ -53,8 +73,8 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
              if (interactionTriggerCollider == null)
              {
                  Debug.LogError($"CashRegisterInteractable ({gameObject.name}): Interaction Trigger Collider is not assigned and no Collider found on GameObject!", this);
-                 enabled = false;
-                 return;
+                 // REMOVED: enabled = false; // InteractionManager handles initial enabled state
+                 // return; // Don't return, allow registration to happen
              }
          }
 
@@ -64,15 +84,14 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
              if (economyManager == null)
              {
                  Debug.LogError($"EconomyManager ({gameObject.name}): EconomyManager is not assigned!", this);;
-                 return;
+                 // return; // Don't return, allow registration to happen
              }
          }
          // Ensure the assigned collider is a trigger
-         if (!interactionTriggerCollider.isTrigger)
+         if (interactionTriggerCollider != null && !interactionTriggerCollider.isTrigger) // Added null check
          {
               Debug.LogError($"CashRegisterInteractable ({gameObject.name}): Assigned Interaction Trigger Collider is not marked as a trigger!", this);
-              enabled = false;
-              return;
+              // REMOVED: enabled = false; // InteractionManager handles initial enabled state
          }
     }
 
@@ -85,6 +104,7 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
          if(minigameUIRoot != null) minigameUIRoot.SetActive(false);
 
          // --- Ensure the trigger collider is initially deactivated ---
+         // This logic should remain here as it's about the *trigger collider*, not the IInteractable component itself.
          if (interactionTriggerCollider != null)
          {
               interactionTriggerCollider.enabled = false; // Collider is off until a customer arrives
@@ -92,6 +112,19 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
          }
         // ---------------------------------------------------------
     }
+
+    // --- NEW: OnDestroy Method for Unregistration ---
+    private void OnDestroy()
+    {
+         // --- NEW: Unregister from the singleton InteractionManager ---
+         if (Systems.Interaction.InteractionManager.Instance != null)
+         {
+             Systems.Interaction.InteractionManager.Instance.UnregisterInteractable(this);
+         }
+         // --- END NEW ---
+    }
+    // --- END NEW ---
+
 
     /// <summary>
     /// Activates the interaction prompt.
@@ -296,3 +329,4 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
     // TODO: Implement failure conditions if the minigame is lost
     // public void OnMinigameFailed(...) { ... }
 }
+// --- END OF FILE CashRegisterInteractable.cs ---

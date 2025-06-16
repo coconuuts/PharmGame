@@ -13,9 +13,9 @@ using Game.NPC.States; // Needed for NpcStateSO
 using Game.Proximity; // Needed for ProximityManager.ProximityZone
 using Game.Navigation; // Needed for PathSO, PathTransitionDetails
 using Game.NPC.TI; // Needed for TiNpcData, TiNpcManager
-using Game.Prescriptions; // Needed for PrescriptionManager // <-- NEW: Added using directive
-using Systems.Interaction; // Needed for MultiInteractableManager // <-- NEW: Added using directive
-using Game.Interaction; // Needed for ObtainPrescription // <-- NEW: Added using directive
+using Game.Prescriptions; // Needed for PrescriptionManager
+using Systems.Interaction; // Needed for IInteractable, InteractionManager // <-- MODIFIED using directive
+using Game.Interaction; // Needed for ObtainPrescription
 
 
 namespace Game.NPC.States // Context is closely related to states
@@ -24,7 +24,7 @@ namespace Game.NPC.States // Context is closely related to states
     /// Provides necessary references and helper methods to an NpcStateSO
     /// currently being executed by the NpcStateMachineRunner.
     /// Passed to OnEnter, OnUpdate, OnExit methods.
-    /// MODIFIED: Includes references to TiNpcManager, PrescriptionManager, MultiInteractableManager, and ObtainPrescription.
+    /// MODIFIED: Removed references to MultiInteractableManager. Kept ObtainPrescription.
     /// </summary>
     public class NpcStateContext
     {
@@ -41,8 +41,8 @@ namespace Game.NPC.States // Context is closely related to states
          public TiNpcData TiData;
 
         // --- NEW: Cached Interaction Components --- // <-- NEW FIELDS
-        public MultiInteractableManager MultiInteractableManager;
-        public ObtainPrescription ObtainPrescription;
+        // REMOVED: MultiInteractableManager MultiInteractableManager; // No longer cached here
+        public ObtainPrescription ObtainPrescription; // Keep this, as states might call methods like ResetInteraction
         // --- END NEW ---
 
 
@@ -50,7 +50,7 @@ namespace Game.NPC.States // Context is closely related to states
         public CustomerManager Manager;
         // --- Reference to TiNpcManager ---
         public TiNpcManager TiNpcManager;
-        // --- Reference to PrescriptionManager --- // <-- NEW Reference
+        // --- Reference to PrescriptionManager ---
         public PrescriptionManager PrescriptionManager;
 
         // Access the cached register via the Runner property
@@ -271,7 +271,7 @@ namespace Game.NPC.States // Context is closely related to states
              Manager?.SignalCustomerAtRegister(Runner); // Pass context.Runner
         }
 
-        // --- Access to PrescriptionManager methods via context --- // <-- NEW Accessors
+        // --- Access to PrescriptionManager methods via context ---
         public Transform GetPrescriptionClaimPoint() => PrescriptionManager?.GetPrescriptionClaimPoint();
         public bool IsPrescriptionClaimSpotOccupied() => PrescriptionManager != null && PrescriptionManager.IsPrescriptionClaimSpotOccupied();
         public bool IsPrescriptionQueueFull() => PrescriptionManager != null && PrescriptionManager.IsPrescriptionQueueFull();
@@ -361,10 +361,7 @@ namespace Game.NPC.States // Context is closely related to states
 
         // --- NEW: Helper methods for Interaction Components via cached Runner references --- // <-- NEW LOGIC
 
-        /// <summary>
-        /// Gets the cached MultiInteractableManager component from the Runner.
-        /// </summary>
-        public MultiInteractableManager GetMultiInteractableManager() => Runner?.MultiInteractableManager;
+        // REMOVED: GetMultiInteractableManager() // No longer needed
 
         /// <summary>
         /// Gets the cached ObtainPrescription component from the Runner.
@@ -375,4 +372,4 @@ namespace Game.NPC.States // Context is closely related to states
     }
 }
 
-// --- END OF FILE NpcStateContext.cs (Modified for Caching MultiInteractableManager and ObtainPrescription) ---
+// --- END OF FILE NpcStateContext.cs ---

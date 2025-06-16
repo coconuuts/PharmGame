@@ -36,7 +36,8 @@ public class CustomerShopper : MonoBehaviour
                 // Sum the quantities of items in the customer's inventory
                 if (inventoryNPC != null && inventoryNPC.InventoryState != null)
                 {
-                    return inventoryNPC.InventoryState.GetCurrentArrayState().Sum(item => item != null ? item.quantity : 0);
+                    // Sum quantities for stackable items, count instances for non-stackable (quantity should be 1)
+                    return inventoryNPC.InventoryState.GetCurrentArrayState().Sum(item => item != null ? (item.details.maxStack > 1 ? item.quantity : 1) : 0); // *** MODIFIED SUM LOGIC ***
                 }
                 return 0;
             }
@@ -50,7 +51,7 @@ public class CustomerShopper : MonoBehaviour
                 if (inventoryNPC != null && inventoryNPC.InventoryState != null)
                 {
                      return inventoryNPC.InventoryState.GetCurrentArrayState()
-                         .Where(item => item != null) // Filter out null items
+                         .Where(item => item != null && item.details != null) // Filter out null items and items with null details
                          .Select(item => item.details.Id) // Select the unique ID of item details
                          .Distinct() // Get distinct IDs
                          .Count(); // Count them
@@ -83,9 +84,9 @@ public class CustomerShopper : MonoBehaviour
             }
 
             // Ensure the inventoryNPC has a Combiner and ObservableArray
-             if (inventoryNPC.Combiner == null || inventoryNPC.InventoryState == null)
+             if (inventoryNPC.Combiner == null || inventoryNPC.InventoryState == null) // Check for Combiner as InventoryState is accessed via it
              {
-                  Debug.LogError($"CustomerShopper on {gameObject.name}: NPC's Inventory component is missing required Combiner or ObservableArray. Cannot function.", this);
+                  Debug.LogError($"CustomerShopper on {gameObject.name}: NPC's Inventory component '{inventoryNPC.gameObject.name}' is missing required Combiner or its InventoryState is null. Cannot function.", this);
                   enabled = false;
              }
         }
@@ -94,13 +95,14 @@ public class CustomerShopper : MonoBehaviour
          {
               bool hasBoughtItemsFromThisShelf = false;
 
-              if (shelfInventory == null)
+              if (shelfInventory == null || shelfInventory.Combiner == null) // Check shelfInventory and its Combiner
               {
-                  Debug.LogWarning($"CustomerAI ({gameObject.name}): Cannot simulate shopping. Passed shelf inventory is null.", this);
+                  Debug.LogWarning($"CustomerAI ({gameObject.name}): Cannot simulate shopping. Passed shelf inventory is null or missing Combiner.", this);
                   return hasBoughtItemsFromThisShelf;
               }
-              
+
               // Ensure the NPC has its own inventory to put items into
+              // This check is also in Awake, but good defensive check before adding
               if (inventoryNPC == null || inventoryNPC.Combiner == null)
               {
                   Debug.LogError($"CustomerShopper on {gameObject.name}: NPC's inventory or Combiner is null! Cannot store purchased items.", this);
@@ -110,13 +112,14 @@ public class CustomerShopper : MonoBehaviour
 
               Item[] availableItems = shelfInventory.InventoryState.GetCurrentArrayState();
 
+              // Filter for items on the shelf that the NPC's inventory *can* accept
               List<ItemDetails> availableOtcItemDetails = availableItems
-                 .Where(item => item != null && item.details != null && item.quantity > 0 && shelfInventory.CanAddItem(item)) // Check if the NPC's inventory *can* accept this item type
+                 .Where(item => item != null && item.details != null && item.quantity > 0 && inventoryNPC.CanAddItem(item)) // Use inventoryNPC.CanAddItem
                  .Select(item => item.details)
                  .Distinct()
                  .ToList();
 
-              Debug.Log($"CustomerAI ({gameObject.name}): Found {availableOtcItemDetails.Count} distinct available OTC item types in this inventory.");
+              Debug.Log($"CustomerAI ({gameObject.name}): Found {availableOtcItemDetails.Count} distinct available OTC item types in shelf inventory '{shelfInventory.Id}' that NPC can accept.");
 
                // Determine how many *new* item types the customer wants to select from this shelf
                // Consider items already in the customer's inventory when deciding how many *more* types to look for.
@@ -128,31 +131,44 @@ public class CustomerShopper : MonoBehaviour
               if (numItemTypesToSelect <= 0)
               {
                   Debug.Log($"CustomerAI ({gameObject.name}): No new item types selected from this location (already have {currentDistinctItemsInCart} distinct, targeting {minItemsToBuy}-{maxItemsToBuy}).");
-                  // Even if no new types are selected, they might stack existing types?
-                  // The current logic only picks *new* types. If you want stacking behavior here,
-                  // you'd need separate logic to iterate through existing items in inventoryNPC
-                  // and see if the shelf has more of those to add.
-                  // For now, let's assume SimulateShopping means trying to find *new* types or quantities.
-                  // If no new types are selected, check if any quantity was added via stacking attempts below (unlikely with current loop structure).
-                  return hasBoughtItemsFromThisShelf; // Nothing selected from this shelf
+                  // Even if no new types are selected, they might still want more quantity of items they already have?
+                  // The current logic does not handle NPC customers wanting *more quantity* of items they already possess from *any* shelf.
+                  // It only looks for new types up to maxItemsToBuy distinct types.
+                  // If you want stacking behavior, this loop structure needs rethinking.
+                  // For now, returning false if no *new types* are selected aligns with the current logic.
+                  return hasBoughtItemsFromThisShelf;
               }
 
               List<ItemDetails> selectedItemTypes = availableOtcItemDetails.OrderBy(x => Random.value).Take(numItemTypesToSelect).ToList();
 
-              Combiner shelfCombiner = shelfInventory.GetComponent<Combiner>();
+              // Use shelfInventory directly to access its Combiner
+              Combiner shelfCombiner = shelfInventory.Combiner; // *** MODIFIED ***
+
 
               foreach(var itemDetails in selectedItemTypes)
               {
-                   float rawQuantity = GenerateGaussian(quantityMean, quantityStandardDeviation);
-                   int desiredQuantity = Mathf.RoundToInt(rawQuantity);
-                   desiredQuantity = Mathf.Clamp(desiredQuantity, minQuantityPerItem, maxQuantityPerItem);
-
-                   Debug.Log($"CustomerAI ({gameObject.name}): Trying to buy {desiredQuantity} of {itemDetails.Name}.");
+                   // --- Determine desired quantity based on item type ---
+                   int desiredQuantity;
+                   if (itemDetails.maxStack == 1)
+                   {
+                       desiredQuantity = 1; // Always desire 1 instance of a non-stackable item
+                       Debug.Log($"CustomerAI ({gameObject.name}): Desiring 1 instance of non-stackable item {itemDetails.Name}.");
+                   }
+                   else
+                   {
+                       // For stackable, generate quantity based on Gaussian distribution
+                       float rawQuantity = GenerateGaussian(quantityMean, quantityStandardDeviation);
+                       desiredQuantity = Mathf.RoundToInt(rawQuantity);
+                       desiredQuantity = Mathf.Clamp(desiredQuantity, minQuantityPerItem, maxQuantityPerItem);
+                       Debug.Log($"CustomerAI ({gameObject.name}): Desiring {desiredQuantity} quantity of stackable item {itemDetails.Name}.");
+                   }
+                   // --- End determine desired quantity ---
 
 
                     if (shelfCombiner != null)
                    {
                         // Attempt to remove the desired quantity from the shelf
+                        // TryRemoveQuantity works for both stackable (removes quantity) and non-stackable (removes instances)
                        int actualQuantityRemoved = shelfCombiner.TryRemoveQuantity(itemDetails, desiredQuantity);
 
                        if (actualQuantityRemoved > 0)
@@ -162,24 +178,26 @@ public class CustomerShopper : MonoBehaviour
 
                             // --- Add the items to the customer's inventory (inventoryNPC) ---
                             // Create a new Item instance with the ACTUAL quantity removed from the shelf
+                            // This instance will be added to the NPC's inventory.
                             Item purchasedItemInstance = itemDetails.Create(actualQuantityRemoved);
 
-                            // Add the purchased item to the customer's inventory using its Combiner
-                            // The Combiner should handle stacking if the item type already exists.
-                            bool addedToNPCInventory = inventoryNPC.Combiner.AddItem(purchasedItemInstance);
+                            // Add the purchased item to the customer's inventory using the public AddItem method on Inventory
+                            // inventoryNPC.AddItem will handle whether it's stackable or non-stackable and call the appropriate Combiner method.
+                            bool addedToNPCInventory = inventoryNPC.AddItem(purchasedItemInstance); // *** MODIFIED ***
 
                             if (addedToNPCInventory)
                             {
-                                Debug.Log($"CustomerAI ({gameObject.name}): Successfully added {actualQuantityRemoved} of {itemDetails.Name} to NPC inventory.");
-                                // Removed the itemsToBuy list manipulation here.
+                                // Log success message including remaining quantity on the instance (should be 0 if fully added)
+                                Debug.Log($"CustomerAI ({gameObject.name}): Successfully added {actualQuantityRemoved} of {itemDetails.Name} to NPC inventory. Remaining on instance: {purchasedItemInstance.quantity}.");
                                 // The customer's inventory (inventoryNPC) now reflects what they "bought".
                             }
                             else
                             {
                                 // This case is tricky - removed from shelf but couldn't add to NPC?
-                                // This shouldn't happen if CanAddItem was checked, but defensive logging.
-                                Debug.LogError($"CustomerShopper on {gameObject.name}: Failed to add {actualQuantityRemoved} of {itemDetails.Name} to NPC inventory after removing from shelf!", this);
-                                // TODO: Decide recovery - maybe put item back on shelf?
+                                // This shouldn't happen if inventoryNPC.CanAddItem was checked, but defensive logging.
+                                // The purchasedItemInstance.quantity reflects what couldn't be added.
+                                Debug.LogError($"CustomerShopper on {gameObject.name}: Failed to add {actualQuantityRemoved} of {itemDetails.Name} to NPC inventory after removing from shelf! Remaining on instance: {purchasedItemInstance.quantity}.", this);
+                                // TODO: Decide recovery - maybe try to put item back on shelf?
                             }
                             // -----------------------------------------------------------
                        }
@@ -190,6 +208,7 @@ public class CustomerShopper : MonoBehaviour
                    }
                     else
                    {
+                       // This case should be caught by the initial check for shelfInventory.Combiner == null
                        Debug.LogError($"CustomerAI ({gameObject.name}): Shelf Inventory '{shelfInventory.gameObject.name}' is missing Combiner component! Cannot simulate shopping.", shelfInventory);
                    }
               }
@@ -271,10 +290,13 @@ public class CustomerShopper : MonoBehaviour
               // Get the current state of the NPC's inventory array
               if (inventoryNPC != null && inventoryNPC.InventoryState != null)
               {
-                  // Filter out null items, select the ItemDetails and quantity, and convert to a list
+                  // Filter out null items and items with null details
+                  // Select the ItemDetails and the quantity (which is 1 for non-stackable instances)
+                  // Note: This creates pairs (ItemDetails, count). For stackable, count is quantity.
+                  // For non-stackable, count is always 1 per instance. This is what the CashRegister needs.
                   return inventoryNPC.InventoryState.GetCurrentArrayState()
-                      .Where(item => item != null)
-                      .Select(item => (item.details, item.quantity))
+                      .Where(item => item != null && item.details != null)
+                      .Select(item => (item.details, item.details.maxStack > 1 ? item.quantity : 1)) // *** MODIFIED SELECT LOGIC ***
                       .ToList();
               }
              Debug.LogError($"CustomerShopper ({gameObject.name}): Cannot get items to buy, NPC inventory or InventoryState is null!", this);
@@ -305,16 +327,3 @@ public class CustomerShopper : MonoBehaviour
             Debug.Log("CustomerShopper: Reset completed.");
         }
 }
-
-// --- CustomerAI.cs (No changes needed in CustomerAI itself for these fixes) ---
-// The CustomerAI calls Shopper.GetItemsToBuy() and Shopper.Reset() which are updated above.
-// The logic for transitioning states based on shopping progress and inventory status remains the same,
-// but it now relies on the updated Shopper properties (TotalQuantityToBuy, DistinctItemCount, HasItems)
-// and the GetItemsToBuy method, which correctly reflect the contents of inventoryNPC.
-
-// The CustomerReturningLogic.cs also does not need changes as it simply returns the GameObject to the pool,
-// and the reset happens during initialization from the pool.
-
-// The CashRegisterInteractable.cs does not need changes as it correctly calls
-// currentWaitingCustomer.Shopper.GetItemsToBuy() and currentWaitingCustomer.OnTransactionCompleted().
-// The fix is in how Shopper provides this data.

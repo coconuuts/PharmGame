@@ -1,5 +1,8 @@
+// --- START OF FILE LightSwitch.cs ---
+
 using UnityEngine;
-using Systems.Interaction; // ADD THIS USING
+using Systems.Interaction; // Needed for IInteractable, InteractionResponse, and the new InteractionManager
+using Systems.GameStates; // Needed for PromptEditor
 
 public class LightSwitch : MonoBehaviour, IInteractable
 {
@@ -18,6 +21,9 @@ public class LightSwitch : MonoBehaviour, IInteractable
     public Material onMaterial;
     private Material offMaterial; // Store the initial OFF material
 
+    [Tooltip("Should this interactable be enabled by default when registered?")]
+    [SerializeField] private bool enableOnStart = true;
+
     private bool isLightOn = false; // Current state
     private Renderer lightbulbRenderer; // Renderer for the lightbulb material change
 
@@ -25,6 +31,29 @@ public class LightSwitch : MonoBehaviour, IInteractable
     /// Returns the appropriate interaction prompt based on the current light state.
     /// </summary>
     public string InteractionPrompt => isLightOn ? "Turn off (E)" : "Turn on (E)";
+
+    // --- NEW: Awake Method for Registration ---
+    private void Awake()
+    {
+         // --- NEW: Register with the singleton InteractionManager ---
+         if (Systems.Interaction.InteractionManager.Instance != null) // Use full namespace if needed
+         {
+             Systems.Interaction.InteractionManager.Instance.RegisterInteractable(this);
+         }
+         else
+         {
+             // This error is critical as the component won't be managed
+             Debug.LogError($"LightSwitch on {gameObject.name}: InteractionManager.Instance is null in Awake! Cannot register.", this);
+             // Optionally disable here if registration is absolutely required for function
+             // enabled = false;
+         }
+         // --- END NEW ---
+
+         // REMOVED: Any manual enabled = false calls from Awake if they existed
+         // The InteractionManager handles the initial enabled state.
+    }
+    // --- END NEW ---
+
 
     private void Start()
     {
@@ -49,12 +78,27 @@ public class LightSwitch : MonoBehaviour, IInteractable
         }
 
         // Initialize visual state based on isLightOn
+        // Note: The initial state should ideally be set by the scene setup or a save system,
+        // but this ensures the models/lights match the default 'isLightOn = false'.
         if (offModel != null) offModel.SetActive(!isLightOn);
         if (onModel != null) onModel.SetActive(isLightOn);
         if (lightGroup != null) lightGroup.SetActive(isLightOn);
 
         UpdateLightbulbMaterial(); // Set initial material
     }
+
+    // --- NEW: OnDestroy Method for Unregistration ---
+    private void OnDestroy()
+    {
+         // --- NEW: Unregister from the singleton InteractionManager ---
+         if (Systems.Interaction.InteractionManager.Instance != null)
+         {
+             Systems.Interaction.InteractionManager.Instance.UnregisterInteractable(this);
+         }
+         // --- END NEW ---
+    }
+    // --- END NEW ---
+
 
     /// <summary>
     /// Activates the interaction prompt.
@@ -148,3 +192,4 @@ public class LightSwitch : MonoBehaviour, IInteractable
          }
     }
 }
+// --- END OF FILE LightSwitch.cs ---

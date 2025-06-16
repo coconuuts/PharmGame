@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace Systems.Inventory
 {
-    public interface IObservableArray<T> where T : Item 
+    public interface IObservableArray<T> where T : Item
     {
          event Action<ArrayChangeInfo<T>> AnyValueChanged;
 
@@ -23,17 +23,15 @@ namespace Systems.Inventory
 
          void TriggerInitialLoadEvent();
 
-         // --- ADD THIS METHOD FOR DROP LOGIC ---
-         // HandleDrop logic is coupled to Item type, so maybe this should be on Combiner instead?
-         // Let's put it here for now as requested, assuming T is Item.
-         // **Refinement:** It's often cleaner if Combiner handles the high-level drop logic
-         // using the ObservableArray's SetItemAtIndex, Swap, etc. But let's follow the plan.
-         void HandleDrop(T itemToDrop, int targetIndex, ObservableArray<T> sourceArray, int sourceOriginalIndex); // Added sourceOriginalIndex
+         // Removed HandleDrop - logic moved to DragAndDropManager
 
         /// <summary>
         /// Provides read access to the current state of the internal item array.
         /// </summary>
         Item[] GetCurrentArrayState();
+
+        // Added ParentInventory property
+        Inventory ParentInventory { get; }
     }
 
     [Serializable]
@@ -45,6 +43,12 @@ namespace Systems.Inventory
         public int Count => items.Count(i => !EqualityComparer<T>.Default.Equals(i, default(T)));
         public int Length => items.Length;
         public T this[int index] => items[index];
+
+        // Added ParentInventory field and public property
+        [NonSerialized] // Don't try to serialize this runtime reference
+        private Inventory parentInventory;
+        public Inventory ParentInventory { get => parentInventory; internal set => parentInventory = value; }
+
 
         public ObservableArray(int size = 20, IList<T> initialList = null)
         {
@@ -110,7 +114,7 @@ namespace Systems.Inventory
              T oldItem1 = items[index1];
              T oldItem2 = items[index2];
 
-             (items[index1], items[index2]) = (items[index2], items[index1]);
+             (items[index1], items[index2]) = (items[index2], items[index1]); // Corrected swap syntax
 
              T newItem1 = items[index1];
              T newItem2 = items[index2];
@@ -199,122 +203,7 @@ namespace Systems.Inventory
              SetItemAtIndex(items[index], index); // Fallback to SlotUpdated
          }
 
-
-        /// <summary>
-        /// Handles the logic when an item is dropped onto this inventory's ObservableArray.
-        /// This method is called by the DragAndDropManager.
-        /// It manages adding, swapping, or stacking the item, potentially interacting with the source array.
-        /// </summary>
-        /// <param name="itemToDrop">The item instance being dropped.</param>
-        /// <param name="targetIndex">The index in THIS array (the target) where the item was dropped.</param>
-        /// <param name="sourceArray">The ObservableArray the item originated from.</param>
-        /// <param name="sourceOriginalIndex">The original physical slot index in the source array.</param>
-        public void HandleDrop(T itemToDrop, int targetIndex, ObservableArray<T> sourceArray, int sourceOriginalIndex)
-        {
-            // Ensure the target index is within the physical slot bounds of THIS array
-             // (Combiner provides PhysicalSlotCount, need access to it here or pass it)
-             // Let's assume targetIndex check against PhysicalSlotCount is done by DragAndDropManager before calling this.
-             // But check array bounds:
-             if (targetIndex < 0 || targetIndex >= items.Length) // Check against total length for safety, although D&D should target physical range
-             {
-                 Debug.LogError($"ObservableArray ({typeof(T).Name}): HandleDrop - Target index {targetIndex} is out of bounds for target array (Length: {items.Length}).");
-                 // Item remains in source ghost slot
-                 // Need to explicitly move it back to sourceOriginalIndex here if the drop was invalid?
-                 // Or DragAndDropManager handles the 'return to source' if HandleDrop fails/is invalid.
-                 // Let's assume DragAndDropManager handles return if this method fails.
-                 sourceArray.SetItemAtIndex(itemToDrop, sourceArray.Length - 1); // Ensure it's still in source ghost if drop fails
-                 return; // Drop failed on target
-             }
-
-             if (itemToDrop == null)
-             {
-                 Debug.LogWarning($"ObservableArray ({typeof(T).Name}): HandleDrop called with null item to drop.");
-                 // Clear item from source ghost slot
-                 sourceArray.SetItemAtIndex(null, sourceArray.Length - 1);
-                 return;
-             }
-
-            T targetItem = items[targetIndex]; // Get the item currently in the target slot
-
-             Debug.Log($"ObservableArray ({typeof(T).Name}): Handling drop for '{itemToDrop.details?.Name ?? "Unknown"}' (Qty: {itemToDrop.quantity}) onto slot {targetIndex} (contains: {(targetItem != null ? targetItem.details?.Name ?? "Unknown" : "Empty")}) in target array. Source Original Index: {sourceOriginalIndex}.");
-
-
-            // --- Drop Logic ---
-
-            // Case 1: Target is empty
-            if (targetItem == null)
-            {
-                Debug.Log($"ObservableArray ({typeof(T).Name}): Dropping onto empty slot {targetIndex}.");
-                SetItemAtIndex(itemToDrop, targetIndex); // Place the item in the target slot
-                sourceArray.SetItemAtIndex(null, sourceArray.Length - 1); // Clear item from source ghost slot
-            }
-            // Case 2: Target has the same type and is stackable
-            else if (targetItem.CanStackWith(itemToDrop)) // Uses Item.CanStackWith
-            {
-                Debug.Log($"ObservableArray ({typeof(T).Name}): Dropping onto stackable item of same type at slot {targetIndex}.");
-
-                // Check if the combined quantity is within the max stack limit
-                if (targetItem.quantity + itemToDrop.quantity <= targetItem.details.maxStack)
-                {
-                    // Proceed with stacking logic
-                    int numToStack = itemToDrop.quantity; // Stack the entire dropped quantity
-
-                    targetItem.quantity += numToStack; // Add to target stack
-                    itemToDrop.quantity -= numToStack; // Reduce quantity being dropped (will be 0)
-
-                    // Notify the target array that the target slot quantity changed
-                    SetItemAtIndex(targetItem, targetIndex); // Triggers SlotUpdated for target
-
-                    Debug.Log($"ObservableArray ({typeof(T).Name}): Stacked {numToStack}. Target Qty: {targetItem.quantity}. Dropped Qty Remaining: {itemToDrop.quantity}.");
-
-                    // Item being dropped is fully consumed by stacking
-                    Debug.Log($"ObservableArray ({typeof(T).Name}): Item fully stacked. Clearing source ghost slot.");
-                    sourceArray.SetItemAtIndex(null, sourceArray.Length - 1); // Clear item from source ghost slot
-                }
-                else
-                {
-                    // The sum exceeds max stack, perform a swap
-                    Debug.Log($"ObservableArray ({typeof(T).Name}): Sum of quantities exceeds max stack. Performing swap.");
-                    PerformSwap(itemToDrop, targetIndex, targetItem, sourceArray, sourceOriginalIndex); // Use helper for swap
-                }
-            }
-            // If not Case 1 or Case 2 (target is not empty and either different type or not stackable)
-            else
-            {
-                Debug.Log($"ObservableArray ({typeof(T).Name}): Dropping onto different type or non-stackable item. Performing swap.");
-                PerformSwap(itemToDrop, targetIndex, targetItem, sourceArray, sourceOriginalIndex); // Use helper for swap
-            }
-        }
-
-/// <summary>
-/// Helper method for performing the swap logic during a drop.
-/// Manages moving the dropped item to the target and the target item back to the source's original slot.
-/// Crucially, clears the source ghost slot after the swap is finalized.
-/// </summary>
-private void PerformSwap(T itemToDrop, int targetIndex, T targetItem, ObservableArray<T> sourceArray, int sourceOriginalIndex)
-{
-    Debug.Log($"ObservableArray ({typeof(T).Name}): Performing swap between item being dropped ('{itemToDrop?.details?.Name ?? "null"}') and item at target slot {targetIndex} ('{targetItem?.details?.Name ?? "null"}'). Source Original Index: {sourceOriginalIndex}.");
-
-    // Place the item being dropped into the target slot
-    SetItemAtIndex(itemToDrop, targetIndex); // Triggers SlotUpdated for target array
-
-    // Put the item that was originally in the target slot back into the source's ORIGINAL slot
-    // Note: If sourceArray == this and sourceOriginalIndex == targetIndex, this is an in-place swap.
-    // If sourceArray == this and sourceOriginalIndex != targetIndex, it's a move within the same array.
-    // If sourceArray != this, it's a cross-inventory swap/move.
-    sourceArray.SetItemAtIndex(targetItem, sourceOriginalIndex); // Triggers SlotUpdated for source original slot
-
-    // This is essential to prevent the dragged item from being counted in two places.
-    // The dragged item was placed in the source ghost slot in StartDrag.
-    // We must clear that temporary location now that the item is in its final spot.
-    int sourceGhostSlotIndex = sourceArray.Length - 1;
-    sourceArray.SetItemAtIndex(default, sourceGhostSlotIndex); // Clear item from source ghost slot
-    Debug.Log($"ObservableArray ({typeof(T).Name}): Cleared source ghost slot {sourceGhostSlotIndex} after swap.");
-
-    // Now that the transaction is internally complete for these arrays,
-    // the OnDragDropCompleted event will fire from the DragAndDropManager,
-    // triggering the visual update based on the finalized state.
-}
+        // Removed HandleDrop method
 
         /// <summary>
         /// Provides read access to the current state of the internal item array.

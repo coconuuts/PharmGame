@@ -1,8 +1,8 @@
 // --- START OF FILE DeliverPrescription.cs ---
 
 using UnityEngine;
-using Systems.Interaction; // Needed for IInteractable and InteractionResponse
-using Systems.GameStates; // Needed for PromptEditor, MenuManager, PlayerUIPopups // <-- Added PlayerUIPopups
+using Systems.Interaction; // Needed for IInteractable and InteractionResponse, and the new InteractionManager
+using Systems.GameStates; // Needed for PromptEditor, MenuManager, PlayerUIPopups
 using Systems.Player; // Needed for PlayerPrescriptionTracker
 using Game.Prescriptions; // Needed for PrescriptionOrder, PrescriptionManager
 using Systems.Inventory; // Needed for Inventory, Item, ItemDetails, ItemLabel, Combiner
@@ -14,7 +14,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
     /// <summary>
     /// IInteractable component for NPCs in the WaitingForDelivery state,
     /// allowing the player to deliver the crafted item.
-    /// --- MODIFIED: Updated PlayerUIPopups calls to generic methods. --- // <-- Added comment
+    /// --- MODIFIED: Added Registration with InteractionManager singleton. ---
     /// </summary>
     [RequireComponent(typeof(NpcStateMachineRunner))] // Ensure Runner is present
     public class DeliverPrescription : MonoBehaviour, IInteractable
@@ -23,6 +23,9 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
         [Tooltip("The message displayed when the player looks at this interactable.")]
         [SerializeField] private string interactionPromptMessage = "Deliver prescription (E)"; // Default message
 
+        [Tooltip("Should this interactable be enabled by default when registered? (Usually false for multi-interactable objects like NPCs)")]
+        [SerializeField] private bool enableOnStart = false;
+
         private NpcStateMachineRunner runner; // Cache the Runner reference
 
         private void Awake()
@@ -30,9 +33,23 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
             runner = GetComponent<NpcStateMachineRunner>();
             if (runner == null)
             {
-                Debug.LogError($"DeliverPrescription on {gameObject.name}: NpcStateMachineRunner component not found! This interactable requires it. Self-disabling.", this);
-                enabled = false;
+                Debug.LogError($"DeliverPrescription on {gameObject.name}: NpcStateMachineRunner component not found! This interactable requires it.", this);
+                // REMOVED: enabled = false; // InteractionManager will handle initial enabled state
             }
+
+            // --- NEW: Register with the singleton InteractionManager ---
+            if (InteractionManager.Instance != null)
+            {
+                InteractionManager.Instance.RegisterInteractable(this);
+            }
+            else
+            {
+                // This error is critical as the component won't be managed
+                Debug.LogError($"DeliverPrescription on {gameObject.name}: InteractionManager.Instance is null in Awake! Cannot register.", this);
+                // Optionally disable here if registration is absolutely required for function
+                // enabled = false;
+            }
+            // --- END NEW ---
         }
 
         // --- IInteractable Implementation ---
@@ -89,6 +106,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
             if (playerTracker == null || !playerTracker.ActivePrescriptionOrder.HasValue)
             {
                  Debug.LogWarning($"{gameObject.name}: Player does not have an active prescription order. Cannot deliver.", this);
+                 // Provide feedback? PlayerUIPopups.Instance?.ShowPopup("Cannot Deliver", "You don't have an active order.");
                  return null; // No active order, interaction fails
             }
 
@@ -114,7 +132,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
 
 
             // 3. Find the player's toolbar inventory.
-            // Assuming the player's toolbar inventory has the tag "PlayerToolbar"
+            // Assuming the player's toolbar inventory has the tag "PlayerToolbarInventory"
             GameObject playerToolbarGO = GameObject.FindGameObjectWithTag("PlayerToolbarInventory");
             Inventory playerInventory = null;
             if (playerToolbarGO != null)
@@ -132,7 +150,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
 
             // 4. Check the player's toolbar inventory for the expected item.
             bool foundCorrectItem = false;
-            Item itemToConsume = null; // Keep track of the specific instance to consume
+            // Item itemToConsume = null; // No longer needed if using TryRemoveQuantity by details
 
             Item[] inventoryItems = playerInventory.Combiner.InventoryState.GetCurrentArrayState();
             // Only check physical slots
@@ -148,14 +166,14 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
                  {
                       Debug.Log($"{gameObject.name}: Found correct delivery item '{itemInSlot.details.Name}' in player inventory slot {i}.", this);
                       foundCorrectItem = true;
-                      itemToConsume = itemInSlot; // Store the instance reference
+                      // itemToConsume = itemInSlot; // Not needed
                       break; // Found the item, no need to check other slots
                  }
-                 else if (itemInSlot != null && itemInSlot.details != null)
-                 {
-                      // Debug log for items that don't match the criteria
-                      // Debug.Log($"Checking slot {i}: Item '{itemInSlot.details.Name}', Label '{itemInSlot.details.itemLabel}', Qty {itemInSlot.quantity}. Expected: '{expectedItemDetails.Name}', Label '{ItemLabel.PrescriptionPrepared}'. No match.", this);
-                 }
+                 // Optional: Debug log for items that don't match
+                 // else if (itemInSlot != null && itemInSlot.details != null)
+                 // {
+                 //      Debug.Log($"Checking slot {i}: Item '{itemInSlot.details.Name}', Label '{itemInSlot.details.itemLabel}', Qty {itemInSlot.quantity}. Expected: '{expectedItemDetails.Name}', Label '{ItemLabel.PrescriptionPrepared}'. No match.", this);
+                 // }
             }
 
 
@@ -165,8 +183,6 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
                 Debug.Log($"{gameObject.name}: Correct item found. Completing delivery!", this);
 
                 // Consume 1 of the crafted item from the player's inventory.
-                // Use TryRemoveQuantity for stackable items, or TryRemoveInstance for non-stackable if needed.
-                // Assuming PrescriptionPrepared items are stackable for now, so TryRemoveQuantity is appropriate.
                 int removedCount = playerInventory.Combiner.TryRemoveQuantity(expectedItemDetails, 1);
 
                 if (removedCount == 1)
@@ -174,9 +190,9 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
                     Debug.Log($"{gameObject.name}: Successfully consumed 1 '{expectedItemDetails.Name}' from player inventory.", this);
 
                     // Clear the active prescription order from the PlayerPrescriptionTracker.
-                    // This is also handled in WaitingForDeliverySO.OnExit, but clearing it here immediately
-                    // upon successful delivery is also correct. It won't cause issues if called twice.
                     playerTracker.ClearActiveOrder();
+                    PlayerUIPopups.Instance?.HidePopup("Prescription Order"); // Hide the UI if it's still open
+
 
                     // Notify the PrescriptionManager to clear the assigned order from its tracking.
                     if (prescriptionManager != null && runner != null)
@@ -207,7 +223,6 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
                     Debug.Log($"{gameObject.name}: Publishing NpcPrescriptionDeliveredEvent.", this);
                     EventManager.Publish(new NpcPrescriptionDeliveredEvent(this.gameObject, activeOrder)); // Pass NPC object and order details
 
-
                     // Provide positive player feedback.
                     // TODO: Implement a proper success popup/message
                     Debug.Log("DELIVERY SUCCESS! (Placeholder UI Feedback)");
@@ -218,6 +233,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
                 {
                     // This should not happen if foundCorrectItem was true and quantity was >= 1, but defensive check.
                     Debug.LogError($"{gameObject.name}: Failed to consume 1 item from player inventory after finding it! Removed count: {removedCount}. Logic error.", this);
+                    // Provide failure feedback?
                     return null; // Indicate failure
                 }
             }
@@ -225,7 +241,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
             {
                 Debug.LogWarning($"{gameObject.name}: Correct delivery item not found in player inventory.", this);
                 // Provide negative player feedback.
-                PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "I don't have the right prescription yet!"); // Use the configured name and pass message
+                PlayerUIPopups.Instance?.ShowPopup("Cannot Deliver", "I don't have the right prescription yet!"); // Use the configured name and pass message
 
                 // Return a failure InteractionResponse (null indicates no state change or complex action)
                 return null;
@@ -236,15 +252,23 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
         // --- OnDisable/OnDestroy cleanup ---
         private void OnDisable()
         {
-            // Ensure prompt is deactivated if component is disabled
-            DeactivatePrompt();
+             // Deactivate prompt if disabled (e.g., by InteractionManager)
+             DeactivatePrompt();
         }
 
         private void OnDestroy()
         {
             // Ensure prompt is deactivated if GameObject is destroyed
             DeactivatePrompt();
+
+            // --- NEW: Unregister from the singleton InteractionManager ---
+            if (InteractionManager.Instance != null)
+            {
+                 InteractionManager.Instance.UnregisterInteractable(this);
+            }
+            // Note: If the manager is destroyed first, this might log an error.
+            // The manager's OnDestroy includes logic to handle prompts for registered interactables.
+            // --- END NEW ---
         }
     }
 }
-// --- END OF FILE DeliverPrescription.cs ---

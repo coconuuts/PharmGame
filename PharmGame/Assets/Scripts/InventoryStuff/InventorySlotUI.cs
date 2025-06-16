@@ -168,7 +168,6 @@ namespace Systems.Inventory
             {
                 if (DragAndDropManager.Instance != null)
                 {
-                    // --- MODIFICATION START ---
                     // Check if Shift key is held down for quick transfer
                     if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
                     {
@@ -181,7 +180,6 @@ namespace Systems.Inventory
                         Debug.Log($"InventorySlotUI ({gameObject.name}, Index: {SlotIndex}): Left Click detected. Attempting drag start.", this);
                         DragAndDropManager.Instance.StartDrag(this, eventData);
                     }
-                    // --- MODIFICATION END ---
                 }
                 else Debug.LogError("InventorySlotUI: DragAndDropManager Instance is null!", this);
             }

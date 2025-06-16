@@ -635,7 +635,6 @@ GameObject:
   - component: {fileID: 163036449089475493}
   - component: {fileID: -1778349930730536278}
   - component: {fileID: -8843586099993494372}
-  - component: {fileID: 1603971228698942878}
   - component: {fileID: 6465698390430044212}
   - component: {fileID: 8460423928884640609}
   - component: {fileID: -8745179022885824650}
@@ -828,7 +827,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f05e4e65e2c07be468f6c8d3876f68e8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  id:
+    Part1: 1206583284
+    Part2: 1171631401
+    Part3: 1598709693
+    Part4: 4163918441
+  visualizer: {fileID: 0}
   flexibleGridLayout: {fileID: 6088612258569326636}
+  allowedLabels: 
+  allowAllIfListEmpty: 1
 --- !u!114 &5491041511187438547
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1011,19 +1018,6 @@ MonoBehaviour:
   pathFollowingSpeed: 2.5
   waypointArrivalThreshold: 0.5
   rotationSpeed: 1
---- !u!114 &1603971228698942878
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 4394407753789290286}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 47fdcc1e8f776cc42b17f8aaaafe7978, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  initialActiveInteractableTypeName: OpenNPCInventory
 --- !u!114 &6465698390430044212
 MonoBehaviour:
   m_ObjectHideFlags: 0

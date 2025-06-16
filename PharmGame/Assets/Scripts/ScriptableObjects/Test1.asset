@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: Test1
   m_EditorClassIdentifier: 
   Name: Test1
-  maxStack: 5
+  maxStack: 2
   Id:
     Part1: 1954108932
     Part2: 1128778770
@@ -26,11 +26,11 @@ MonoBehaviour:
   itemLabel: 2
   price: 5
   maxHealth: 100
-  usageLogic: 3
+  usageLogic: 0
   defaultVariableHealthLoss: 5
   usageEventsPerHealthLoss: 3
   healthLossPerEventThreshold: 5
   magazineSize: 5
   reloadTime: 3
-  allowedUsageTriggers: 0200000003000000
-  primaryUsageTrigger: 2
+  allowedUsageTriggers: 0100000003000000
+  primaryUsageTrigger: 1

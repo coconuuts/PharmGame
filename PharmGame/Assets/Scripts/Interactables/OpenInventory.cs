@@ -1,6 +1,9 @@
+// --- START OF FILE OpenInventory.cs ---
+
 using UnityEngine;
 using InventoryClass = Systems.Inventory.Inventory; // Use the alias
-using Systems.Interaction; 
+using Systems.Interaction;
+using Systems.GameStates; // Needed for PromptEditor
 
 // Ensure this script is on the same GameObject as the Collider that the PlayerInteractionManager hits
 public class OpenInventory : MonoBehaviour, IInteractable
@@ -13,12 +16,38 @@ public class OpenInventory : MonoBehaviour, IInteractable
 
     [Tooltip("The text to display in the interaction prompt.")]
     [SerializeField] private string interactionPrompt = "Open Inventory (E)"; // Default prompt
-    
+
+    [Tooltip("Should this interactable be enabled by default when registered?")]
+    [SerializeField] private bool enableOnStart = true;
+
     [Header("Prompt Settings")] // Assuming prompt settings are common, move these up if needed
-    public Vector3 inventoryTextPromptOffset = Vector3.zero; 
+    public Vector3 inventoryTextPromptOffset = Vector3.zero;
     public Vector3 inventoryTextPromptRotationOffset = Vector3.zero;
 
     public string InteractionPrompt => interactionPrompt;
+
+    // --- NEW: Awake Method for Registration ---
+    private void Awake()
+    {
+         // --- NEW: Register with the singleton InteractionManager ---
+         if (Systems.Interaction.InteractionManager.Instance != null) // Use full namespace if needed
+         {
+             Systems.Interaction.InteractionManager.Instance.RegisterInteractable(this);
+         }
+         else
+         {
+             // This error is critical as the component won't be managed
+             Debug.LogError($"OpenInventory on {gameObject.name}: InteractionManager.Instance is null in Awake! Cannot register.", this);
+             // Optionally disable here if registration is absolutely required for function
+             // enabled = false;
+         }
+         // --- END NEW ---
+
+         // REMOVED: Any manual enabled = false calls from Awake if they existed
+         // The InteractionManager handles the initial enabled state.
+    }
+    // --- END NEW ---
+
 
     // --- IInteractable Implementation ---
 
@@ -88,4 +117,17 @@ public class OpenInventory : MonoBehaviour, IInteractable
              Debug.LogWarning($"OpenInventory ({gameObject.name}): Assigned Inventory Component GameObject '{inventoryComponent.gameObject.name}' does not have a Combiner component. Are you sure this is the correct GameObject?", this);
          }
     }
+
+    // --- NEW: OnDestroy Method for Unregistration ---
+    private void OnDestroy()
+    {
+         // --- NEW: Unregister from the singleton InteractionManager ---
+         if (Systems.Interaction.InteractionManager.Instance != null)
+         {
+             Systems.Interaction.InteractionManager.Instance.UnregisterInteractable(this);
+         }
+         // --- END NEW ---
+    }
+    // --- END NEW ---
 }
+// --- END OF FILE OpenInventory.cs ---

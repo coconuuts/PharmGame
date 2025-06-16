@@ -1028,6 +1028,7 @@ GameObject:
   - component: {fileID: 99645956}
   - component: {fileID: 99645957}
   - component: {fileID: 99645958}
+  - component: {fileID: 99645959}
   m_Layer: 0
   m_Name: GameManager
   m_TagString: Untagged
@@ -1138,7 +1139,7 @@ MonoBehaviour:
     textComponent: {fileID: 158870080}
     isTimed: 0
     duration: 0
-  - popupName: Wrong Prescription
+  - popupName: Cannot Transfer
     rootObject: {fileID: 928554872}
     textComponent: {fileID: 928554874}
     isTimed: 1
@@ -1229,6 +1230,18 @@ MonoBehaviour:
   volume: {fileID: 986335654}
   skyboxMaterial: {fileID: 2100000, guid: d7e0b043f024cb842a15ecfd51fbe487, type: 2}
   timeSettings: {fileID: 11400000, guid: 809dc195db61d5e478860b1b2b7c313a, type: 2}
+--- !u!114 &99645959
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 99645949}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cb82ca30f23bce14c9365bc191b395e9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &101631595
 GameObject:
   m_ObjectHideFlags: 0
@@ -1772,6 +1785,7 @@ MonoBehaviour:
   inventoryUIRoot: {fileID: 1324703409}
   inventoryComponent: {fileID: 129581019}
   interactionPrompt: Open Inventory (E)
+  enableOnStart: 1
   inventoryTextPromptOffset: {x: -0.37, y: 0.325, z: 0.1}
   inventoryTextPromptRotationOffset: {x: 0, y: 90, z: 0}
 --- !u!114 &129581018
@@ -1840,6 +1854,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f05e4e65e2c07be468f6c8d3876f68e8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  id:
+    Part1: 1822935864
+    Part2: 1314874535
+    Part3: 1613681565
+    Part4: 679605707
+  visualizer: {fileID: 129581020}
   flexibleGridLayout: {fileID: 1324703412}
 --- !u!1 &130628469
 GameObject:
@@ -3131,6 +3151,7 @@ MonoBehaviour:
   lightTextPromptOffset: {x: 0.1, y: 0, z: 0}
   lightTextPromptRotationOffset: {x: 0, y: -90, z: 0}
   onMaterial: {fileID: 2100000, guid: 749c7771b01e32742b0c15431dbd3700, type: 2}
+  enableOnStart: 1
 --- !u!65 &257548373
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -3949,7 +3970,7 @@ MonoBehaviour:
   targetInventory: {fileID: 1017167566}
   testItem1Details: {fileID: 11400000, guid: 69f1b03e451938640814c16dfb83e0fa, type: 2}
   testItem2Details: {fileID: 11400000, guid: 9607fa79f6d13da4288857b89316ab1c, type: 2}
-  testItem3Details: {fileID: 0}
+  testItem3Details: {fileID: 11400000, guid: 95b4a37ff1d45cc43b8f2cd605fa26fa, type: 2}
 --- !u!4 &344650983
 Transform:
   m_ObjectHideFlags: 0
@@ -5643,6 +5664,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f05e4e65e2c07be468f6c8d3876f68e8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  id:
+    Part1: 1794294148
+    Part2: 1273301109
+    Part3: 2247783093
+    Part4: 2702899872
+  visualizer: {fileID: 538098024}
   flexibleGridLayout: {fileID: 280052146}
 --- !u!4 &538098026
 Transform:
@@ -7194,6 +7221,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   craftingStation: {fileID: 673708009}
   interactionPrompt: Use Crafting Table (E)
+  enableOnStart: 1
   textPromptOffset: {x: 0, y: 0.1, z: 0}
   textPromptRotationOffset: {x: 0, y: -90, z: 0}
 --- !u!65 &673708011
@@ -7808,8 +7836,8 @@ MonoBehaviour:
   npcPrefabs:
   - {fileID: 4394407753789290286, guid: 488534cc76898354d8320c55d1770728, type: 3}
   maxCustomersInStore: 7
-  minSpawnInterval: 20
-  maxSpawnInterval: 21
+  minSpawnInterval: 15
+  maxSpawnInterval: 30
   spawnPoints:
   - {fileID: 600981058}
   BrowseLocations:
@@ -8575,6 +8603,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f05e4e65e2c07be468f6c8d3876f68e8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  id:
+    Part1: 2710801484
+    Part2: 1137587907
+    Part3: 2970099600
+    Part4: 3411269615
+  visualizer: {fileID: 806063686}
   flexibleGridLayout: {fileID: 1097360716}
 --- !u!4 &806063688
 Transform:
@@ -11678,6 +11712,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f05e4e65e2c07be468f6c8d3876f68e8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  id:
+    Part1: 3481690261
+    Part2: 1118640925
+    Part3: 3988794273
+    Part4: 171955947
+  visualizer: {fileID: 1017167569}
   flexibleGridLayout: {fileID: 1676734704}
 --- !u!4 &1017167568
 Transform:
@@ -13039,6 +13079,7 @@ MonoBehaviour:
   inventoryUIRoot: {fileID: 1135794730}
   inventoryComponent: {fileID: 1128287721}
   interactionPrompt: Open Inventory (E)
+  enableOnStart: 1
   inventoryTextPromptOffset: {x: -0.37, y: 0.325, z: 0.1}
   inventoryTextPromptRotationOffset: {x: 0, y: 90, z: 0}
 --- !u!114 &1128287720
@@ -13107,6 +13148,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f05e4e65e2c07be468f6c8d3876f68e8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  id:
+    Part1: 3931363986
+    Part2: 1225905485
+    Part3: 2870880925
+    Part4: 119996819
+  visualizer: {fileID: 1128287722}
   flexibleGridLayout: {fileID: 1135794733}
 --- !u!65 &1128287724
 BoxCollider:
@@ -15727,13 +15774,13 @@ Transform:
   m_GameObject: {fileID: 1384209274}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: -0.31, z: 0}
+  m_LocalPosition: {x: 8.475, y: -1.3800001, z: 7.253}
   m_LocalScale: {x: 15.921354, y: 15.921354, z: 15.921354}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 79931054}
   - {fileID: 6634186}
-  m_Father: {fileID: 0}
+  m_Father: {fileID: 2143481930}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1392961449
 GameObject:
@@ -17579,6 +17626,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1589559893}
   - component: {fileID: 1589559892}
+  - component: {fileID: 1589559894}
   m_Layer: 0
   m_Name: InventoryManager
   m_TagString: Untagged
@@ -17615,6 +17663,18 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1589559894
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1589559891}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: abe4c26012edf6b43a5ab5822a56078a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!114 &1593679078 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 5644431130116800874, guid: 8202459e60c16e64a96afbd191a02aa8, type: 3}
@@ -20283,6 +20343,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f05e4e65e2c07be468f6c8d3876f68e8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  id:
+    Part1: 1469878445
+    Part2: 1313495159
+    Part3: 4129665671
+    Part4: 4177115504
+  visualizer: {fileID: 1897385763}
   flexibleGridLayout: {fileID: 370482521}
 --- !u!1 &1908766678
 GameObject:
@@ -22176,6 +22242,7 @@ MonoBehaviour:
   inventoryUIRoot: {fileID: 105677563}
   inventoryComponent: {fileID: 2133537265}
   interactionPrompt: Open Inventory (E)
+  enableOnStart: 1
   inventoryTextPromptOffset: {x: -0.37, y: 0.325, z: 0.1}
   inventoryTextPromptRotationOffset: {x: 0, y: 90, z: 0}
 --- !u!114 &2133537264
@@ -22244,6 +22311,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f05e4e65e2c07be468f6c8d3876f68e8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  id:
+    Part1: 3805376778
+    Part2: 1082552368
+    Part3: 2874316162
+    Part4: 579194743
+  visualizer: {fileID: 2133537266}
   flexibleGridLayout: {fileID: 105677566}
 --- !u!114 &2135289715 stripped
 MonoBehaviour:
@@ -22516,6 +22589,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f05e4e65e2c07be468f6c8d3876f68e8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  id:
+    Part1: 1877816797
+    Part2: 1237681081
+    Part3: 580807614
+    Part4: 697685525
+  visualizer: {fileID: 2143481928}
   flexibleGridLayout: {fileID: 2135289715}
 --- !u!4 &2143481930
 Transform:
@@ -22529,7 +22608,8 @@ Transform:
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children: []
+  m_Children:
+  - {fileID: 1384209275}
   m_Father: {fileID: 673708012}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &2146437545
@@ -23905,6 +23985,7 @@ MonoBehaviour:
   cameraMoveDuration: 0.25
   minigameUIRoot: {fileID: 1483777330}
   interactionTriggerCollider: {fileID: 2564988366592900891}
+  enableOnStart: 0
   interactionPrompt: Use Cash Register (E)
   registerTextPromptOffset: {x: 0, y: 0.3, z: -0.2}
   registerTextPromptRotationOffset: {x: 0, y: 0, z: 0}
@@ -25288,6 +25369,7 @@ MonoBehaviour:
   inventoryUIRoot: {fileID: 370482518}
   inventoryComponent: {fileID: 1897385762}
   interactionPrompt: Open Inventory (E)
+  enableOnStart: 1
   inventoryTextPromptOffset: {x: -0.5, y: 0.9, z: 0}
   inventoryTextPromptRotationOffset: {x: 0, y: 90, z: 0}
 --- !u!23 &5235238925306954365
@@ -27362,6 +27444,7 @@ MonoBehaviour:
   cameraViewPoint: {fileID: 1606470508}
   cameraMoveDuration: 0.25
   interactionPrompt: Access Computer (E)
+  enableOnStart: 1
   computerTextPromptOffset: {x: 0, y: 0.35, z: -0.4}
   computerTextPromptRotationOffset: {x: 0, y: 0, z: 0}
   computerUIContainer: {fileID: 1992216414}
@@ -27405,7 +27488,6 @@ SceneRoots:
   - {fileID: 945536120}
   - {fileID: 832575519}
   - {fileID: 5837695450172670697}
-  - {fileID: 1384209275}
   - {fileID: 3932140101012895896}
   - {fileID: 2564988366592900889}
   - {fileID: 7262349399658645270}
@@ -27416,13 +27498,13 @@ SceneRoots:
   - {fileID: 1009796057}
   - {fileID: 99645950}
   - {fileID: 763258581}
+  - {fileID: 1589559893}
   - {fileID: 29837263}
   - {fileID: 2138406530}
   - {fileID: 602333543}
   - {fileID: 1017167568}
   - {fileID: 1897385761}
   - {fileID: 344650983}
-  - {fileID: 1589559893}
   - {fileID: 1365075638}
   - {fileID: 5155355730881662875}
   - {fileID: 4515658556456049941}

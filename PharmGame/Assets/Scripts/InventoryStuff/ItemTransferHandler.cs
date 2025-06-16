@@ -6,6 +6,7 @@ using Systems.GameStates; // Needed for MenuManager
 using Systems.UI; // Needed for PlayerUIPopups
 using System.Collections.Generic; // Needed for List (if used later)
 using System; // Needed for Action (if events are added later)
+using System.Linq; // Needed for Linq methods like FirstOrDefault
 
 namespace Systems.Inventory // Or a more specific namespace if preferred, but Inventory seems appropriate
 {
@@ -55,70 +56,64 @@ namespace Systems.Inventory // Or a more specific namespace if preferred, but In
             Debug.Log($"ItemTransferHandler: AttemptQuickTransfer called from slot {sourceSlotUI?.SlotIndex ?? -1} in inventory {sourceSlotUI?.ParentInventory?.Id ?? SerializableGuid.Empty}.", this);
 
             // --- Get Source Information ---
-            if (sourceSlotUI == null || sourceSlotUI.ParentInventory == null)
+            if (sourceSlotUI == null || sourceSlotUI.ParentInventory == null || sourceSlotUI.ParentInventory.Combiner == null || sourceSlotUI.ParentInventory.InventoryState == null) // Added InventoryState null check
             {
-                Debug.LogError("ItemTransferHandler: AttemptQuickTransfer called with invalid sourceSlotUI or parent inventory.", this);
+                Debug.LogError("ItemTransferHandler: AttemptQuickTransfer called with invalid sourceSlotUI, parent inventory, combiner, or state.", this);
+                PlayerUIPopups.Instance?.ShowPopup("Transfer Failed", "System error: Invalid source.");
                 return;
             }
 
             Inventory sourceInventory = sourceSlotUI.ParentInventory;
+            Combiner sourceCombiner = sourceInventory.Combiner;
+            ObservableArray<Item> sourceObservableArray = sourceInventory.InventoryState; // Get OA reference
             int sourceSlotIndex = sourceSlotUI.SlotIndex;
 
             // Ensure the index is within the physical slot range of the source inventory
-            if (sourceInventory.Combiner == null || sourceSlotIndex < 0 || sourceSlotIndex >= sourceInventory.Combiner.PhysicalSlotCount)
+            if (sourceSlotIndex < 0 || sourceSlotIndex >= sourceCombiner.PhysicalSlotCount)
             {
-                 Debug.LogError($"ItemTransferHandler: AttemptQuickTransfer called with invalid source slot index ({sourceSlotIndex}) for physical slots ({sourceInventory.Combiner.PhysicalSlotCount}).", sourceSlotUI.gameObject);
+                 Debug.LogError($"ItemTransferHandler: AttemptQuickTransfer called with invalid source physical slot index ({sourceSlotIndex}) for physical slots ({sourceCombiner.PhysicalSlotCount}).", sourceSlotUI.gameObject);
+                 PlayerUIPopups.Instance?.ShowPopup("Transfer Failed", "System error: Invalid source slot index.");
                  return;
             }
 
-            ObservableArray<Item> sourceObservableArray = sourceInventory.InventoryState;
-
-            if (sourceObservableArray == null)
-            {
-                Debug.LogError($"ItemTransferHandler: Source inventory {sourceInventory.Id} has a null ObservableArray.", sourceInventory.gameObject);
-                return;
-            }
-
+            // Retrieve the item instance directly from the source slot *before* any removal attempts
             Item itemToTransfer = sourceObservableArray[sourceSlotIndex];
 
-            if (itemToTransfer == null)
+            if (itemToTransfer == null || itemToTransfer.details == null)
             {
-                Debug.Log($"ItemTransferHandler: AttemptQuickTransfer called on empty slot {sourceSlotIndex}. No item to transfer.", sourceSlotUI.gameObject);
-                return; 
+                Debug.Log($"ItemTransferHandler: AttemptQuickTransfer called on empty or detail-less slot {sourceSlotIndex}. No item to transfer.", sourceSlotUI.gameObject);
+                // No popup needed for clicking empty slot
+                return;
             }
 
             // --- Prevent quick transfer during drag ---
             if (DragAndDropManager.Instance != null && DragAndDropManager.Instance.IsDragging)
             {
                  Debug.Log("ItemTransferHandler: Cannot quick transfer while a drag operation is active.", this);
-                 PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Cannot quick transfer while dragging another item.");
+                 PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Cannot quick transfer while dragging.");
                  return;
             }
 
-            Debug.Log($"ItemTransferHandler: Initiating quick transfer for '{itemToTransfer.details?.Name ?? "Unknown"}' (Qty: {itemToTransfer.quantity}) from source slot {sourceSlotIndex} in inventory '{sourceInventory.Id}'.", this);
+             // --- Capture original state before potential modifications ---
+             // Store original quantity for stackable items to calculate remainder later
+             int originalQuantity = itemToTransfer.quantity;
+             string itemName = itemToTransfer.details.Name; // Cache name for logs/popups
+             bool isStackable = itemToTransfer.details.maxStack > 1;
 
-
-            // --- Identify Target Inventory with Robust Null Checks and Crafting Input Logic ---
+            // --- Retrieve Target Inventory ---
             Inventory targetInventory = null;
             MenuManager menuManager = MenuManager.Instance;
 
             if (menuManager == null)
             {
                  Debug.LogError("ItemTransferHandler: MenuManager Instance is null! Cannot determine target inventory for quick transfer.", this);
-                 PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "System error: Menu manager not found."); // Added user feedback
+                 PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "System error: Menu manager not found.");
                  return;
             }
 
             Inventory playerInventory = menuManager.PlayerToolbarInventorySelector?.parentInventory;
-            // Check if player inventory is even available (it should be if any other inventory is open, but defensive check)
-            if (playerInventory == null)
-            {
-                 Debug.LogError("ItemTransferHandler: Player Toolbar Inventory is null! Cannot perform quick transfer.", this);
-                 PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "System error: Player inventory not found."); // Added user feedback
-                 return;
-            }
 
-            // --- Determine the other open inventory based on the current game state ---
+            // Determine the other open inventory based on the current game state
             switch (menuManager.currentState)
             {
                 case MenuManager.GameState.InInventory:
@@ -127,10 +122,11 @@ namespace Systems.Inventory // Or a more specific namespace if preferred, but In
                     if (modalInventory == null)
                     {
                          Debug.LogWarning("ItemTransferHandler: Quick transfer attempted in InInventory state, but CurrentOpenInventoryComponent is null.", this);
-                         PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "No target inventory open."); // Added user feedback
-                         return; // Exit if the modal inventory is missing
+                         PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "No target inventory open.");
+                         return;
                     }
 
+                    // The target is the *other* inventory that is open
                     if (sourceInventory == playerInventory)
                     {
                         targetInventory = modalInventory;
@@ -139,7 +135,6 @@ namespace Systems.Inventory // Or a more specific namespace if preferred, but In
                     {
                         targetInventory = playerInventory;
                     }
-                    // If sourceInventory is neither player nor modal, something is wrong, handled by the final check below.
                     break;
 
                 case MenuManager.GameState.InCrafting:
@@ -148,8 +143,8 @@ namespace Systems.Inventory // Or a more specific namespace if preferred, but In
                     if (craftingStation == null)
                     {
                         Debug.LogWarning("ItemTransferHandler: Quick transfer attempted in InCrafting state, but CurrentCraftingStation is null.", this);
-                        PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Crafting station not active."); // Added user feedback
-                        return; // Exit if the crafting station is missing
+                        PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Crafting station not active.");
+                        return;
                     }
 
                     // Get references to crafting station inventories, checking for nulls
@@ -157,31 +152,28 @@ namespace Systems.Inventory // Or a more specific namespace if preferred, but In
                     Inventory craftingSecondaryInputInventory = craftingStation.secondaryInputInventory;
                     Inventory craftingOutputInventory = craftingStation.outputInventory;
 
-                    // --- Determine target based on source ---
+                    // Determine target based on source
                     if (sourceInventory == playerInventory)
                     {
-                        // Transfer from player to crafting.
-                        // We need to find the FIRST input inventory that *allows* the item.
+                        // Transfer from player to crafting inputs.
+                        // Find the FIRST input inventory that *allows* the item.
                         Debug.Log($"ItemTransferHandler: Source is Player Inventory. Searching for compatible input inventory on crafting station '{craftingStation.gameObject.name}'.", craftingStation.gameObject);
 
                         if (craftingInputInventory != null && craftingInputInventory.CanAddItem(itemToTransfer))
                         {
-                            // Primary input exists and allows the item
                             targetInventory = craftingInputInventory;
                             Debug.Log($"ItemTransferHandler: Primary input inventory '{craftingInputInventory.Id}' allows item. Setting as target.", craftingInputInventory.gameObject);
                         }
                         else if (craftingSecondaryInputInventory != null && craftingSecondaryInputInventory.CanAddItem(itemToTransfer))
                         {
-                            // Primary did not allow or doesn't exist, check secondary input
                             targetInventory = craftingSecondaryInputInventory;
                             Debug.Log($"ItemTransferHandler: Primary input does not allow or is null. Secondary input inventory '{craftingSecondaryInputInventory.Id}' allows item. Setting as target.", craftingSecondaryInputInventory.gameObject);
                         }
                         else
                         {
                              // Neither input inventory allows the item or they don't exist/are null.
-                             // targetInventory remains null. The general failure check below will handle this.
-                             Debug.LogWarning($"ItemTransferHandler: Quick transfer from player to crafting attempted. Item '{itemToTransfer.details?.Name ?? "Unknown"}' is not allowed in primary input ({craftingInputInventory != null}) or secondary input ({craftingSecondaryInputInventory != null}) on station '{craftingStation.gameObject.name}'.", craftingStation.gameObject);
-                             // A popup will be shown by the final check if targetInventory is still null.
+                             // targetInventory remains null. Handled below.
+                             Debug.LogWarning($"ItemTransferHandler: Quick transfer from player to crafting attempted. Item '{itemName}' is not allowed in primary input ({craftingInputInventory != null}) or secondary input ({craftingSecondaryInputInventory != null}) on station '{craftingStation.gameObject.name}'.", craftingStation.gameObject);
                         }
                     }
                     // Handle transfer *from* any crafting station inventory *to* the player inventory
@@ -192,7 +184,6 @@ namespace Systems.Inventory // Or a more specific namespace if preferred, but In
                         targetInventory = playerInventory;
                         Debug.Log($"ItemTransferHandler: Source is a Crafting Inventory. Setting Player Inventory '{playerInventory.Id}' as target.", playerInventory.gameObject);
                     }
-                    // If sourceInventory is none of the above, something is wrong, handled by the final check below.
                     break;
 
                 // Add cases for other states where two inventories might be open (e.g., trading)
@@ -201,184 +192,225 @@ namespace Systems.Inventory // Or a more specific namespace if preferred, but In
                 default:
                     // If not in a state where two inventories are expected to be open, quick transfer is not possible.
                     Debug.Log($"ItemTransferHandler: Quick transfer attempted in state {menuManager.currentState}. Requires a state with two open inventories.", this);
-                    PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Cannot quick transfer in this state."); // Added popup feedback
-                    return; // Exit if not in a valid state
+                    PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Cannot quick transfer in this state.");
+                    return;
             }
 
             // Final check: Ensure a valid target inventory was found and it's not the source inventory
-            // Note: The crafting input logic above handles the case where the item is not allowed
-            // in *any* input inventory by leaving targetInventory as null.
-            if (targetInventory == null || targetInventory == sourceInventory)
+            if (targetInventory == null || targetInventory == sourceInventory || targetInventory.Combiner == null || targetInventory.InventoryState == null) // Added InventoryState null check
             {
-                // This should ideally be caught by the specific state checks above,
-                // but this serves as a final safeguard.
-                Debug.Log($"ItemTransferHandler: Quick transfer failed. Could not find a valid target inventory different from the source.", this);
-                PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "No valid target inventory found."); // Added popup feedback
-                return; // Exit if target is invalid
+                Debug.Log($"ItemTransferHandler: Quick transfer failed. Could not find a valid target inventory different from the source, or target is missing Combiner/State.", this);
+                PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "No valid target inventory found.");
+                return;
             }
 
-            // Check if the target inventory has a Combiner (it should, but defensive)
-            if (targetInventory.Combiner == null)
+            Combiner targetCombiner = targetInventory.Combiner;
+            ObservableArray<Item> targetObservableArray = targetInventory.InventoryState; // Get target OA
+
+            // --- Check if the target inventory allows this item type ---
+             // We do this check BEFORE removing from source, so the item stays put if disallowed.
+            if (!targetInventory.CanAddItem(itemToTransfer))
             {
-                 Debug.LogError($"ItemTransferHandler: Target inventory '{targetInventory.Id}' ({targetInventory.gameObject.name}) is missing a Combiner component! Cannot transfer.", targetInventory.gameObject);
-                 PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "System error: Target inventory misconfigured."); // Added popup feedback
-                 return; // Exit if target Combiner is missing
-            }
-
-             // The targetSlotIndex for the ADD operation is relevant if we are attempting to stack onto it.
-             // If we are just adding generally, TryAddQuantity handles finding a slot.
-             // Use the sourceSlotIndex as the *intended* target index for the click point
-             // (representing the slot UI that was clicked).
-             int intendedTargetSlotIndex = sourceSlotIndex;
-
-             int intendedTargetSlotIndexForSpecificStacking = sourceSlotIndex; // Use source index as the potential target index for the special case
-
-             // Ensure this intended index is valid for the TARGET inventory's physical slots BEFORE using it for the specific stacking check.
-             bool isIntendedTargetIndexValidForTarget = (intendedTargetSlotIndexForSpecificStacking >= 0 && intendedTargetSlotIndexForSpecificStacking < targetInventory.Combiner.PhysicalSlotCount);
-
-
-            Debug.Log($"ItemTransferHandler: Target inventory identified: '{targetInventory.Id}' ({targetInventory.gameObject.name}). Intended target slot index (based on source click): {intendedTargetSlotIndexForSpecificStacking}. Is valid for target: {isIntendedTargetIndexValidForTarget}.", this);
-
-            // Store original quantity before attempting to add to target
-            int originalQuantity = itemToTransfer.quantity;
-            int quantityAddedToTarget = 0; // Initialize quantity added
-
-            // Get the item currently in the *intended* target slot in the target inventory
-            // Only do this if the intended index is valid for the target inventory
-            Item targetItemInSlot = isIntendedTargetIndexValidForTarget ? targetInventory.InventoryState[intendedTargetSlotIndexForSpecificStacking] : null;
-
-
-            // Determine if we should attempt specific stacking *only* into the clicked slot.
-            // This is true if the intended target index is valid, AND the target slot has an item,
-            // AND it's the same stackable type as the itemToTransfer, AND it's NOT full.
-            bool attemptingToStackOntoExistingNonFull = (isIntendedTargetIndexValidForTarget &&
-                                                         targetItemInSlot != null &&
-                                                         itemToTransfer.details != null &&
-                                                         itemToTransfer.details.maxStack > 1 && // Ensure source is stackable
-                                                         targetItemInSlot.CanStackWith(itemToTransfer) && // Ensure target is same type & stackable
-                                                         targetItemInSlot.quantity < targetItemInSlot.details.maxStack); // Ensure target is NOT full
-
-            if (attemptingToStackOntoExistingNonFull)
-            {
-                 Debug.Log($"ItemTransferHandler: Attempting quick transfer onto existing, non-full stack at target slot {intendedTargetSlotIndexForSpecificStacking}. Using TryStackQuantityToSpecificSlot.");
-
-                 // 1. Remove the item from the source slot.
-                 // This clears the source slot visually and in data.
-                 // The item instance itself is now only held by the 'itemToTransfer' local variable.
-                 bool removedFromSource = sourceInventory.Combiner.TryRemoveAt(sourceSlotIndex);
-
-                 if (!removedFromSource)
-                 {
-                      Debug.LogError($"ItemTransferHandler: Failed to remove item from source slot {sourceSlotIndex} during quick transfer onto stack. Aborting transfer.", this);
-                      PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Could not remove item from source slot.");
-                      return; // Exit if removal failed
-                 }
-
-                 // 2. Attempt to add the item *only* to the specific target slot stack.
-                 // This method will add as much as possible to targetSlotIndex and update itemToTransfer.quantity with the remainder.
-                 quantityAddedToTarget = targetInventory.Combiner.TryStackQuantityToSpecificSlot(itemToTransfer, intendedTargetSlotIndexForSpecificStacking); 
-
-                 Debug.Log($"ItemTransferHandler: TryStackQuantityToSpecificSlot to target returned {quantityAddedToTarget}. ItemToTransfer quantity AFTER TryStackQuantityToSpecificSlot: {itemToTransfer.quantity}. Original quantity: {originalQuantity}.");
-
-            }
-            else
-            {
-                 // This branch is taken if:
-                 // - The intended target index is invalid for the target inventory.
-                 // - The target slot is empty.
-                 // - The target slot has a non-stackable item.
-                 // - The target slot has a different stackable item type.
-                 // - The target slot has a *full* stack of the same item type.
-                 Debug.Log($"ItemTransferHandler: Attempting general quick transfer (onto empty slot, non-stackable/different item, full stack, or invalid intended index). Using TryAddQuantity.");
-
-                 // 1. Remove the item from the source slot.
-                 bool removedFromSource = sourceInventory.Combiner.TryRemoveAt(sourceSlotIndex);
-
-                 if (!removedFromSource)
-                 {
-                      Debug.LogError($"ItemTransferHandler: Failed to remove item from source slot {sourceSlotIndex} during general quick transfer. Aborting transfer.", this);
-                      PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Could not remove item from source slot.");
-                      return; // Exit if removal failed
-                 }
-
-                 // 2. Attempt to add the item to the target inventory using the general TryAddQuantity method.
-                 // This method will add as much as possible anywhere in the target (prioritizing existing stacks, then empty slots)
-                 // and update itemToTransfer.quantity with the remainder.
-                 quantityAddedToTarget = targetInventory.Combiner.TryAddQuantity(itemToTransfer);
-
-                 Debug.Log($"ItemTransferHandler: TryAddQuantity to target returned {quantityAddedToTarget}. ItemToTransfer quantity AFTER TryAddQuantity: {itemToTransfer.quantity}. Original quantity: {originalQuantity}.");
+                Debug.Log($"DragAndDropManager: Item '{itemName}' is not allowed in target inventory '{targetInventory.Id}' due to filtering. Quick transfer aborted.");
+                PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "This item cannot go in that inventory.");
+                return; // Exit without modifying source inventory
             }
 
 
-            // --- Implement Return to Source Logic ---
-            // This logic remains the same, handling any quantity left on itemToTransfer after the target add attempt.
-            bool returnedToSource = false;
-            // Check if any quantity remains on the item instance after attempting to add to the target
-            if (itemToTransfer.quantity > 0)
+            // --- Perform Transfer Logic based on Item Type ---
+
+            bool transferAddedToTarget = false; // Did *any* quantity/instance get added to the target?
+            bool returnAttempted = false;
+            bool returnSuccessful = false;
+            int quantityAddedToTarget = 0; // Track quantity added for stackable
+            bool instanceAddedToTarget = false; // Track instance added for non-stackable
+
+
+            // --- Remove item from source slot FIRST ---
+            // For quick transfer, it's cleaner to remove the item from its original spot
+            // and then try to add it to the target. If it doesn't fit anywhere, it's returned.
+            bool removedFromSource = sourceCombiner.TryRemoveAt(sourceSlotIndex);
+
+            if (!removedFromSource)
             {
-                Debug.Log($"ItemTransferHandler: Partial transfer occurred. Remaining quantity ({itemToTransfer.quantity}) of '{itemToTransfer.details?.Name ?? "Unknown"}' needs to be returned to source inventory '{sourceInventory.Id}'.");
+                 Debug.LogError($"ItemTransferHandler: Failed to remove item '{itemName}' from source slot {sourceSlotIndex} during quick transfer initial removal. Aborting transfer.", this);
+                 PlayerUIPopups.Instance?.ShowPopup("Transfer Failed", "Could not remove item from source slot.");
+                 return; // Exit if removal failed
+            }
+             // itemToTransfer instance is now only held by the local variable
 
-                // Attempt to add the remaining quantity back into the source inventory.
-                // AddItem will find a suitable slot (existing stack or empty slot) in the source.
-                returnedToSource = sourceInventory.Combiner.AddItem(itemToTransfer);
 
-                if (returnedToSource)
+            // --- Attempt to add the item to the target inventory based on specific quick transfer rules ---
+            if (isStackable) // Stackable Item Quick Transfer Logic
+            {
+                Debug.Log($"ItemTransferHandler: Attempting quick transfer of stackable item '{itemName}' (Initial Qty: {itemToTransfer.quantity}) to target '{targetInventory.Id}' with specific rules.");
+
+                int targetStackSlotIndex = -1;
+                int targetEmptySlotIndex = -1;
+
+                // 1. Find the first non-full stack of the same type in the target physical slots
+                for (int i = 0; i < targetCombiner.PhysicalSlotCount; i++)
                 {
-                    Debug.Log($"ItemTransferHandler: Remaining quantity ({itemToTransfer.quantity}) successfully returned to source inventory '{sourceInventory.Id}'.");
+                    Item itemInTargetSlot = targetObservableArray[i];
+                    if (itemInTargetSlot != null && itemInTargetSlot.CanStackWith(itemToTransfer) && itemInTargetSlot.quantity < itemInTargetSlot.details.maxStack)
+                    {
+                        targetStackSlotIndex = i; // Found the first non-full stack target
+                        break; // Prioritize stacking, stop searching
+                    }
+                }
+
+                // 2. If no non-full stack was found, find the first empty physical slot
+                if (targetStackSlotIndex == -1)
+                {
+                     for (int i = 0; i < targetCombiner.PhysicalSlotCount; i++)
+                     {
+                         if (targetObservableArray[i] == null)
+                         {
+                             targetEmptySlotIndex = i; // Found the first empty target
+                             break; // Stop searching for empty slots
+                         }
+                     }
+                }
+
+                // --- Execute the transfer based on the found target slot ---
+                if (targetStackSlotIndex != -1)
+                {
+                    // Target is a non-full stack: Attempt to stack onto it.
+                    Debug.Log($"ItemTransferHandler: Found non-full stack at target slot {targetStackSlotIndex}. Attempting to stack.");
+                    // TryStackQuantityToSpecificSlot will add as much as fits and update itemToTransfer.quantity with the remainder.
+                    quantityAddedToTarget = targetCombiner.TryStackQuantityToSpecificSlot(itemToTransfer, targetStackSlotIndex);
+                    if (quantityAddedToTarget > 0)
+                    {
+                        transferAddedToTarget = true; // Some quantity was added
+                    }
+                    Debug.Log($"ItemTransferHandler: Stacked {quantityAddedToTarget}. Remaining on instance: {itemToTransfer.quantity}.");
+
+                }
+                else if (targetEmptySlotIndex != -1)
+                {
+                    // Target is the first empty slot: Attempt to add the entire stackable item instance.
+                    Debug.Log($"ItemTransferHandler: No non-full stack found. Found first empty slot at {targetEmptySlotIndex}. Attempting to add item instance.");
+                    // AddStackableItems will add the item (splitting if needed) and update itemToTransfer.quantity with the remainder.
+                    // We pass the current itemToTransfer instance, which holds the quantity removed from source.
+                    bool addedEntirelyOrPartially = targetInventory.AddItem(itemToTransfer); // AddItem calls AddStackableItems internally
+
+                    if (addedEntirelyOrPartially) // AddItem returns true if *all* quantity was added
+                    {
+                         // AddItem returns true only if itemToTransfer.quantity became 0.
+                         // So if it returns true, the whole stack was added.
+                         quantityAddedToTarget = originalQuantity; // Whole original quantity added
+                         transferAddedToTarget = true; // Entire quantity added
+                         Debug.Log($"ItemTransferHandler: Added entire stackable item to empty slot {targetEmptySlotIndex}. Remaining on instance: {itemToTransfer.quantity}.");
+                    }
+                    else // AddItem returned false, meaning some quantity remains on itemToTransfer
+                    {
+                         // AddItem failed to add the *entire* original quantity.
+                         // The quantityAddedToTarget is not directly returned by AddItem.
+                         // We know how much was added by comparing originalQuantity to itemToTransfer.quantity.
+                         quantityAddedToTarget = originalQuantity - itemToTransfer.quantity;
+                         if (quantityAddedToTarget > 0)
+                         {
+                             transferAddedToTarget = true; // Some quantity was added (partial add)
+                             Debug.Log($"ItemTransferHandler: Partially added stackable item to empty slot {targetEmptySlotIndex}. Added {quantityAddedToTarget}, {itemToTransfer.quantity} remaining on instance.");
+                         }
+                         else
+                         {
+                              // Should not happen if AddItem returned false and quantity > 0 initially, but defensive.
+                              Debug.LogWarning($"ItemTransferHandler: AddItem returned false for stackable, but quantity added was 0.");
+                         }
+                    }
                 }
                 else
                 {
-                    // This case means the source inventory was also full or couldn't accept the remaining quantity.
-                    // The item instance with the remaining quantity is effectively lost from the UI/data.
-                    Debug.LogError($"ItemTransferHandler: Failed to return remaining quantity ({itemToTransfer.quantity}) of '{itemToTransfer.details?.Name ?? "Unknown"}' to source inventory '{sourceInventory.Id}'. Source inventory is likely full.", this);
+                    // No suitable target slot found in the target inventory.
+                    Debug.Log($"ItemTransferHandler: No non-full stack or empty slot found for stackable item '{itemName}' in target inventory '{targetInventory.Id}'. Item will be returned to source.");
+                    // itemToTransfer.quantity remains its original quantity.
+                    transferAddedToTarget = false; // Nothing added to target
+                    quantityAddedToTarget = 0;
                 }
-            }
-            else // itemToTransfer.quantity is 0, meaning the entire original quantity was added to the target (either fully stacked into the specific slot, or fully added via TryAddQuantity)
-            {
-                Debug.Log($"ItemTransferHandler: Item '{itemToTransfer.details?.Name ?? "Unknown"}' fully transferred to target inventory '{targetInventory.Id}'.");
-            }
 
-            // --- Refine UI Feedback (Popups) ---
-            // This logic also remains the same, using the final quantityAddedToTarget and returnedToSource status.
-            if (quantityAddedToTarget == originalQuantity)
-            {
-                // Full transfer successful
-                // No popup needed for full success, or maybe a subtle one?
-                Debug.Log($"ItemTransferHandler: Full transfer successful for '{itemToTransfer.details?.Name ?? "Unknown"}'.");
             }
-            else if (quantityAddedToTarget > 0) // Some quantity was added to the target
+            else // Non-Stackable Item Quick Transfer Logic (remains unchanged)
             {
-                if (returnedToSource)
-                {
-                    // Partial transfer, remainder returned to source
-                    PlayerUIPopups.Instance?.ShowPopup("Partial Transfer", $"Transferred {quantityAddedToTarget} of {itemToTransfer.details?.Name ?? "item"}, {itemToTransfer.quantity} remained."); // Include remaining quantity in message
-                    Debug.Log($"ItemTransferHandler: Partial transfer successful for '{itemToTransfer.details?.Name ?? "Unknown"}'. {quantityAddedToTarget} added to target, {itemToTransfer.quantity} returned to source.");
-                }
-                else
-                {
-                    // Partial transfer, remainder failed to return to source (critical)
-                    PlayerUIPopups.Instance?.ShowPopup("Transfer Failed", $"Transferred {quantityAddedToTarget} of {itemToTransfer.details?.Name ?? "item"}, but remaining {itemToTransfer.quantity} could not be returned.");
-                     Debug.LogError($"ItemTransferHandler: Partial transfer occurred, but remaining {itemToTransfer.quantity} of '{itemToTransfer.details?.Name ?? "Unknown"}' failed to return to source.");
-                }
-            }
-            else // quantityAddedToTarget == 0 (Nothing was added to the target)
-            {
-                 if (returnedToSource || originalQuantity == 0) // originalQuantity == 0 check is for safety, though handled earlier
+                 Debug.Log($"ItemTransferHandler: Attempting quick transfer of non-stackable item '{itemName}' (ID: {itemToTransfer.Id}) to target '{targetInventory.Id}'.");
+
+                 // Use AddSingleInstance on the target. It returns true if added, false if target is full/filtered.
+                 // AddSingleInstance does NOT modify itemToTransfer.quantity.
+                 instanceAddedToTarget = targetCombiner.AddSingleInstance(itemToTransfer); // Use Combiner directly for instance placement
+
+                 if (instanceAddedToTarget)
                  {
-                     // Item was returned to source (or was empty initially).
-                     // This happens if the target couldn't accept it (either due to full space *anywhere* in target, or filtering *at the Combiner level*).
-                     PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Could not transfer item (target full or invalid)."); // Updated message to cover filtering too
-                     Debug.Log($"ItemTransferHandler: No quantity of '{itemToTransfer.details?.Name ?? "Unknown"}' could be added to target. Item returned to source.");
+                      // If successfully added, the instance is now in the target inventory's data.
+                      // We need to signal that this instance is "fully transferred" from the perspective
+                      // of the quick transfer operation, so it doesn't get "returned" below.
+                      // Setting quantity to 0 serves this purpose for the return logic.
+                      itemToTransfer.quantity = 0; // Indicate instance was transferred
+                      transferAddedToTarget = true; // An instance was added
+                      Debug.Log($"ItemTransferHandler: Non-stackable item '{itemName}' successfully added to target.");
                  }
                  else
                  {
-                      // Item was NOT returned to source (critical failure)
-                      PlayerUIPopups.Instance?.ShowPopup("Transfer Failed", "Could not transfer item, and it could not be returned to source."); // Message for total failure
-                      Debug.LogError($"ItemTransferHandler: No quantity of '{itemToTransfer.details?.Name ?? "Unknown"}' could be added to target, and it failed to return to source.");
+                      // If not added, itemToTransfer.quantity remains 1 (as it was originally),
+                      // correctly indicating the instance still needs to be placed/returned.
+                      Debug.Log($"ItemTransferHandler: Non-stackable item '{itemName}' could not be added to target (target full or filter mismatch).");
+                      transferAddedToTarget = false; // No instance added
                  }
+            }
+
+
+            // --- Handle Item Return to Source (If Not Fully Added/Transferred) ---
+            // itemToTransfer.quantity now reflects the remainder that couldn't be added to the target.
+            // For stackable, it's > 0 if partially added or failed to add.
+            // For non-stackable, it's 1 if failed to add, 0 if successfully added.
+
+            if (itemToTransfer.quantity > 0) // Check if any quantity/instance remains to be returned
+            {
+                returnAttempted = true;
+                Debug.Log($"ItemTransferHandler: Item was partially transferred or failed to transfer to target. Remaining quantity ({itemToTransfer.quantity}) of '{itemName}' needs to be returned to source inventory '{sourceInventory.Id}'.");
+
+                // Attempt to add the remaining quantity/instance back into the source inventory.
+                // Use the general AddItem method on the source inventory.
+                // AddItem handles finding space and updating itemToTransfer.quantity (sets to 0 if fully returned).
+                returnSuccessful = sourceInventory.AddItem(itemToTransfer); // AddItem handles stackable/non-stackable
+
+                if (returnSuccessful)
+                {
+                    Debug.Log($"ItemTransferHandler: Remaining quantity successfully returned to source using AddItem. Remaining quantity on instance: {itemToTransfer.quantity}.");
+                }
+                else
+                {
+                    // This means the source inventory was also full or couldn't accept the remaining quantity/instance.
+                    Debug.LogError($"ItemTransferHandler: Failed to return remaining quantity ({itemToTransfer.quantity}) of '{itemName}' to source inventory '{sourceInventory.Id}'. Source inventory is likely full. Item is LOST!", this);
+                    PlayerUIPopups.Instance?.ShowPopup("Return Failed", "Could not return item to source!");
+                    // The item instance with the remaining quantity is effectively lost from the UI/data.
+                }
+            }
+            else // itemToTransfer.quantity is <= 0. This means the entire original quantity/instance was successfully added/transferred to the target.
+            {
+                Debug.Log($"ItemTransferHandler: Entire quantity/instance of '{itemName}' successfully transferred to target.");
+                // No return necessary. The item instance is now fully managed by the target inventory's data.
+            }
+
+
+            // --- UI Feedback (Popups) ---
+
+            if (!transferAddedToTarget) // If *any* quantity/instance made it to the target
+            {
+                 // This happens if the target couldn't accept it (due to full space *anywhere* in target, or filter check passed but no slot found).
+                 // The item was already removed from source, and the logic above attempted to return it.
+                 // If returnAttempted is true and returnSuccessful is false, the "Return Failed" popup was shown.
+                 // If returnAttempted is true and returnSuccessful is true, it was fully returned, so the transfer failed but item wasn't lost.
+                 // If returnAttempted is false, it means itemToTransfer.quantity was 0 initially (shouldn't happen with fixes) or became 0 unexpectedly.
+                 // A general "Cannot Transfer" popup is appropriate here if no other popup was shown.
+
+                 if (!returnAttempted || !returnSuccessful) // If no return was attempted OR return failed
+                 {
+                     // This covers the case where target add failed and return either wasn't needed (unexpected state) or failed.
+                      PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", $"Could not transfer '{itemName}' (target full or invalid).");
+                      Debug.Log($"ItemTransferHandler: No quantity/instance of '{itemName}' could be added to target.");
+                 }
+                 // else: target add failed, but it was fully returned. No extra popup needed besides the return success log.
             }
         }
     }
 }
-
-// --- END OF FILE ItemTransferHandler.cs ---

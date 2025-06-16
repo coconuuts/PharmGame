@@ -2,36 +2,58 @@
 
 using UnityEngine;
 using TMPro; // Needed for TMP_Text
-using Systems.Interaction; // Needed for IInteractable and InteractionResponse
+using Systems.Interaction; // Needed for IInteractable and InteractionResponse, and the new InteractionManager
 using Game.Prescriptions; // Needed for PrescriptionOrder
 using Game.NPC; // Needed for NpcStateMachineRunner
 using Game.NPC.TI; // Needed for TiNpcData
 using Game.Events; // Needed for EventManager and new event
-using Systems.GameStates; // Needed for PromptEditor
-using Systems.Player; // Needed for PlayerPrescriptionTracker // <-- Added using directive
+using Systems.GameStates; // Needed for PromptEditor, PlayerUIPopups
+using Systems.Player; // Needed for PlayerPrescriptionTracker
 
 namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interaction
 {
     /// <summary>
     /// IInteractable component for NPCs in the WaitingForPrescription state,
     /// allowing the player to obtain their prescription.
+    /// --- MODIFIED: Added Registration with InteractionManager singleton. ---
     /// </summary>
+     [RequireComponent(typeof(NpcStateMachineRunner))] // Ensure Runner is present
     public class ObtainPrescription : MonoBehaviour, IInteractable
     {
         [Header("Interaction Settings")]
         [Tooltip("The message displayed when the player looks at this interactable.")]
         [SerializeField] private string interactionPromptMessage = "Take prescription order (E)";
+        
+        [Tooltip("Should this interactable be enabled by default when registered? (Usually false for multi-interactable objects like NPCs)")]
+        [SerializeField] private bool enableOnStart = false;
 
         /// <summary>
         /// Flag indicating if this NPC's prescription order is currently active for the player.
         /// </summary>
         public bool activePrescriptionOrder { get; private set; } = false;
 
-        public string InteractionPrompt => interactionPrompt;
+        // Corrected property name case
+        public string InteractionPrompt => interactionPromptMessage;
+
+
+        private void Awake()
+        {
+            // --- NEW: Register with the singleton InteractionManager ---
+            if (InteractionManager.Instance != null)
+            {
+                InteractionManager.Instance.RegisterInteractable(this);
+            }
+            else
+            {
+                // This error is critical as the component won't be managed
+                Debug.LogError($"ObtainPrescription on {gameObject.name}: InteractionManager.Instance is null in Awake! Cannot register.", this);
+                // Optionally disable here if registration is absolutely required for function
+                // enabled = false;
+            }
+            // --- END NEW ---
+        }
 
         // --- IInteractable Implementation ---
-
-        public string interactionPrompt => interactionPromptMessage;
 
         public void ActivatePrompt()
         {
@@ -39,7 +61,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interact
             if (PromptEditor.Instance != null)
             {
                 Debug.Log($"{gameObject.name}: Activating screen-space NPC prompt with message: '{interactionPromptMessage}'.", this);
-                PromptEditor.Instance.SetScreenSpaceNPCPromptActive(true, interactionPromptMessage); // MODIFIED: Pass the message
+                PromptEditor.Instance.SetScreenSpaceNPCPromptActive(true, interactionPromptMessage);
             }
             else
             {
@@ -53,7 +75,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interact
             if (PromptEditor.Instance != null)
             {
                 Debug.Log($"{gameObject.name}: Deactivating screen-space NPC prompt.", this);
-                PromptEditor.Instance.SetScreenSpaceNPCPromptActive(false, ""); // MODIFIED: Clear the message when hiding
+                PromptEditor.Instance.SetScreenSpaceNPCPromptActive(false, ""); // Clear the message when hiding
             }
             else
             {
@@ -74,7 +96,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interact
             bool orderFound = false;
 
             // Get the Runner to access NPC data
-            NpcStateMachineRunner runner = GetComponent<NpcStateMachineRunner>();
+            NpcStateMachineRunner runner = GetComponent<NpcStateMachineRunner>(); // GetComponent here is fine, it's on the same GO
 
             if (runner != null)
             {
@@ -95,7 +117,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interact
                     // Transient NPC: Check Runner's transient fields
                     if (runner.hasPendingPrescriptionTransient)
                     {
-                        orderToDisplay = runner.assignedOrderTransient;
+                        orderToDisplay = runner.assignedOrderTransient; // Corrected access to Runner's transient fields
                         orderFound = true;
                         Debug.Log($"{gameObject.name}: Retrieved Transient prescription order.", this);
                     } else {
@@ -117,7 +139,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interact
                 activePrescriptionOrder = true;
                 Debug.Log($"{gameObject.name}: activePrescriptionOrder set to true on ObtainPrescription component.", this);
 
-                // --- NEW: Assign the order to the PlayerPrescriptionTracker ---
+                // --- Assign the order to the PlayerPrescriptionTracker ---
                 GameObject playerGO = GameObject.FindGameObjectWithTag("Player"); // Assuming player has the "Player" tag
                 if (playerGO != null)
                 {
@@ -136,7 +158,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interact
                 {
                     Debug.LogError($"{gameObject.name}: Player GameObject with tag 'Player' not found! Cannot assign prescription order to player tracker.", this);
                 }
-                // --- END NEW ---
+                // --- END Assign ---
 
                 // Publish event to signal order obtained (for NPC state transition)
                 Debug.Log($"{gameObject.name}: Publishing NpcPrescriptionOrderObtainedEvent.", this);
@@ -150,37 +172,45 @@ namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interact
                 // Order not found or Runner/data issue
                 activePrescriptionOrder = false; // Ensure flag is false
                 Debug.LogWarning($"{gameObject.name}: Interact called, but no active prescription order was found or data was invalid. Returning null response.", this);
+                // Optional: Provide feedback? PlayerUIPopups.Instance?.ShowPopup("No Order", "This customer doesn't have a prescription order right now.");
                 return null; // Or return a specific "NoOrderFoundResponse" if needed, but null is simpler for now.
             }
         }
 
         /// <summary>
-        /// Resets the active prescription order flag and clears the UI text.
+        /// Resets the active prescription order flag.
         /// Called when the NPC leaves the WaitingForPrescription state.
         /// </summary>
         public void ResetInteraction()
         {
             activePrescriptionOrder = false;
             Debug.Log($"{gameObject.name}: ObtainPrescription interaction state reset.", this);
+            // Note: PlayerUIPopups.Instance?.HidePopup("Prescription Order") is handled by WaitingForPrescriptionSO.OnExit now.
         }
 
         // --- Optional: OnDisable/OnDestroy cleanup ---
         private void OnDisable()
         {
-            // Ensure prompt is deactivated if component is disabled
+            // Deactivate prompt if disabled (e.g., by InteractionManager)
             DeactivatePrompt();
-            // Reset interaction state on disable
+            // Reset interaction state on disable (clears the flag)
             ResetInteraction();
-            // Note: PlayerUIPopups.Instance?.HidePrescriptionOrder() should be called by WaitingForPrescriptionSO.OnExit
         }
 
         private void OnDestroy()
         {
             // Ensure prompt is deactivated if GameObject is destroyed
             DeactivatePrompt();
-            // Reset interaction state on destroy
+            // Reset interaction state on destroy (clears the flag)
             ResetInteraction();
-            // Note: PlayerUIPopups.Instance?.HidePrescriptionOrder() should be called by WaitingForPrescriptionSO.OnExit
+
+            // --- NEW: Unregister from the singleton InteractionManager ---
+            if (InteractionManager.Instance != null)
+            {
+                 InteractionManager.Instance.UnregisterInteractable(this);
+            }
+             // Note: If the manager is destroyed first, this might log an error.
+            // --- END NEW ---
          }
     }
 }

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using Systems.Inventory; // Ensure this namespace matches your scripts
 
 namespace Systems.Inventory
 {
@@ -31,15 +32,18 @@ namespace Systems.Inventory
                 return false; // Indicate failure due to invalid input
             }
 
-            if (primaryInputInventory?.Combiner == null || outputInventory?.Combiner == null)
+            // Check if required inventories are assigned and have Combiners (as Inventory.AddItem relies on Combiner)
+            if (primaryInputInventory == null || primaryInputInventory.Combiner == null || outputInventory == null || outputInventory.Combiner == null) // *** MODIFIED CHECK ***
             {
-                Debug.LogError("CraftingExecutor: Cannot execute craft, primary input or output inventory combiner is null.");
-                return false; // Indicate failure due to missing inventories
+                if (primaryInputInventory == null || primaryInputInventory.Combiner == null) Debug.LogError($"CraftingExecutor: Cannot execute craft, primary input inventory is null or missing Combiner ({(primaryInputInventory != null ? primaryInputInventory.gameObject.name : "NULL")}).");
+                if (outputInventory == null || outputInventory.Combiner == null) Debug.LogError($"CraftingExecutor: Cannot execute craft, output inventory is null or missing Combiner ({(outputInventory != null ? outputInventory.gameObject.name : "NULL")}).");
+                return false; // Indicate failure due to missing inventories/combiners
             }
 
             if (secondaryInputInventory != null && secondaryInputInventory.Combiner == null)
             {
-                 Debug.LogError("CraftingExecutor: Secondary input inventory is assigned but its Combiner is null. Cannot execute craft.");
+                 Debug.LogError($"CraftingExecutor: Secondary input inventory is assigned but its Combiner is null ({(secondaryInputInventory != null ? secondaryInputInventory.gameObject.name : "NULL")}). Cannot execute craft.");
+                 // Decide if this is a hard fail or soft fail. Let's make it a hard fail for consumption logic safety.
                  return false; // Indicate failure due to missing secondary inventory combiner
             }
 
@@ -53,21 +57,25 @@ namespace Systems.Inventory
                     consumptionSuccess = false;
                     break; // Cannot proceed if input is invalid
                 }
+                if (requiredInput.quantity <= 0)
+                {
+                     Debug.LogWarning($"CraftingExecutor: Recipe '{recipeToCraft.recipeName}' specifies input '{requiredInput.itemDetails.Name}' with zero or negative quantity ({requiredInput.quantity}). Skipping this input item for consumption.");
+                     continue; // Skip invalid quantity input requirement
+                }
+
 
                 int totalQuantityToConsume = requiredInput.quantity * batchesToCraft;
-                Debug.Log($"CraftingExecutor: Attempting to consume {totalQuantityToConsume} of {requiredInput.itemDetails.Name}.", primaryInputInventory.gameObject); 
+                Debug.Log($"CraftingExecutor: Attempting to consume {totalQuantityToConsume} of {requiredInput.itemDetails.Name}.", primaryInputInventory.gameObject);
 
-                int removedFromPrimary = 0;
-                if (primaryInputInventory.Combiner != null)
-                {
-                    removedFromPrimary = primaryInputInventory.Combiner.TryRemoveQuantity(requiredInput.itemDetails, totalQuantityToConsume);
-                }
+                // Try to remove the quantity from inventories using Inventory.TryRemoveQuantity
+                // TryRemoveQuantity handles both stackable quantities and non-stackable instances.
+                int removedFromPrimary = primaryInputInventory.TryRemoveQuantity(requiredInput.itemDetails, totalQuantityToConsume); // *** MODIFIED ***
 
                 int remainingToRemove = totalQuantityToConsume - removedFromPrimary;
                 int removedFromSecondary = 0;
-                if (secondaryInputInventory?.Combiner != null && remainingToRemove > 0)
+                if (secondaryInputInventory != null && remainingToRemove > 0)
                 {
-                    removedFromSecondary = secondaryInputInventory.Combiner.TryRemoveQuantity(requiredInput.itemDetails, remainingToRemove);
+                    removedFromSecondary = secondaryInputInventory.TryRemoveQuantity(requiredInput.itemDetails, remainingToRemove); // *** MODIFIED ***
                 }
 
                 if (removedFromPrimary + removedFromSecondary != totalQuantityToConsume)
@@ -108,20 +116,23 @@ namespace Systems.Inventory
                 // Calculate total quantity to produce for this output item type
                 int totalQuantityToProduce = producedOutput.quantity * batchesToCraft;
 
-                // Create a new Item instance for this output type with the total produced quantity
-                // AddItem will handle stacking in the output inventory if needed.
-                Item outputItemInstance = new Item(producedOutput.itemDetails, totalQuantityToProduce);
+                // Create a new Item instance for this output type with the total produced quantity.
+                // Inventory.AddItem will handle creating stacks or adding single instances based on item.maxStack.
+                Item outputItemInstance = producedOutput.itemDetails.Create(totalQuantityToProduce); // Use the Create method
 
-                // Attempt to add the output item to the output inventory
-                bool added = outputInventory.Combiner.AddItem(outputItemInstance);
+                // Attempt to add the output item to the output inventory using the public AddItem method on Inventory
+                // Inventory.AddItem will handle whether it's stackable or non-stackable.
+                bool added = outputInventory.AddItem(outputItemInstance); // *** MODIFIED ***
 
                 if (!added)
                 {
-                    Debug.LogError($"CraftingExecutor: Failed to add output item '{producedOutput.itemDetails.Name}' (Qty: {totalQuantityToProduce}) to output inventory. Output inventory might be full!");
+                    // Log failure, including the remaining quantity on the instance (should be > 0 if not fully added)
+                    Debug.LogError($"CraftingExecutor: Failed to add output item '{outputItemInstance.details?.Name ?? "Unknown"}' (Initial Qty: {totalQuantityToProduce}) to output inventory. Remaining on instance: {outputItemInstance.quantity}. Output inventory might be full!");
                 }
                  else
                  {
-                      Debug.Log($"CraftingExecutor: Produced and added {totalQuantityToProduce} of {producedOutput.itemDetails.Name} to output inventory.");
+                     // Log success, including the remaining quantity on the instance (should be 0 if fully added)
+                      Debug.Log($"CraftingExecutor: Produced and added {totalQuantityToProduce} of {outputItemInstance.details.Name} to output inventory. Remaining on instance: {outputItemInstance.quantity}.");
                  }
             }
             // If we attempted to produce outputs, craft execution is conceptually complete from the executor's perspective.

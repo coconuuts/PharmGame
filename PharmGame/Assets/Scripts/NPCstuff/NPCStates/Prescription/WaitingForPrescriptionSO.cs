@@ -1,7 +1,5 @@
 // --- START OF FILE WaitingForPrescriptionSO.cs ---
 
-// --- START OF FILE WaitingForPrescriptionSO.cs (Modified for Caching Interaction Components) ---
-
 using UnityEngine;
 using System;
 using System.Collections;
@@ -10,9 +8,10 @@ using Game.NPC; // Needed for CustomerState and GeneralState enums
 using Game.Prescriptions; // Needed for PrescriptionOrder
 using Random = UnityEngine.Random; // Specify UnityEngine.Random
 using Game.Events; // Needed for EventManager and new event
-using Systems.Interaction; // Needed for MultiInteractableManager
+using Systems.Interaction; // Needed for IInteractable, InteractionManager // <-- MODIFIED using directive
 using Game.Interaction; // Needed for ObtainPrescription
-using Systems.Player; // Needed for PlayerPrescriptionTracker // <-- Added using directive
+using Systems.Player; // Needed for PlayerPrescriptionTracker
+using Systems.GameStates; // Needed for PlayerUIPopups
 
 
 namespace Game.NPC.States // Place alongside other active states
@@ -21,8 +20,7 @@ namespace Game.NPC.States // Place alongside other active states
     /// State for a Prescription Customer waiting at the prescription claim spot.
     /// An impatience timer runs, after which the NPC exits.
     /// Corresponds to CustomerState.WaitingForPrescription.
-    /// MODIFIED: Activates the ObtainPrescription interactable on Enter and deactivates on Exit.
-    /// Interaction components are accessed via context (cached on Runner).
+    /// MODIFIED: Uses the InteractionManager singleton directly.
     /// --- MODIFIED: FreePrescriptionClaimSpotEvent is now published by the impatience coroutine on exit to Exiting. ---
     /// </summary>
     [CreateAssetMenu(fileName = "CustomerWaitingForPrescriptionState", menuName = "NPC/Customer States/Waiting For Prescription", order = 3)] // Order after Prescription Entering
@@ -51,6 +49,8 @@ namespace Game.NPC.States // Place alongside other active states
 
             // Play waiting/idle animation
             // context.PlayAnimation("WaitingAtCounter"); // Placeholder animation name
+
+            Debug.Log($"{context.NpcObject.name}: Entering {name}. Waiting for player prescription interaction.", context.NpcObject); // Updated log message
 
             // Start impatience timer coroutine
             float impatientDuration = Random.Range(impatientTimeRange.x, impatientTimeRange.y); // Duration is local to OnEnter
@@ -113,22 +113,20 @@ namespace Game.NPC.States // Place alongside other active states
                  Debug.LogWarning($"CustomerAI ({context.NpcObject.name}): PrescriptionManager or claim point is null! Cannot rotate.", context.NpcObject);
              }
 
-            // --- Activate the ObtainPrescription interactable using cached components ---
-            MultiInteractableManager multiManager = context.GetMultiInteractableManager(); // Get from context helper
-            ObtainPrescription obtainPrescriptionComponent = context.GetObtainPrescription(); // Get from context helper
-
-            if (multiManager != null && obtainPrescriptionComponent != null)
+            // --- NEW: Activate the ObtainPrescription interactable using the InteractionManager singleton ---
+            if (InteractionManager.Instance != null)
             {
-                Debug.Log($"{context.NpcObject.name}: Activating ObtainPrescription interactable.", context.NpcObject);
-                multiManager.SetActiveInteractable(obtainPrescriptionComponent); // Set ObtainPrescription as the active interactable
+                Debug.Log($"{context.NpcObject.name}: Activating ObtainPrescription interactable via singleton.", context.NpcObject);
+                // Enable *only* the ObtainPrescription component on this NPC's GameObject
+                InteractionManager.Instance.EnableOnlyInteractableComponent<ObtainPrescription>(context.NpcObject);
             }
             else
             {
-                Debug.LogError($"{context.NpcObject.name}: MultiInteractableManager ({multiManager != null}) or ObtainPrescription component ({obtainPrescriptionComponent != null}) not found! Cannot activate prescription interaction.", context.NpcObject);
+                Debug.LogError($"{context.NpcObject.name}: InteractionManager.Instance is null! Cannot activate prescription interaction.", context.NpcObject);
                 // Decide fallback: maybe transition to Exiting if interaction is critical?
                 // For now, just log error and continue the waiting timer.
             }
-            // --- END MODIFIED LOGIC ---
+            // --- END NEW ---
         }
 
         public override void OnUpdate(NpcStateContext context)
@@ -137,7 +135,6 @@ namespace Game.NPC.States // Place alongside other active states
             // Timer is handled by the coroutine now, not in Update
         }
 
-        // OnReachedDestination is not applicable here, they are already AT their spot.
         public override void OnReachedDestination(NpcStateContext context) { /* Not applicable */ } // <-- Explicitly empty
 
 
@@ -156,27 +153,35 @@ namespace Game.NPC.States // Place alongside other active states
             // Note: Stop waiting animation
             // context.PlayAnimation("Idle");
 
-            // --- Deactivate the ObtainPrescription interactable and reset its state using cached components ---
-            MultiInteractableManager multiManager = context.GetMultiInteractableManager(); // Get from context helper
-            ObtainPrescription obtainPrescriptionComponent = context.GetObtainPrescription(); // Get from context helper
+            // --- NEW: Disable interactables on exit using the InteractionManager singleton ---
+             if (InteractionManager.Instance != null)
+             {
+                  // Disable the ObtainPrescription component on this NPC's GameObject
+                  // This will also deactivate its prompt via the component's OnDisable/OnDestroy if needed.
+                  InteractionManager.Instance.DisableInteractableComponent<ObtainPrescription>(context.NpcObject);
+
+                  // Alternatively, disable all interactables on the NPC object if it's guaranteed to leave interaction range
+                  // InteractionManager.Instance.DisableAllInteractablesOnGameObject(context.NpcObject);
+             }
+             else
+             {
+                  Debug.LogWarning($"{context.NpcObject.name}: InteractionManager.Instance is null on exit! Cannot disable interactables.", context.NpcObject);
+             }
+            // --- END NEW ---
+
+            // --- Clear player's active prescription order and UI popup ---
+            // NOTE: The active order is set on PlayerPrescriptionTracker in ObtainPrescription.Interact(),
+            // and the UI is shown by SimpleActionDispatcher.
+            // We should clear the UI on exiting this state regardless of whether the player interacted or not.
+            PlayerUIPopups.Instance?.HidePopup("Prescription Order");
 
 
-            if (multiManager != null)
-            {
-                 // Deactivate the current interactable (which should be ObtainPrescription if we entered correctly)
-                 Debug.Log($"{context.NpcObject.name}: Deactivating current interactable (expected ObtainPrescription).", context.NpcObject);
-                 multiManager.DeactivateCurrentInteractable(); // This also disables the component
-            }
-            else
-            {
-                 Debug.LogWarning($"{context.NpcObject.name}: MultiInteractableManager not found on exit! Cannot deactivate interactable.", context.NpcObject);
-            }
-
+            // Reset the state of the ObtainPrescription component (clears its internal flag)
+            ObtainPrescription obtainPrescriptionComponent = context.GetObtainPrescription(); // Get from context helper (assuming context caches it) or context.NpcObject.GetComponent<ObtainPrescription>()
             if (obtainPrescriptionComponent != null)
             {
-                 // Reset the state of the ObtainPrescription component (clears flag)
-                 Debug.Log($"{context.NpcObject.name}: Resetting ObtainPrescription component state.", context.NpcObject);
                  obtainPrescriptionComponent.ResetInteraction(); // <-- This now only resets the flag
+                 Debug.Log($"{context.NpcObject.name}: Resetting ObtainPrescription component state.", context.NpcObject);
             }
             else
             {
@@ -208,7 +213,7 @@ namespace Game.NPC.States // Place alongside other active states
             // Timer finished, NPC becomes impatient
             Debug.Log($"{context.NpcObject.name}: IMPATIENT in {name} state after {duration:F2} seconds. Transitioning to Exiting.", context.NpcObject);
 
-            // --- NEW: Publish event to free the claim spot just before exiting due to impatience ---
+            // --- Publish event to free the claim spot just before exiting due to impatience ---
             Debug.Log($"{context.NpcObject.name}: Impatience timer finished. Publishing FreePrescriptionClaimSpotEvent.", context.NpcObject);
             context.PublishEvent(new FreePrescriptionClaimSpotEvent(context.NpcObject));
             // --- END NEW ---
@@ -218,4 +223,3 @@ namespace Game.NPC.States // Place alongside other active states
         }
     }
 }
-// --- END OF FILE WaitingForPrescriptionSO.cs (Modified for Caching Interaction Components) ---

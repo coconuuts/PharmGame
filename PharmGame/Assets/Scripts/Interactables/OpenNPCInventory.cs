@@ -2,13 +2,15 @@
 
 using UnityEngine;
 using InventoryClass = Systems.Inventory.Inventory;
-using Systems.Interaction; // Needed for IInteractable and InteractionResponse
+using Systems.Interaction; // Needed for IInteractable and InteractionResponse, and the new InteractionManager
 using Systems.UI; // Needed for FlexibleGridLayout (used in OnValidate)
+using Systems.GameStates; // Needed for PromptEditor
 
 namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interaction
 {
     /// <summary>
     /// IInteractable component for NPCs that allows the player to open their inventory.
+    /// --- MODIFIED: Added Registration with InteractionManager singleton. ---
     /// </summary>
     // Ensure this script is on the same GameObject as the Collider that the PlayerInteractionManager hits
     public class OpenNPCInventory : MonoBehaviour, IInteractable
@@ -24,8 +26,33 @@ namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interact
         [Tooltip("The Inventory component associated with this interactable object.")]
         [SerializeField] private InventoryClass inventoryComponent;
 
+        [Tooltip("Should this interactable be enabled by default when registered?")]
+        [SerializeField] private bool enableOnStart = true;
+
         // Public property to expose the prompt message via the IInteractable interface
         public string InteractionPrompt => interactionPromptMessage; // Updated to use the serialized field
+
+        // --- NEW: Awake Method for Registration ---
+        private void Awake()
+        {
+             // --- NEW: Register with the singleton InteractionManager ---
+             if (InteractionManager.Instance != null)
+             {
+                 InteractionManager.Instance.RegisterInteractable(this);
+             }
+             else
+             {
+                 // This error is critical as the component won't be managed
+                 Debug.LogError($"OpenNPCInventory on {gameObject.name}: InteractionManager.Instance is null in Awake! Cannot register.", this);
+                 // Optionally disable here if registration is absolutely required for function
+                 // enabled = false;
+             }
+             // --- END NEW ---
+
+             // REMOVED: Any manual enabled = false calls from Awake if they existed
+             // The InteractionManager handles the initial enabled state.
+        }
+        // --- END NEW ---
 
 
         // --- IInteractable Implementation ---
@@ -37,7 +64,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interact
             {
                  Debug.Log($"{gameObject.name}: Activating screen-space NPC prompt for Inventory with message: '{interactionPromptMessage}'.", this);
                  // Use the new method on the singleton to control the prompt and pass the message
-                 PromptEditor.Instance.SetScreenSpaceNPCPromptActive(true, interactionPromptMessage); // MODIFIED: Pass the message
+                 PromptEditor.Instance.SetScreenSpaceNPCPromptActive(true, interactionPromptMessage);
             }
             else
             {
@@ -52,7 +79,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interact
             {
                  Debug.Log($"{gameObject.name}: Deactivating screen-space NPC prompt for Inventory.", this);
                  // Use the new method on the singleton to control the prompt and clear the message
-                 PromptEditor.Instance.SetScreenSpaceNPCPromptActive(false, ""); // MODIFIED: Clear the message when hiding
+                 PromptEditor.Instance.SetScreenSpaceNPCPromptActive(false, ""); // Clear the message when hiding
             }
             else
             {
@@ -98,6 +125,18 @@ namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interact
                  Debug.LogWarning($"OpenNPCInventory ({gameObject.name}): Assigned Inventory Component GameObject '{inventoryComponent.gameObject.name}' does not have a Combiner component. Are you sure this is the correct GameObject?", this);
              }
         }
+
+        // --- NEW: OnDestroy Method for Unregistration ---
+        private void OnDestroy()
+        {
+             // --- NEW: Unregister from the singleton InteractionManager ---
+             if (InteractionManager.Instance != null)
+             {
+                 InteractionManager.Instance.UnregisterInteractable(this);
+             }
+             // --- END NEW ---
+        }
+        // --- END NEW ---
     }
 }
 

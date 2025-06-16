@@ -18,7 +18,7 @@ namespace Systems.Inventory
         // Reference to the ItemDetails ScriptableObject defining the item type.
         public ItemDetails details;
 
-        // The current quantity of this item instance (relevant for stackable items).
+        // The current quantity of this item instance (relevant for stackable items, should be 1 for non-stackable).
         public int quantity;
 
         // The current total health or durability of this item instance (relevant for non-stackable items with maxHealth > 0).
@@ -30,13 +30,13 @@ namespace Systems.Inventory
 
         // --- FIELDS FOR GUN LOGIC (Relevant if details.usageLogic is GunLogic) ---
         // The current number of shots remaining in the magazine.
-        public int currentMagazineHealth; 
+        public int currentMagazineHealth;
         // The total number of shots remaining outside the current magazine (reserve ammo).
         public int totalReserveHealth;
         // Flag indicating if the gun is currently in the process of reloading.
-        public bool isReloading; 
+        public bool isReloading;
         // The time when the current reload started (used to track progress).
-        public float reloadStartTime; 
+        public float reloadStartTime;
 
         // Constructor
         public Item(ItemDetails details, int quantity = 1)
@@ -136,8 +136,10 @@ namespace Systems.Inventory
                  }
                  else
                  {
-                     // Non-durable non-stackable (quantity 1 consumable)
-                     return quantity > 0; // Quantity should be 1 initially, becomes 0 after use
+                     // Non-durable non-stackable (quantity 1 consumable): Usable if quantity > 0 (should be 1)
+                     // This case is primarily for items like a single piece of fruit that are consumed entirely.
+                     // The quantity field acts as a simple "does this instance still exist" flag here.
+                     return quantity > 0;
                  }
              }
         }
@@ -163,6 +165,12 @@ namespace Systems.Inventory
                 return true;
             }
             // Compare based on the unique instance Id
+            // Ensure Id is not empty for comparison
+             if (Id == SerializableGuid.Empty || other.Id == SerializableGuid.Empty)
+             {
+                 // If either ID is empty, they are not equal unless both are the exact same null reference
+                 return false; // Already handled ReferenceEquals(this, other) above
+             }
             return Id == other.Id; // Uses the overloaded == operator for SerializableGuid
         }
 
@@ -189,6 +197,7 @@ namespace Systems.Inventory
         /// </summary>
         /// <remarks>
         /// This checks for instance equality, not type equality. Use IsSameType() for that.
+        /// Handles nulls correctly.
         /// </remarks>
         public static bool operator ==(Item left, Item right)
         {
@@ -196,7 +205,8 @@ namespace Systems.Inventory
             {
                 return ReferenceEquals(right, null); // True if both are null
             }
-            // Use the object's Equals method (which we've overridden)
+            // Use the object's Equals method (which we've overridden).
+            // This handles the case where right is null inside left.Equals(right).
             return left.Equals(right);
         }
 
@@ -205,6 +215,7 @@ namespace Systems.Inventory
         /// </summary>
         /// <remarks>
         /// This checks for instance inequality, not type inequality. Use IsSameType() for that.
+        /// Handles nulls correctly.
         /// </remarks>
         public static bool operator !=(Item left, Item right)
         {
@@ -236,13 +247,13 @@ namespace Systems.Inventory
 
          /// <summary>
          /// Checks if this Item instance can stack with another Item instance.
-         /// Currently based only on being the same type and having a max stack > 1.
+         /// Currently based on being the same type and both being stackable (maxStack > 1).
          /// </summary>
          public bool CanStackWith(Item otherItem)
          {
              if (ReferenceEquals(otherItem, null)) return false;
              if (details == null || otherItem.details == null) return false; // Cannot stack if details are missing
-             if (details.maxStack <= 1) return false; // Cannot stack if item type max stack is 1 or less
+             if (details.maxStack <= 1 || otherItem.details.maxStack <= 1) return false; // Both must be stackable
 
              return IsSameType(otherItem); // They must be the same type
          }

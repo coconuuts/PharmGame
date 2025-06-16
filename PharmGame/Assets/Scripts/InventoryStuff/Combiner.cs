@@ -41,21 +41,19 @@ namespace Systems.Inventory
         /// </summary>
         public int PhysicalSlotCount { get; private set; }
 
+        // This reference is set by the Parent Inventory script.
         public Inventory ParentInventory { get; internal set; }
 
-        [Header("Item Filtering")] // Optional: A header for organization in the inspector
-        [SerializeField] private List<ItemLabel> allowedLabels = new List<ItemLabel>();
-        [Tooltip("If this list is empty, all item labels are allowed.")] // Clarify behavior
-        [SerializeField] private bool allowAllIfListEmpty = true; // Option to allow all if the list is left empty
+        // REMOVED: allowedLabels and allowAllIfListEmpty fields. These belong on the Inventory script.
 
 
         private void OnValidate()
         {
-            if (id == SerializableGuid.Empty)
+            if (id == SerializableGuid.Empty) // Uses the overloaded == operator if SerializableGuid supports it
             {
                 id = SerializableGuid.NewGuid();
 #if UNITY_EDITOR
-                Debug.Log($"Inventory ({gameObject.name}): Assigned new unique ID in OnValidate: {id}", this);
+                Debug.Log($"Combiner ({gameObject.name}): Assigned new unique ID in OnValidate: {id}", this);
                 UnityEditor.EditorUtility.SetDirty(this);
 #endif
             }
@@ -73,17 +71,17 @@ namespace Systems.Inventory
             }
             else
             {
-                InitializeInventoryData(); // Initialize data structure based on layout
-                FindAndAssignSlotUIs(); // Find and link UI slots
+                // Data initialization is now public and called by Inventory.Awake
+                // InitializeInventoryData(); // Called by Inventory
+                // Find and assign slot UIs is now public and called by Inventory.Awake
+                // FindAndAssignSlotUIs(); // Called by Inventory
 
-                 // --- Register this inventory with the DragAndDropManager ---
-                 // This registration should ideally happen in Inventory.cs Awake/OnEnable/OnDisable
-                 // as Inventory is the public interface. Moving this registration logic to Inventory.cs.
-                 // DragAndDropManager.RegisterInventory(this.ParentInventory); // Needs ParentInventory set first
+                 // Registration with DragAndDropManager is handled by Inventory
             }
         }
 
         // Moved data initialization here from Awake to ensure FlexibleGridLayout is found first
+        // Made public so Inventory can call it after setting ParentInventory
         public void InitializeInventoryData()
         {
              // Ensure the FlexibleGridLayout reference is set
@@ -104,13 +102,26 @@ namespace Systems.Inventory
             // Initialize the ObservableArray with the calculated size
             inventoryState = new ObservableArray<Item>(TotalDataSlotCount);
 
-            Debug.Log($"Combiner ({gameObject.name}): Initialized inventory data with {PhysicalSlotCount} physical slots and {TotalDataSlotCount} total data slots (including ghost). ObservableArray created: {(inventoryState != null ? "NOT NULL" : "NULL")}", this);
+            // --- IMPORTANT ---
+            // Assign the ParentInventory reference to the ObservableArray as soon as it's created
+            // This allows the ObservableArray to access the Inventory's filtering rules via the Combiner
+            if (inventoryState != null)
+            {
+                 inventoryState.ParentInventory = this.ParentInventory;
+                 Debug.Log($"Combiner ({gameObject.name}): Initialized inventory data with {PhysicalSlotCount} physical slots and {TotalDataSlotCount} total data slots (including ghost). ObservableArray created: {(inventoryState != null ? "NOT NULL" : "NULL")}, Parent Inventory set on OA.", this);
+            }
+            else
+            {
+                 Debug.LogError($"Combiner ({gameObject.name}): Failed to create ObservableArray during InitializeInventoryData.", this);
+            }
+
 
             // TODO: Add logic here later for loading saved inventory state if applicable
         }
 
 
-         private void FindAndAssignSlotUIs()
+         // This method is now public and called by Inventory.Awake
+         public void FindAndAssignSlotUIs()
         {
              if (flexibleGridLayout == null)
              {
@@ -128,7 +139,7 @@ namespace Systems.Inventory
                 {
                     slotUI.SlotIndex = i; // Assign index
                     // ParentInventory is assigned by the Inventory script after Combiner is found
-                    // slotUI.ParentInventory = this.ParentInventory; // This would be done by Inventory
+                    slotUI.ParentInventory = this.ParentInventory; // Assign Parent Inventory Reference on the SlotUI as well
                     foundSlots.Add(slotUI);
                      // Debug.Log($"Combiner: Found and assigned InventorySlotUI at index {i} on {slotGameObject.name}.", this); // Optional: very verbose
                 }
@@ -152,7 +163,7 @@ namespace Systems.Inventory
 
         private void Start()
         {
-            // Only attempt to link if we have Combiner and Visualizer
+            // Only attempt to link if we have InventoryState and Visualizer
             if (inventoryState != null && visualizer != null) // Check inventoryState instead of combiner
             {
                  visualizer.SetInventoryState(inventoryState); // This also triggers InitialLoad
@@ -161,23 +172,31 @@ namespace Systems.Inventory
             }
             else
             {
-                Debug.LogError($"Combiner ({gameObject.name}): Cannot fully initialize in Start because InventoryState or Visualizer is null. Check previous Awake/InitializeInventoryData logs.", this);
+                // This error is likely already logged by Inventory or in InitializeInventoryData
+                // Debug.LogError($"Combiner ({gameObject.name}): Cannot fully initialize in Start because InventoryState or Visualizer is null. Check previous Awake/InitializeInventoryData logs.", this);
             }
         }
 
         private void OnDestroy()
         {
-             // Ensure unsubscribe from ObservableArray events if Visualizer is destroyed separately
-             // Visualizer's OnDestroy handles its own unsubscription, which is cleaner.
+             // Visualizer's OnDestroy handles its own unsubscription.
         }
 
         /// <summary>
         /// Checks if an item is allowed to be placed in this inventory based on its ItemLabel.
-        /// This method is called by ParentInventory.CanAddItem, which is the public interface.
-        /// It's kept here for internal Combiner logic that might need it (like TryAddQuantity).
+        /// This method accesses the filtering rules from the ParentInventory.
+        /// It is called by ParentInventory.CanAddItem, which is the public interface,
+        /// and potentially by other internal Combiner methods if needed (though removed redundant calls).
         /// </summary>
         internal bool CheckFiltering(Item item) // Changed to internal as ParentInventory is the public access
         {
+             // --- ACCESS FILTERING RULES FROM PARENT INVENTORY ---
+             if (ParentInventory == null)
+             {
+                 Debug.LogError($"Combiner ({gameObject.name}): Cannot check filtering, ParentInventory reference is null.", this);
+                 return false;
+             }
+
              // Null checks for safety
             if (item == null || item.details == null)
             {
@@ -185,95 +204,64 @@ namespace Systems.Inventory
                 return false; // Cannot add a null or detail-less item
             }
 
+            // Get filtering rules from ParentInventory
+            List<ItemLabel> parentAllowedLabels = ParentInventory.AllowedLabels; // Use the public property
+            bool parentAllowAllIfListEmpty = ParentInventory.AllowAllIfListEmpty; // Use the public property
+
+
             // If the allowed list is null or empty and allowAllIfListEmpty is true, bypass filtering
-            if (allowedLabels == null || allowedLabels.Count == 0)
+            if (parentAllowedLabels == null || parentAllowedLabels.Count == 0)
             {
-                return allowAllIfListEmpty;
+                return parentAllowAllIfListEmpty;
             }
 
             // Check if the item's label is in the allowed list
-            return allowedLabels.Contains(item.details.itemLabel);
+            return parentAllowedLabels.Contains(item.details.itemLabel);
         }
 
 
         /// <summary>
-        /// Attempts to add a quantity of a stackable item or a single non-stackable item instance
-        /// to the inventory's physical slots. Prioritizes stacking, then empty slots.
+        /// Attempts to add a quantity of a stackable item to the inventory's physical slots.
+        /// Prioritizes stacking, then empty slots.
         /// Modifies the quantity of the input 'itemToAdd' instance to reflect any quantity
         /// that could *not* be added.
+        /// This method is for STACKABLE items ONLY (maxStack > 1).
+        /// Filtering check should be done by the caller (e.g., Inventory.AddItem).
         /// </summary>
-        /// <param name="itemToAdd">The Item instance containing the quantity/instance to add. Its quantity will be reduced by the amount successfully added.</param>
+        /// <param name="itemToAdd">The stackable Item instance containing the quantity to add. Its quantity will be reduced by the amount successfully added.</param>
         /// <param name="maxQuantityToAttempt">Optional: The maximum quantity to attempt to add from the itemToAdd instance. If -1, attempts to add itemToAdd.quantity.</param>
         /// <returns>The actual quantity of the item successfully added to the inventory.</returns>
-        public int TryAddQuantity(Item itemToAdd, int maxQuantityToAttempt = -1)
+        internal int TryAddQuantity(Item itemToAdd, int maxQuantityToAttempt = -1) // Changed to internal
         {
-            // Basic validation
+            // --- RESTRICT TO STACKABLE ---
             if (itemToAdd == null || itemToAdd.details == null)
             {
                 Debug.LogWarning($"Combiner ({gameObject.name}): TryAddQuantity - Attempted to add a null or detail-less item.");
                 return 0;
             }
+             if (itemToAdd.details.maxStack <= 1)
+             {
+                  Debug.LogError($"Combiner ({gameObject.name}): TryAddQuantity called with non-stackable item '{itemToAdd.details.Name}'. This method is for stackable items only.", this);
+                  return 0;
+             }
+            // --- END RESTRICT ---
 
-            // Check filtering *before* attempting to add anything
-            // Use the internal CheckFiltering method
-            if (!CheckFiltering(itemToAdd))
-            {
-                Debug.LogWarning($"Combiner ({gameObject.name}): TryAddQuantity - Item '{itemToAdd.details?.Name ?? "Unknown"}' with label '{itemToAdd.details?.itemLabel.ToString() ?? "None"}' is not allowed in this inventory.");
-                // itemToAdd.quantity remains unchanged here as nothing was added
-                return 0; // Item type not allowed, reject addition
-            }
+            // REMOVED: Redundant filtering check here. Assume caller (Inventory.AddItem) has checked.
+
 
             int quantityToAttempt = (maxQuantityToAttempt == -1 || maxQuantityToAttempt > itemToAdd.quantity) ? itemToAdd.quantity : maxQuantityToAttempt;
-            int quantityRemainingToAttempt = quantityToAttempt;
-            int quantityAdded = 0;
+            int quantityAdded = 0; // Track how much was successfully added
+            int quantityRemainingToAttempt = quantityToAttempt; // Stackable remaining starts at quantityToAttempt
 
             if (quantityToAttempt <= 0)
             {
-                 Debug.Log($"Combiner ({gameObject.name}): TryAddQuantity - Quantity to attempt is 0 or less ({quantityToAttempt}). Nothing to add.");
-                 // itemToAdd.quantity remains unchanged
+                 Debug.Log($"Combiner ({gameObject.name}): TryAddQuantity - Stackable quantity to attempt is 0 or less ({quantityToAttempt}). Nothing to add.");
                  return 0;
             }
 
-            Debug.Log($"Combiner ({gameObject.name}): Attempting to add {quantityToAttempt} of {itemToAdd.details.Name}.");
+            Debug.Log($"Combiner ({gameObject.name}): Attempting to add stackable {itemToAdd.details.Name} (Initial Qty to Attempt: {quantityRemainingToAttempt}).");
 
-
-            // --- Handle Non-Stackable Items (maxStack == 1) ---
-            // For non-stackable items, we can only add the single instance.
-            // We only proceed if quantityToAttempt is 1 (which it should be for a non-stackable instance).
-            if (itemToAdd.details.maxStack == 1)
-            {
-                 if (quantityToAttempt > 1)
-                 {
-                      Debug.LogWarning($"Combiner ({gameObject.name}): TryAddQuantity - Attempted to add quantity > 1 ({quantityToAttempt}) for non-stackable item '{itemToAdd.details.Name}'. Only attempting to add 1 instance.");
-                      quantityToAttempt = 1; // Clamp to 1 for non-stackable
-                      quantityRemainingToAttempt = 1;
-                 }
-
-                 // Find the first empty physical slot
-                 for (int i = 0; i < PhysicalSlotCount; i++)
-                 {
-                     if (inventoryState[i] == null)
-                     {
-                         // Place the original item instance into the empty slot
-                         inventoryState.SetItemAtIndex(itemToAdd, i); // Triggers SlotUpdated
-                         quantityAdded = 1;
-                         quantityRemainingToAttempt = 0; // Fully added the instance
-                         Debug.Log($"Combiner ({gameObject.name}): Added non-stackable item '{itemToAdd.details.Name}' to empty physical slot {i}.");
-                         break; // Found a slot and added the instance
-                     }
-                 }
-
-                 // Update the quantity of the original item instance (will be 0 if added, 1 if not)
-                 itemToAdd.quantity = quantityRemainingToAttempt;
-
-                 return quantityAdded; // Return 1 if added, 0 if not
-            }
-
-
-            // --- Handle Stackable Items (maxStack > 1) ---
             // Attempt to stack with existing items first
-            Debug.Log($"Combiner ({gameObject.name}): Attempting to stack {itemToAdd.details.Name} (Initial Qty to Attempt: {quantityRemainingToAttempt}).");
-
             for (int i = 0; i < PhysicalSlotCount; i++)
             {
                 Item itemInSlot = inventoryState[i]; // Get item instance in the slot
@@ -306,8 +294,7 @@ namespace Systems.Inventory
                         // If the remaining quantity is now 0 or less, we are done
                         if (quantityRemainingToAttempt <= 0)
                         {
-                            Debug.Log($"Combiner ({gameObject.name}): Item fully added/stacked into existing slots.");
-                            // itemToAdd.quantity will be updated below
+                            Debug.Log($"Combiner ({gameObject.name}): Item fully added/stacked into existing stacks.");
                             break; // Exit the stacking loop
                         }
                         // Else, continue the loop to find other stacks to add the remaining quantity to
@@ -317,8 +304,7 @@ namespace Systems.Inventory
             // If the loop finishes and quantityRemainingToAttempt is still > 0, it means the remaining quantity
             // could not be fully stacked into existing stacks.
 
-
-            // --- If quantity still remains, find empty slots ---
+            // If quantity still remains, find empty slots
             if (quantityRemainingToAttempt > 0)
             {
                  Debug.Log($"Combiner ({gameObject.name}): Remaining quantity ({quantityRemainingToAttempt}). Searching for empty slot(s).");
@@ -334,6 +320,9 @@ namespace Systems.Inventory
                          if (quantityForThisSlot > 0) // Should always be true here if quantityRemainingToAttempt > 0
                          {
                              // Create a NEW instance with the partial quantity for this new stack.
+                             // NOTE: This creates a *new* Item instance ID. If you needed to track the original instance,
+                             // you would need a different approach, but for stackables, splitting quantity
+                             // into new stacks usually implies new instances are fine.
                              Item itemToPlace = itemToAdd.details.Create(quantityForThisSlot);
 
                              // Add this item instance to the empty slot
@@ -351,7 +340,6 @@ namespace Systems.Inventory
                              if (quantityRemainingToAttempt <= 0)
                              {
                                  Debug.Log($"Combiner ({gameObject.name}): Item fully added into new slot(s).");
-                                 // itemToAdd.quantity will be updated below
                                  break; // Exit the empty slot loop
                              }
                              // Else, continue the loop to find the next empty slot for the remaining quantity
@@ -360,66 +348,127 @@ namespace Systems.Inventory
                 }
             }
 
-            // --- Update the quantity of the original item instance ---
-            // This is crucial. The item instance passed IN now reflects what *couldn't* be added.
+            // --- Update the quantity of the original item instance (Stackable) ---
+            // This is crucial for stackable items. The instance passed IN now reflects what *couldn't* be added.
             itemToAdd.quantity = quantityRemainingToAttempt;
 
-            Debug.Log($"Combiner ({gameObject.name}): TryAddQuantity finished. Added {quantityAdded}. Remaining on original item: {itemToAdd.quantity}.");
+            Debug.Log($"Combiner ({gameObject.name}): TryAddQuantity finished. Added {quantityAdded}. Remaining on original item (for caller reference): {itemToAdd.quantity}.");
 
             return quantityAdded; // Return how many were actually added
         }
 
 
         /// <summary>
-        /// Attempts to add a pre-created item instance to the inventory.
-        /// Prioritizes stacking with existing compatible stacks before finding an empty slot
+        /// Attempts to add a pre-created STACKABLE item instance to the inventory.
+        /// Prioritizes stacking with existing compatible stacks before finding empty slots
         /// and creating new stacks if the quantity exceeds maxStack.
         /// Only adds to physical slots (excluding the ghost slot).
-        /// Handles stackable items by quantity and non-stackable items by placing the instance.
         /// Returns true only if the *entire* quantity of the input item was added.
+        /// This method is for STACKABLE items ONLY (maxStack > 1).
+        /// Filtering check should be done by the caller (e.g., Inventory.AddItem).
         /// </summary>
-        /// <param name="itemToAdd">The Item instance to add (its quantity will be reduced as it's added).</param>
-        /// <returns>True if the item was fully added (either stacked or placed in empty slot/new stacks), false otherwise (inventory full).</returns>
-        // NOTE: This method's behavior is different from TryAddQuantity. It aims to add the *entire* item instance's quantity.
-        // It will be kept as is for compatibility with other potential callers (like crafting output).
-        public bool AddItem(Item itemToAdd)
+        /// <param name="itemToAdd">The stackable Item instance to add. Its quantity will be reduced as it's added.</param>
+        /// <returns>True if the item was fully added, false otherwise (inventory full or item type not allowed).</returns>
+        public bool AddStackableItems(Item itemToAdd) // Renamed from AddItem
         {
-            // Basic validation
-            if (itemToAdd == null || itemToAdd.details == null || (itemToAdd.details.maxStack > 1 && itemToAdd.quantity <= 0) || (itemToAdd.details.maxStack == 1 && itemToAdd.health <= 0 && itemToAdd.details.maxHealth > 0))
+            // --- RESTRICT TO STACKABLE ---
+            if (itemToAdd == null || itemToAdd.details == null)
             {
-                 // Check quantity for stackable, or health for durable non-stackable
-                Debug.LogWarning($"Combiner ({gameObject.name}): Attempted to add a null, detail-less, or zero/negative quantity/health item. Item: {itemToAdd?.details?.Name ?? "NULL"}, Qty: {itemToAdd?.quantity ?? 0}, Health: {itemToAdd?.health ?? 0}, MaxStack: {itemToAdd?.details?.maxStack ?? 0}, MaxHealth: {itemToAdd?.details?.maxHealth ?? 0}");
-                return false;
+                 Debug.LogWarning($"Combiner ({gameObject.name}): AddStackableItems - Attempted to add a null or detail-less item.");
+                 return false;
             }
-
-            // Check filtering *before* attempting to add anything
-             // Use the internal CheckFiltering method
-            if (!CheckFiltering(itemToAdd))
+            if (itemToAdd.details.maxStack <= 1)
             {
-                Debug.LogWarning($"Combiner ({gameObject.name}): AddItem - Item '{itemToAdd.details?.Name ?? "Unknown"}' with label '{itemToAdd.details?.itemLabel.ToString() ?? "None"}' is not allowed in this inventory.");
-                return false; // Item type not allowed, reject addition
+                 Debug.LogError($"Combiner ({gameObject.name}): AddStackableItems called with non-stackable item '{itemToAdd.details.Name}'. This method is for stackable items only.", this);
+                 return false;
             }
+             if (itemToAdd.quantity <= 0) // Also check quantity for stackables
+             {
+                 Debug.LogWarning($"Combiner ({gameObject.name}): AddStackableItems - Attempted to add stackable item '{itemToAdd.details.Name}' with zero or negative quantity ({itemToAdd.quantity}).");
+                 return false;
+             }
+            // --- END RESTRICT ---
 
+            // REMOVED: Redundant filtering check here. Assume caller (Inventory.AddItem) has checked.
 
-            // Use the new TryAddQuantity method to perform the addition logic
-            // We attempt to add the full current quantity of the itemToAdd instance.
-            int originalQuantity = itemToAdd.quantity;
-            int quantityAdded = TryAddQuantity(itemToAdd, originalQuantity); 
+            int originalQuantity = itemToAdd.quantity; // Store original quantity
 
-            // Return true only if the entire original quantity was added
-            bool fullyAdded = (quantityAdded == originalQuantity);
+            // Call TryAddQuantity. It will reduce itemToAdd.quantity and return quantity added.
+            int quantityAdded = TryAddQuantity(itemToAdd, originalQuantity);
 
-            if (!fullyAdded)
+            // Fully added if the remaining quantity on the input item is 0 or less.
+            bool fullyAdded = (itemToAdd.quantity <= 0);
+
+            if (fullyAdded)
             {
-                 Debug.LogWarning($"Combiner ({gameObject.name}): AddItem failed to add the entire quantity. Added {quantityAdded} out of {originalQuantity}. Remaining on original item: {itemToAdd.quantity}.");
+                 Debug.Log($"Combiner ({gameObject.name}): AddStackableItems successfully finished. Added {quantityAdded}. Original quantity: {originalQuantity}. Remaining on original input item: {itemToAdd.quantity}.");
             }
             else
             {
-                 Debug.Log($"Combiner ({gameObject.name}): AddItem successfully added the entire quantity ({quantityAdded}). Original item quantity is now {itemToAdd.quantity}.");
+                 Debug.LogWarning($"Combiner ({gameObject.name}): AddStackableItems failed to add the entire quantity. Added {quantityAdded} (out of {originalQuantity}). Remaining on original input item: {itemToAdd.quantity}.");
             }
 
             return fullyAdded;
         }
+
+
+        /// <summary>
+        /// Attempts to add a single NON-STACKABLE item instance to the inventory.
+        /// Finds the first available empty physical slot.
+        /// This method is for NON-STACKABLE items ONLY (maxStack == 1).
+        /// Filtering check should be done by the caller (e.g., Inventory.AddItem).
+        /// </summary>
+        /// <param name="itemToAdd">The non-stackable Item instance to add.</param>
+        /// <returns>True if the item instance was successfully added, false otherwise (inventory full or item type not allowed).</returns>
+        public bool AddSingleInstance(Item itemToAdd)
+        {
+            // --- RESTRICT TO NON-STACKABLE ---
+            if (itemToAdd == null || itemToAdd.details == null)
+            {
+                 Debug.LogWarning($"Combiner ({gameObject.name}): AddSingleInstance - Attempted to add a null or detail-less item.");
+                 return false;
+            }
+            if (itemToAdd.details.maxStack > 1)
+            {
+                 Debug.LogError($"Combiner ({gameObject.name}): AddSingleInstance called with stackable item '{itemToAdd.details.Name}'. This method is for non-stackable items only.", this);
+                 return false;
+            }
+             // For non-stackable, check health if durable, or quantity (should be 1) if non-durable
+             bool isDepletedDurable = itemToAdd.details.maxHealth > 0 && itemToAdd.health <= 0;
+             bool isDepletedNonDurable = itemToAdd.details.maxHealth <= 0 && itemToAdd.quantity <= 0; // Quantity should be 1 for these
+
+             if (isDepletedDurable || isDepletedNonDurable)
+             {
+                 Debug.LogWarning($"Combiner ({gameObject.name}): AddSingleInstance - Attempted to add a depleted non-stackable item '{itemToAdd.details.Name}' (Health: {itemToAdd.health}, Qty: {itemToAdd.quantity}).", this);
+                 return false;
+             }
+            // --- END RESTRICT ---
+
+            // REMOVED: Redundant filtering check here. Assume caller (Inventory.AddItem) has checked.
+
+            Debug.Log($"Combiner ({gameObject.name}): Attempting to add single instance of non-stackable item '{itemToAdd.details.Name}'.");
+
+            // Find the first empty physical slot
+            for (int i = 0; i < PhysicalSlotCount; i++)
+            {
+                if (inventoryState[i] == null)
+                {
+                    // Place the original item instance into the empty slot
+                    // Use SetItemAtIndex which triggers the event for the Visualizer
+                    inventoryState.SetItemAtIndex(itemToAdd, i);
+                    Debug.Log($"Combiner ({gameObject.name}): Added non-stackable item '{itemToAdd.details.Name}' to empty physical slot {i}.");
+
+                    // This method DOES NOT modify the input itemToAdd.quantity.
+                    // The caller (Inventory.AddItem) is responsible for managing the input item if this method returns true.
+                    return true; // Successfully added the instance
+                }
+            }
+
+            // If the loop finishes without finding an empty slot
+            Debug.Log($"Combiner ({gameObject.name}): Could not add non-stackable item '{itemToAdd.details.Name}'. No empty slot found.");
+            return false; // Inventory full
+        }
+
 
         /// <summary>
         /// Attempts to add a quantity of a stackable item *only* to the specific target slot provided.
@@ -427,18 +476,31 @@ namespace Systems.Inventory
         /// Modifies the quantity of the input 'itemToAdd' instance to reflect any quantity
         /// that could *not* be added to the target slot.
         /// This method is intended for specific interactions like quick transfer onto an existing stack.
+        /// This method should ONLY be called for stackable items (maxStack > 1).
+        /// Filtering check should be done by the caller (e.g., DragAndDropManager, ItemTransferHandler calling Inventory.CanAddItem).
         /// </summary>
-        /// <param name="itemToAdd">The Item instance containing the quantity to add. Its quantity will be reduced by the amount successfully added.</param>
+        /// <param name="itemToAdd">The stackable Item instance containing the quantity to add. Its quantity will be reduced by the amount successfully added.</param>
         /// <param name="targetSlotIndex">The index of the physical slot in this inventory to attempt stacking into.</param>
         /// <returns>The actual quantity of the item successfully added to the specific target slot.</returns>
         internal int TryStackQuantityToSpecificSlot(Item itemToAdd, int targetSlotIndex)
         {
-             // Basic validation
-            if (itemToAdd == null || itemToAdd.details == null || itemToAdd.details.maxStack <= 1)
+             // --- RESTRICT TO STACKABLE ---
+            if (itemToAdd == null || itemToAdd.details == null)
             {
-                Debug.LogWarning($"Combiner ({gameObject.name}): TryStackQuantityToSpecificSlot - Attempted to stack a null, detail-less, or non-stackable item, or item quantity is <= 0.");
-                return 0;
+                 Debug.LogWarning($"Combiner ({gameObject.name}): TryStackQuantityToSpecificSlot - Attempted to stack a null or detail-less item.");
+                 return 0;
             }
+             if (itemToAdd.details.maxStack <= 1)
+             {
+                  Debug.LogError($"Combiner ({gameObject.name}): TryStackQuantityToSpecificSlot called with non-stackable item '{itemToAdd.details.Name}'. This method is for stackable items only.", this);
+                  return 0;
+             }
+             if (itemToAdd.quantity <= 0) // Also check quantity for stackables
+             {
+                 Debug.Log($"Combiner ({gameObject.name}): TryStackQuantityToSpecificSlot - Quantity to attempt is 0 or less ({itemToAdd.quantity}). Nothing to add.");
+                 return 0;
+             }
+            // --- END RESTRICT ---
 
              // Ensure the target index is within the physical slot range
             if (targetSlotIndex < 0 || targetSlotIndex >= PhysicalSlotCount)
@@ -447,35 +509,20 @@ namespace Systems.Inventory
                 return 0;
             }
 
-            // Check filtering *before* attempting to add anything
-            // Use the internal CheckFiltering method
-            if (!CheckFiltering(itemToAdd))
-            {
-                Debug.LogWarning($"Combiner ({gameObject.name}): TryStackQuantityToSpecificSlot - Item '{itemToAdd.details?.Name ?? "Unknown"}' with label '{itemToAdd.details?.itemLabel.ToString() ?? "None"}' is not allowed in this inventory.");
-                // itemToAdd.quantity remains unchanged here as nothing was added
-                return 0; // Item type not allowed, reject addition
-            }
+            // REMOVED: Redundant filtering check here. Assume caller (DragAndDropManager, ItemTransferHandler) has checked via Inventory.CanAddItem.
 
             Item itemInTargetSlot = inventoryState[targetSlotIndex]; // Get item instance in the target slot
 
             // Check if the target slot has an item AND if the item being added can stack with it
+            // This check implicitly includes maxStack > 1 because of itemInTargetSlot.CanStackWith() and the early restriction check.
             if (itemInTargetSlot == null || !itemInTargetSlot.CanStackWith(itemToAdd))
             {
                  Debug.LogWarning($"Combiner ({gameObject.name}): TryStackQuantityToSpecificSlot - Target slot {targetSlotIndex} is empty or contains a non-stackable/different item. Cannot perform specific stacking.");
-                 // itemToAdd.quantity remains unchanged
                  return 0; // Target is not a valid stack target
             }
 
             int quantityToAttempt = itemToAdd.quantity;
             int quantityAdded = 0;
-
-             if (quantityToAttempt <= 0)
-            {
-                 Debug.Log($"Combiner ({gameObject.name}): TryStackQuantityToSpecificSlot - Quantity to attempt is 0 or less ({quantityToAttempt}). Nothing to add.");
-                 // itemToAdd.quantity remains unchanged
-                 return 0;
-            }
-
 
             Debug.Log($"Combiner ({gameObject.name}): Attempting to stack {quantityToAttempt} of {itemToAdd.details.Name} into specific slot {targetSlotIndex}.");
 
@@ -504,7 +551,6 @@ namespace Systems.Inventory
             else
             {
                  Debug.Log($"Combiner ({gameObject.name}): Specific target slot {targetSlotIndex} is already full for item '{itemToAdd.details.Name}'. Nothing stacked.");
-                 // itemToAdd.quantity remains unchanged
             }
 
             // Note: We DO NOT search for other slots here. Any remaining quantity is left on itemToAdd.
@@ -517,6 +563,7 @@ namespace Systems.Inventory
 
         /// <summary>
         /// Attempts to remove the item from a specific physical slot index.
+        /// Works for both stackable and non-stackable items.
         /// </summary>
         /// <param name="index">The index of the physical slot to remove from (0-based, excludes ghost slot).</param>
         /// <returns>True if an item was removed from the specified index, false otherwise (e.g., index out of bounds or slot was empty).</returns>
@@ -537,6 +584,7 @@ namespace Systems.Inventory
                 return false; // Slot is already empty
             }
 
+            // Remove the item using the ObservableArray method
             inventoryState.RemoveAt(index);
 
             Debug.Log($"Combiner ({gameObject.name}): Successfully removed item from slot {index}.");
@@ -545,17 +593,17 @@ namespace Systems.Inventory
 
         /// <summary>
         /// Attempts to remove a specific quantity of an item type from the inventory.
-        /// Searches physical slots first, removing from stacks as needed.
-        /// This method is primarily for stackable items. Removing non-stackable items by quantity is less common.
+        /// Searches physical slots first, removing from stacks as needed for stackable items,
+        /// and removing instances for non-stackable items.
         /// </summary>
         /// <param name="itemType">The ItemDetails of the type to remove.</param>
-        /// <param name="quantityToRemove">The desired quantity to remove.</param>
+        /// <param name="quantityToRemove">The desired quantity to remove (for non-stackable, this should be 1 per instance).</param>
         /// <returns>The actual quantity of the item type successfully removed.</returns>
         public int TryRemoveQuantity(ItemDetails itemType, int quantityToRemove)
         {
             if (itemType == null)
             {
-                Debug.LogWarning("Combiner ({gameObject.name}): TryRemoveQuantity - Cannot remove quantity of a null item type.");
+                Debug.LogWarning($"Combiner ({gameObject.name}): TryRemoveQuantity - Cannot remove quantity of a null item type.");
                 return 0;
             }
             if (quantityToRemove <= 0)
@@ -572,12 +620,12 @@ namespace Systems.Inventory
                 Item itemInSlot = inventoryState[i]; // Get item instance
 
                 // Check if the slot has an item and it's the same type
-                // This method is primarily designed for stackable items.
-                // If it finds a non-stackable item of the same type, it will remove it if quantityToRemove is 1.
                 if (itemInSlot != null && itemInSlot.details != null && itemInSlot.details == itemType) // Use ItemDetails == operator
                 {
                     // Determine how many to take from this stack/slot
-                    int canTake = itemInSlot.details.maxStack > 1 ? itemInSlot.quantity : 1; // Take quantity for stackable, 1 for non-stackable
+                    // For stackable, take min of remaining needed and current quantity.
+                    // For non-stackable, can only ever take 1 instance at a time.
+                    int canTake = itemInSlot.details.maxStack > 1 ? itemInSlot.quantity : 1;
                     int numToTake = Mathf.Min(quantityToRemove - quantityRemoved, canTake);
 
                     if (numToTake > 0)
@@ -592,10 +640,10 @@ namespace Systems.Inventory
 
                         quantityRemoved += numToTake; // Track total removed
 
-                        // If stackable quantity <= 0 OR it's a non-stackable item (numToTake was 1)
+                        // If stackable quantity <= 0 OR it's a non-stackable item (numToTake was 1, so we're removing the instance)
                         if ((itemInSlot.details.maxStack > 1 && itemInSlot.quantity <= 0) || itemInSlot.details.maxStack == 1)
                         {
-                            // If stack is depleted, remove the item instance completely from the slot
+                            // If stack is depleted or it's a non-stackable instance being removed, remove the item instance completely from the slot
                             inventoryState.RemoveAt(i); // Use RemoveAt which triggers event
                              Debug.Log($"Combiner ({gameObject.name}): Removed {(itemInSlot.details.maxStack > 1 ? "stack" : "item instance")} of {itemType.Name} from slot {i} (depleted/removed).");
                         }
@@ -630,6 +678,7 @@ namespace Systems.Inventory
 
         /// <summary>
         /// Attempts to remove a specific item instance from the inventory by matching its unique instance Id.
+        /// Works for both stackable and non-stackable items.
         /// Searches all slots (including potentially ghost), but typically used with physical slots.
         /// </summary>
         /// <param name="itemInstance">The exact Item instance to remove.</param>
@@ -638,11 +687,11 @@ namespace Systems.Inventory
         {
              if (itemInstance == null)
             {
-                Debug.LogWarning("Combiner ({gameObject.name}): TryRemoveInstance - Cannot remove a null item instance.");
+                Debug.LogWarning($"Combiner ({gameObject.name}): TryRemoveInstance - Cannot remove a null item instance.");
                 return false;
             }
 
-            bool removed = inventoryState.TryRemove(itemInstance);
+            bool removed = inventoryState.TryRemove(itemInstance); // ObservableArray.TryRemove uses Item.Equals (based on ID)
 
             if (removed)
             {
@@ -659,4 +708,4 @@ namespace Systems.Inventory
         // TODO: Add methods here later for initial item population triggered by game events
         // e.g., public void AddInitialItem(Item item, int targetSlotIndex = -1) { ... }
     }
-}
+}   

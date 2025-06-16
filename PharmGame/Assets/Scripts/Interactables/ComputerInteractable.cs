@@ -1,3 +1,5 @@
+// --- START OF FILE ComputerInteractable.cs ---
+
 using UnityEngine;
 using UnityEngine.UI;
 using System.Collections; // Keep if you have other coroutines, otherwise remove
@@ -6,6 +8,7 @@ using System.Text;
 using TMPro;
 using Systems.Inventory; // Needed for ItemDetails and Inventory
 using Systems.Interaction; // ADD THIS USING
+using Systems.UI; // Needed for PlayerUIPopups
 
 public class ComputerInteractable : MonoBehaviour, IInteractable
 {
@@ -18,6 +21,9 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
 
     [Tooltip("The text to display in the interaction prompt.")]
     [SerializeField] private string interactionPrompt = "Access Computer (E)";
+
+    [Tooltip("Should this interactable be enabled by default when registered?")]
+    [SerializeField] private bool enableOnStart = true;
 
     [Header("Prompt Settings")]
     public Vector3 computerTextPromptOffset = Vector3.zero;
@@ -61,6 +67,29 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
 
 
     private Dictionary<ItemDetails, int> shoppingCart = new Dictionary<ItemDetails, int>();
+
+    // --- NEW: Awake Method for Registration ---
+    private void Awake()
+    {
+         // --- NEW: Register with the singleton InteractionManager ---
+         if (Systems.Interaction.InteractionManager.Instance != null) // Use full namespace if needed
+         {
+             Systems.Interaction.InteractionManager.Instance.RegisterInteractable(this);
+         }
+         else
+         {
+             // This error is critical as the component won't be managed
+             Debug.LogError($"ComputerInteractable on {gameObject.name}: InteractionManager.Instance is null in Awake! Cannot register.", this);
+             // Optionally disable here if registration is absolutely required for function
+             // enabled = false;
+         }
+         // --- END NEW ---
+
+         // REMOVED: Any manual enabled = false calls from Awake if they existed
+         // The InteractionManager handles the initial enabled state.
+    }
+    // --- END NEW ---
+
 
     // --- Existing IInteractable methods ---
     public void ActivatePrompt()
@@ -131,6 +160,13 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
         if(item1Button != null) item1Button.onClick.RemoveAllListeners();
         if(item2Button != null) item2Button.onClick.RemoveAllListeners();
         if(buyButton != null) buyButton.onClick.RemoveAllListeners();
+
+        // --- NEW: Unregister from the singleton InteractionManager ---
+        if (Systems.Interaction.InteractionManager.Instance != null)
+        {
+             Systems.Interaction.InteractionManager.Instance.UnregisterInteractable(this);
+        }
+        // --- END NEW ---
     }
 
     /// <summary>
@@ -162,7 +198,7 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
         EnterComputerResponse response = new EnterComputerResponse(
             cameraViewPoint,
             cameraMoveDuration,
-            computerUIContainer, 
+            computerUIContainer,
             this
         );
 
@@ -221,7 +257,7 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
         }
         else
         {
-            foreach (KeyValuePair<ItemDetails, int> itemEntry in shoppingCart) // Iterate using KeyValuePair<ItemDetails, int>
+            foreach (KeyValuePair<ItemDetails, int> itemEntry in new Dictionary<ItemDetails, int>(shoppingCart)) // Iterate using KeyValuePair<ItemDetails, int>
             {
                 // Get the item name from the ItemDetails key
                 cartDisplay.AppendLine($"{itemEntry.Value}x {itemEntry.Key.Name}"); // Use itemEntry.Key.Name
@@ -240,15 +276,26 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
     {
         Debug.Log("ComputerInteractable: Processing purchase!");
 
-        if (targetDeliveryInventory == null || targetDeliveryInventory.Combiner == null)
+        // We now just need the target Inventory, not its Combiner directly
+        if (targetDeliveryInventory == null) // *** MODIFIED CHECK ***
         {
-            Debug.LogError("ComputerInteractable: Target Delivery Inventory or its Combiner is not assigned or found! Cannot deliver items.", this);
+            Debug.LogError("ComputerInteractable: Target Delivery Inventory is not assigned! Cannot deliver items.", this);
+            PlayerUIPopups.Instance?.ShowPopup("Purchase Failed", "Delivery inventory not set up!"); // Added popup
             return;
         }
+        // Optional: Check if the Inventory *does* have a Combiner, as AddItem relies on it
+        if (targetDeliveryInventory.Combiner == null)
+         {
+             Debug.LogError("ComputerInteractable: Target Delivery Inventory is missing its Combiner component! Cannot deliver items.", this);
+             PlayerUIPopups.Instance?.ShowPopup("Purchase Failed", "Delivery inventory misconfigured!"); // Added popup
+             return;
+         }
+
 
         if (shoppingCart.Count == 0)
         {
              Debug.Log("ComputerInteractable: Shopping cart is empty. Nothing to purchase.");
+             PlayerUIPopups.Instance?.ShowPopup("Purchase Failed", "Your cart is empty!"); // Added popup
              return;
         }
 
@@ -272,13 +319,13 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
             // --- Create Item instances respecting maxStack ---
             int quantityRemaining = totalQuantityToCreate;
 
-            // If maxStack is 1 or less, create individual items for each quantity
-            if (details.maxStack <= 1)
+            // If maxStack is 1, create individual instances
+            if (details.maxStack == 1) // Check specifically for maxStack == 1 for single instances
             {
                 for (int i = 0; i < totalQuantityToCreate; i++)
                 {
                     itemsToDeliver.Add(details.Create(1)); // Create item with quantity 1
-                     Debug.Log($"ComputerInteractable: Created 1x {details.Name} instance (maxStack <= 1).");
+                     Debug.Log($"ComputerInteractable: Created 1x {details.Name} instance (maxStack 1).");
                 }
             }
             else // If maxStack is greater than 1, create full stacks and remaining items
@@ -305,30 +352,40 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
         // --- Add the created Item instances to the delivery inventory ---
         Debug.Log($"ComputerInteractable: Delivering {itemsToDeliver.Count} item instances to inventory.");
 
-        bool allAddedSuccessfully = true;
+        bool anyFailedToAdd = false; // Flag to track if ANY item failed to add
+
         foreach (Item itemInstance in itemsToDeliver)
         {
-            // Use the Combiner's AddItem method for each individual instance
-            bool added = targetDeliveryInventory.Combiner.AddItem(itemInstance);
+            // Use the public AddItem method on the target Inventory
+            // Inventory.AddItem will handle the logic based on itemInstance's maxStack
+            bool added = targetDeliveryInventory.AddItem(itemInstance); // *** MODIFIED ***
 
             if (!added)
             {
-                 // If AddItem fails for any instance (inventory full), log a warning
-                 // You might want more sophisticated error handling here (e.g., refund, partial delivery)
-                 Debug.LogWarning($"ComputerInteractable: Failed to add item instance ({itemInstance.details?.Name}, Qty: {itemInstance.quantity}) to delivery inventory. It might be full.", this);
-                 allAddedSuccessfully = false;
+                 // If AddItem fails for any instance (inventory full or filtering disallowed), log a warning
+                 // The itemInstance.quantity will reflect what couldn't be added (0 if non-stackable, >0 if stackable partial fail)
+                 Debug.LogWarning($"ComputerInteractable: Failed to add item instance '{itemInstance.details?.Name ?? "Unknown"}' (Initial Qty: {itemInstance.quantity}) to delivery inventory. Remaining on instance: {itemInstance.quantity}. It might be full or filtering disallowed.", this);
+                 anyFailedToAdd = true;
                  // Decide if you want to stop adding if the inventory becomes full mid-delivery
                  // For now, it will continue trying to add remaining items.
             }
+             else
+             {
+                 // Log success message including remaining quantity (should be 0 if fully added)
+                  Debug.Log($"ComputerInteractable: Successfully added item instance '{itemInstance.details?.Name ?? "Unknown"}' to delivery inventory. Remaining on instance: {itemInstance.quantity}.");
+             }
         }
 
-         if (allAddedSuccessfully)
+         // Provide feedback based on whether any items failed to add
+         if (!anyFailedToAdd) // If no items failed to add
          {
-             Debug.Log("ComputerInteractable: All item instances successfully delivered.");
+             Debug.Log("ComputerInteractable: All purchased item instances successfully delivered.");
+             PlayerUIPopups.Instance?.ShowPopup("Purchase Complete", "Your order has been placed!"); // Added popup
          }
          else
          {
-             Debug.LogWarning("ComputerInteractable: Some item instances could not be delivered.", this);
+             Debug.LogWarning("ComputerInteractable: Some purchased item instances could not be delivered.", this);
+             PlayerUIPopups.Instance?.ShowPopup("Delivery Failed", "Some items could not be delivered! Inventory might be full."); // Added popup
          }
 
 
