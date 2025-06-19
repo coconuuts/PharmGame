@@ -705,7 +705,135 @@ namespace Systems.Inventory
             return removed;
         }
 
+        /// <summary>
+        /// Attempts to find a specific item instance by its unique instance Id and reduce its health.
+        /// Primarily for non-stackable durable items.
+        /// Notifies the ObservableArray of the change or removal.
+        /// </summary>
+        /// <param name="instanceId">The unique ID of the item instance to modify.</param>
+        /// <param name="healthToReduce">The amount of health to reduce.</param>
+        /// <returns>True if the instance was found and health was reduced (or item removed), false otherwise.</returns>
+        public bool ReduceHealthOnInstance(SerializableGuid instanceId, int healthToReduce)
+        {
+            if (instanceId == SerializableGuid.Empty)
+            {
+                Debug.LogWarning($"Combiner ({gameObject.name}): ReduceHealthOnInstance - Cannot reduce health for an empty instance ID.");
+                return false;
+            }
+            if (healthToReduce <= 0)
+            {
+                Debug.LogWarning($"Combiner ({gameObject.name}): ReduceHealthOnInstance - Health to reduce must be positive ({healthToReduce}).");
+                return false;
+            }
+            if (inventoryState == null)
+            {
+                 Debug.LogError($"Combiner ({gameObject.name}): ReduceHealthOnInstance - InventoryState is null.");
+                 return false;
+            }
+
+            // Iterate through all slots (physical and ghost) to find the instance
+            for (int i = 0; i < inventoryState.Length; i++)
+            {
+                Item itemInSlot = inventoryState[i];
+
+                // Check if the slot has an item and it matches the instance ID
+                if (itemInSlot != null && itemInSlot.Id == instanceId)
+                {
+                    // Found the instance, now check if it's durable
+                    if (itemInSlot.details == null || itemInSlot.details.maxHealth <= 0 || itemInSlot.details.maxStack > 1)
+                    {
+                        Debug.LogWarning($"Combiner ({gameObject.name}): ReduceHealthOnInstance - Found item '{itemInSlot.details?.Name ?? "Unknown"}' (ID: {instanceId}) but it is not a non-stackable durable item. Cannot reduce health.", this);
+                        return false; // Not a durable item
+                    }
+
+                    // Reduce health, clamping at 0
+                    int oldHealth = itemInSlot.health;
+                    itemInSlot.health = Mathf.Max(0, itemInSlot.health - healthToReduce);
+                    int actualReduced = oldHealth - itemInSlot.health;
+
+                    Debug.Log($"Combiner ({gameObject.name}): Reduced health of '{itemInSlot.details.Name}' (ID: {instanceId}) by {actualReduced} (attempted {healthToReduce}). New health: {itemInSlot.health}.");
+
+                    // Notify the ObservableArray of the change
+                    if (itemInSlot.health <= 0)
+                    {
+                        // If health reached zero, remove the item instance completely
+                        Debug.Log($"Combiner ({gameObject.name}): Item '{itemInSlot.details.Name}' (ID: {instanceId}) health reached zero. Removing instance from slot {i}.");
+                        inventoryState.RemoveAt(i); // Use RemoveAt to trigger event
+                    }
+                    else
+                    {
+                        // Health reduced but still positive, just update the slot to trigger UI update
+                        inventoryState.SetItemAtIndex(itemInSlot, i); // Triggers SlotUpdated
+                    }
+
+                    return true; // Instance found and health modified/item removed
+                }
+            }
+
+            // If the loop finishes without finding the instance
+            Debug.LogWarning($"Combiner ({gameObject.name}): ReduceHealthOnInstance - Item instance with ID {instanceId} not found in inventory.", this);
+            return false; // Instance not found
+        }
+
+
+        /// <summary>
+        /// Attempts to find a specific item instance by its unique instance Id and set its health.
+        /// Primarily for non-stackable durable items.
+        /// Notifies the ObservableArray of the change.
+        /// </summary>
+        /// <param name="instanceId">The unique ID of the item instance to modify.</param>
+        /// <param name="healthToSet">The health value to set.</param>
+        /// <returns>True if the instance was found and health was set, false otherwise.</returns>
+        public bool SetHealthOnInstance(SerializableGuid instanceId, int healthToSet)
+        {
+             if (instanceId == SerializableGuid.Empty)
+            {
+                Debug.LogWarning($"Combiner ({gameObject.name}): SetHealthOnInstance - Cannot set health for an empty instance ID.");
+                return false;
+            }
+             if (inventoryState == null)
+             {
+                 Debug.LogError($"Combiner ({gameObject.name}): SetHealthOnInstance - InventoryState is null.");
+                 return false;
+             }
+
+            // Iterate through all slots (physical and ghost) to find the instance
+            for (int i = 0; i < inventoryState.Length; i++)
+            {
+                Item itemInSlot = inventoryState[i];
+
+                // Check if the slot has an item and it matches the instance ID
+                if (itemInSlot != null && itemInSlot.Id == instanceId)
+                {
+                    // Found the instance, now check if it's durable
+                    if (itemInSlot.details == null || itemInSlot.details.maxHealth <= 0 || itemInSlot.details.maxStack > 1)
+                    {
+                        Debug.LogWarning($"Combiner ({gameObject.name}): SetHealthOnInstance - Found item '{itemInSlot.details?.Name ?? "Unknown"}' (ID: {instanceId}) but it is not a non-stackable durable item. Cannot set health.", this);
+                        return false; // Not a durable item
+                    }
+
+                    // Use the Item's SetHealth method which handles clamping and gun logic
+                    itemInSlot.SetHealth(healthToSet);
+
+                    Debug.Log($"Combiner ({gameObject.name}): Set health of '{itemInSlot.details.Name}' (ID: {instanceId}) to {itemInSlot.health}.");
+
+                    // Notify the ObservableArray of the change
+                    // Even if health is 0 after setting, we don't remove here.
+                    // Removal on health=0 is handled by the usage logic (ReduceHealthOnInstance)
+                    // or other systems explicitly removing depleted items.
+                    inventoryState.SetItemAtIndex(itemInSlot, i); // Triggers SlotUpdated
+
+                    return true; // Instance found and health set
+                }
+            }
+
+            // If the loop finishes without finding the instance
+            Debug.LogWarning($"Combiner ({gameObject.name}): SetHealthOnInstance - Item instance with ID {instanceId} not found in inventory.", this);
+            return false; // Instance not found
+        }
+
+
         // TODO: Add methods here later for initial item population triggered by game events
         // e.g., public void AddInitialItem(Item item, int targetSlotIndex = -1) { ... }
     }
-}   
+}

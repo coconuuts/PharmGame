@@ -15,6 +15,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
     /// IInteractable component for NPCs in the WaitingForDelivery state,
     /// allowing the player to deliver the crafted item.
     /// --- MODIFIED: Added Registration with InteractionManager singleton. ---
+    /// --- MODIFIED: Added check for exact health match during delivery. ---
     /// </summary>
     [RequireComponent(typeof(NpcStateMachineRunner))] // Ensure Runner is present
     public class DeliverPrescription : MonoBehaviour, IInteractable
@@ -87,13 +88,12 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
         /// <summary>
         /// Handles the player interacting with this component to deliver a prescription.
         /// Checks player inventory for the correct item and completes the delivery if found.
+        /// Checks if the health of the delivered item exactly matches the required amount.
         /// </summary>
         /// <returns>An InteractionResponse object describing the result of the interaction.</returns>
         public InteractionResponse Interact()
         {
             Debug.Log($"{gameObject.name}: Interact called on DeliverPrescription.", this);
-
-            // --- PHASE 5 LOGIC ---
 
             // 1. Get PlayerPrescriptionTracker and the active order.
             GameObject playerGO = GameObject.FindGameObjectWithTag("Player"); // Assuming player has the "Player" tag
@@ -111,7 +111,8 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
             }
 
             PrescriptionOrder activeOrder = playerTracker.ActivePrescriptionOrder.Value;
-            Debug.Log($"{gameObject.name}: Player has active order for '{activeOrder.prescribedDrug}'. Checking inventory.", this);
+            int requiredTotalUnits = activeOrder.dosePerDay * activeOrder.lengthOfTreatmentDays; // Calculate the required total units
+            Debug.Log($"{gameObject.name}: Player has active order for '{activeOrder.prescribedDrug}'. Required total units: {requiredTotalUnits}. Checking inventory.", this);
 
 
             // 2. Get the expected ItemDetails using the PrescriptionManager.
@@ -150,7 +151,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
 
             // 4. Check the player's toolbar inventory for the expected item.
             bool foundCorrectItem = false;
-            // Item itemToConsume = null; // No longer needed if using TryRemoveQuantity by details
+            bool isDeliveredItemPerfectMatch = false; // <-- NEW: Flag for health match
 
             Item[] inventoryItems = playerInventory.Combiner.InventoryState.GetCurrentArrayState();
             // Only check physical slots
@@ -158,31 +159,51 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
             {
                  Item itemInSlot = inventoryItems[i];
 
-                 // Check if the slot has an item, it's the correct type, has the correct label, and quantity >= 1
-                 if (itemInSlot != null &&
-                     itemInSlot.details == expectedItemDetails && // Use ItemDetails == operator for type check
-                     itemInSlot.details.itemLabel == ItemLabel.PrescriptionPrepared && // Check for the specific label
-                     itemInSlot.quantity >= 1) // Ensure there's at least one to deliver
+                 // --- ADD DEBUG LOGS HERE ---
+                 Debug.Log($"DeliverPrescription ({gameObject.name}): Checking player inventory slot {i}. Item: {(itemInSlot != null ? itemInSlot.details?.Name ?? "NULL Details" : "Empty")}.", this);
+
+                 if (itemInSlot != null && itemInSlot.details != null)
                  {
-                      Debug.Log($"{gameObject.name}: Found correct delivery item '{itemInSlot.details.Name}' in player inventory slot {i}.", this);
-                      foundCorrectItem = true;
-                      // itemToConsume = itemInSlot; // Not needed
-                      break; // Found the item, no need to check other slots
+                      bool detailsMatch = (itemInSlot.details == expectedItemDetails); // Use ItemDetails == operator
+                      bool labelMatches = (itemInSlot.details.itemLabel == ItemLabel.PrescriptionPrepared);
+
+                      // Check if the slot has the correct type and label
+                      if (detailsMatch && labelMatches)
+                      {
+                           // --- NEW: Perform the health check for perfect match ---
+                           Debug.Log($"  - Details Match Expected ('{expectedItemDetails.Name}'): {detailsMatch}", itemInSlot.details);
+                           Debug.Log($"  - Label Is PrescriptionPrepared ({ItemLabel.PrescriptionPrepared}): {labelMatches}", itemInSlot.details);
+                           Debug.Log($"  - Item is non-stackable durable ({itemInSlot.details.maxStack == 1 && itemInSlot.details.maxHealth > 0}): {itemInSlot.details.maxStack == 1 && itemInSlot.details.maxHealth > 0}", itemInSlot.details);
+                           Debug.Log($"  - Delivered Item Health ({itemInSlot.health}): {itemInSlot.health}", itemInSlot.details);
+                           Debug.Log($"  - Required Total Units ({requiredTotalUnits}): {requiredTotalUnits}");
+
+                           // Check if the delivered item's health exactly matches the required total units
+                           isDeliveredItemPerfectMatch = (itemInSlot.health == requiredTotalUnits);
+                           Debug.Log($"  - Health Matches Required Units: {isDeliveredItemPerfectMatch}");
+                           // --- END NEW ---
+
+
+                           // We found the correct item type (regardless of health match)
+                           Debug.Log($"{gameObject.name}: Found correct delivery item type '{itemInSlot.details.Name}' in player inventory slot {i}.", this);
+                           foundCorrectItem = true;
+                           // Break the loop as we only need to find one instance to deliver
+                           break; 
+                      }
                  }
-                 // Optional: Debug log for items that don't match
-                 // else if (itemInSlot != null && itemInSlot.details != null)
-                 // {
-                 //      Debug.Log($"Checking slot {i}: Item '{itemInSlot.details.Name}', Label '{itemInSlot.details.itemLabel}', Qty {itemInSlot.quantity}. Expected: '{expectedItemDetails.Name}', Label '{ItemLabel.PrescriptionPrepared}'. No match.", this);
-                 // }
+                 // --- END DEBUG LOGS ---
             }
 
 
             // 5. Handle success or failure.
             if (foundCorrectItem)
             {
-                Debug.Log($"{gameObject.name}: Correct item found. Completing delivery!", this);
+                // If we found the correct item type (even if health didn't match exactly)
+                Debug.Log($"{gameObject.name}: Correct item type found. Completing delivery!", this);
 
                 // Consume 1 of the crafted item from the player's inventory.
+                // We consume by ItemDetails here, assuming the inventory system will find *an* instance.
+                // A more robust system might consume the specific item instance found in the loop.
+                // For now, let's rely on TryRemoveQuantity finding one.
                 int removedCount = playerInventory.Combiner.TryRemoveQuantity(expectedItemDetails, 1);
 
                 if (removedCount == 1)
@@ -220,18 +241,21 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
 
 
                     // Publish an event to signal delivery completion (for NPC state transition).
-                    Debug.Log($"{gameObject.name}: Publishing NpcPrescriptionDeliveredEvent.", this);
-                    EventManager.Publish(new NpcPrescriptionDeliveredEvent(this.gameObject, activeOrder)); // Pass NPC object and order details
+                    // --- NEW: Pass the perfect match flag in the event ---
+                    Debug.Log($"PrescriptionManager: Publishing NpcPrescriptionDeliveredEvent with IsPerfectDelivery = {isDeliveredItemPerfectMatch}.", this);
+                    EventManager.Publish(new NpcPrescriptionDeliveredEvent(this.gameObject, activeOrder, isDeliveredItemPerfectMatch)); // <-- Pass the flag
+                    // --- END NEW ---
+
 
                     // Provide positive player feedback.
-                    // TODO: Implement a proper success popup/message
-                    Debug.Log("DELIVERY SUCCESS! (Placeholder UI Feedback)");
+                    // TODO: Implement a proper success popup/message that includes perfect/imperfect feedback
+                    Debug.Log($"DELIVERY COMPLETE! Perfect Match: {isDeliveredItemPerfectMatch} (Placeholder UI Feedback)");
                     return null; // Indicates successful interaction, event handles state change
 
                 }
                 else
                 {
-                    // This should not happen if foundCorrectItem was true and quantity was >= 1, but defensive check.
+                    // This should not happen if foundCorrectItem was true, but defensive check.
                     Debug.LogError($"{gameObject.name}: Failed to consume 1 item from player inventory after finding it! Removed count: {removedCount}. Logic error.", this);
                     // Provide failure feedback?
                     return null; // Indicate failure
@@ -239,14 +263,14 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
             }
             else
             {
-                Debug.LogWarning($"{gameObject.name}: Correct delivery item not found in player inventory.", this);
+                // Item type not found in inventory
+                Debug.LogWarning($"{gameObject.name}: Correct delivery item type not found in player inventory.", this);
                 // Provide negative player feedback.
-                PlayerUIPopups.Instance?.ShowPopup("Cannot Deliver", "I don't have the right prescription yet!"); // Use the configured name and pass message
+                PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "I don't have the right prescription yet!"); // Use the configured name and pass message
 
                 // Return a failure InteractionResponse (null indicates no state change or complex action)
                 return null;
             }
-            // --- END PHASE 5 LOGIC ---
         }
 
         // --- OnDisable/OnDestroy cleanup ---

@@ -137,15 +137,116 @@ namespace Systems.Inventory
                  else
                  {
                      // Non-durable non-stackable (quantity 1 consumable): Usable if quantity > 0 (should be 1)
-                     // This case is primarily for items like a single piece of fruit that are consumed entirely.
                      // The quantity field acts as a simple "does this instance still exist" flag here.
                      return quantity > 0;
                  }
              }
         }
 
+        /// <summary>
+        /// Sets the health of this item instance. Primarily for non-stackable durable items.
+        /// Clamps the new health between 0 and maxHealth.
+        /// For guns, updates total health and recalculates magazine/reserve.
+        /// </summary>
+        /// <param name="newHealth">The new health value to set.</param>
+        public void SetHealth(int newHealth)
+        {
+            if (details == null)
+            {
+                // Corrected context to null or a default object if available
+                Debug.LogWarning($"Item ({Id}): Attempted to set health on item with null details."); // Removed 'this' context
+                return;
+            }
 
-        // --- Equality Implementation (Based on Instance Id) ---
+            if (details.maxStack > 1)
+            {
+                // Corrected context to details (ScriptableObject is Object)
+                Debug.LogWarning($"Item ({Id}): Attempted to set health on stackable item '{details.Name}'. Health is not used for stackable items.", details);
+                return;
+            }
+
+            if (details.maxHealth <= 0)
+            {
+                 // Corrected context to details (ScriptableObject is Object)
+                 Debug.LogWarning($"Item ({Id}): Attempted to set health on non-stackable item '{details.Name}' with maxHealth <= 0. Health is not relevant for this item type.", details);
+                 return;
+            }
+
+            // Clamp the new health value
+            int clampedHealth = Mathf.Clamp(newHealth, 0, details.maxHealth);
+
+            // Update total health
+            this.health = clampedHealth;
+            Debug.Log($"Item ({Id}): Set total health for '{details.Name}' to {this.health}.");
+
+
+            // --- Handle Gun-Specific Health Update ---
+            if (details.usageLogic == ItemUsageLogic.GunLogic && details.magazineSize > 0)
+            {
+                // When total health changes for a gun, we need to update magazine and reserve.
+                // A common approach when setting total health is to put it all into reserve
+                // and potentially empty the magazine, or try to fill the magazine first.
+                // Let's try to fill the magazine first, then put the rest in reserve.
+
+                int ammoToFillMag = Mathf.Min(details.magazineSize - currentMagazineHealth, this.health - currentMagazineHealth); // Ammo available to move to mag without exceeding mag size or total health
+
+                currentMagazineHealth += ammoToFillMag;
+                // The remaining health is the reserve
+                totalReserveHealth = this.health - currentMagazineHealth;
+
+                 Debug.Log($"Item ({Id}): Recalculated gun ammo after setting total health. Magazine: {currentMagazineHealth}, Reserve: {totalReserveHealth}.");
+
+                 // If the gun was reloading, setting health might finish or interrupt it.
+                 // Decide policy: Setting health usually means external ammo change, likely stops reload.
+                 // Or, let reload continue but update values. Let's stop reload for simplicity.
+                 if (isReloading)
+                 {
+                      Debug.Log($"Item ({Id}): Reload interrupted by SetHealth call.");
+                      isReloading = false;
+                      reloadStartTime = 0.0f;
+                 }
+            }
+            // Note: For other durable types, setting total health is sufficient.
+            // No need to notify ObservableArray here; the caller is responsible for triggering the UI update.
+        }
+
+
+        /// <summary>
+        /// Checks if this Item instance is of the same item type as another Item instance.
+        /// Compares the Id of their associated ItemDetails.
+        /// </summary>
+        public bool IsSameType(Item otherItem)
+        {
+            if (ReferenceEquals(otherItem, null))
+            {
+                return false;
+            }
+            // Must have valid details to compare types
+            if (details == null || otherItem.details == null)
+            {
+                 // If both details are null, they are considered the same type (the "null" type)
+                 // Otherwise, if one is null and the other isn't, they are different types.
+                 return details == otherItem.details; // This relies on the ItemDetails == operator handling nulls
+            }
+            // Use the ItemDetails equality operator (which compares ItemDetails.Id)
+            return details == otherItem.details;
+        }
+
+         /// <summary>
+         /// Checks if this Item instance can stack with another Item instance.
+         /// Currently based on being the same type and both being stackable (maxStack > 1).
+         /// </summary>
+         public bool CanStackWith(Item otherItem)
+         {
+             if (ReferenceEquals(otherItem, null)) return false;
+             if (details == null || otherItem.details == null) return false; // Cannot stack if details are missing
+             if (details.maxStack <= 1 || otherItem.details.maxStack <= 1) return false; // Both must be stackable
+
+             return IsSameType(otherItem); // They must be the same type
+         }
+
+
+         // --- Equality Implementation (Based on Instance Id) ---
 
         /// <summary>
         /// Checks if this Item is equal to another Item based on their unique instance Id.
@@ -221,42 +322,6 @@ namespace Systems.Inventory
         {
             return !(left == right); // Use the overloaded == operator
         }
-
-        // --- Type Comparison ---
-
-        /// <summary>
-        /// Checks if this Item instance is of the same item type as another Item instance.
-        /// Compares the Id of their associated ItemDetails.
-        /// </summary>
-        public bool IsSameType(Item otherItem)
-        {
-            if (ReferenceEquals(otherItem, null))
-            {
-                return false;
-            }
-            // Must have valid details to compare types
-            if (details == null || otherItem.details == null)
-            {
-                 // If both details are null, they are considered the same type (the "null" type)
-                 // Otherwise, if one is null and the other isn't, they are different types.
-                 return details == otherItem.details; // This relies on the ItemDetails == operator handling nulls
-            }
-            // Use the ItemDetails equality operator (which compares ItemDetails.Id)
-            return details == otherItem.details;
-        }
-
-         /// <summary>
-         /// Checks if this Item instance can stack with another Item instance.
-         /// Currently based on being the same type and both being stackable (maxStack > 1).
-         /// </summary>
-         public bool CanStackWith(Item otherItem)
-         {
-             if (ReferenceEquals(otherItem, null)) return false;
-             if (details == null || otherItem.details == null) return false; // Cannot stack if details are missing
-             if (details.maxStack <= 1 || otherItem.details.maxStack <= 1) return false; // Both must be stackable
-
-             return IsSameType(otherItem); // They must be the same type
-         }
 
 
          // TODO Serialize and Deserialize (Ensure ItemDetails reference is handled correctly during serialization)

@@ -201,7 +201,7 @@ namespace Systems.Inventory
         /// <param name="itemToAdd">The Item instance to add.</param>
         /// <returns>True if the item was fully added, false otherwise (inventory full, filtering failed, or partial add for stackable).</returns>
         // NOTE: The quantity of the input itemToAdd will be reduced for stackable items if only partially added.
-        // For non-stackable, the input itemToAdd quantity becomes 0 if successfully added (to indicate nothing remains from the input).
+        // For non-stackable, the input itemToAdd parameter's quantity is NOT modified by this method.
         public bool AddItem(Item itemToAdd) // Restored AddItem name as the public interface
         {
              if (combiner == null)
@@ -238,17 +238,17 @@ namespace Systems.Inventory
              {
                   // Add a single instance - Combiner handles finding an empty slot
                   // Store original quantity (should be 1) for logging/contract adherence
-                  int originalQuantity = itemToAdd.quantity;
-                  success = combiner.AddSingleInstance(itemToAdd);
-                  // AddSingleInstance does NOT modify itemToAdd.quantity.
-                  // We must manually set it to 0 *here* if it was successfully added
-                  // to fulfill the contract that the input parameter reflects the remainder.
-                  if (success && originalQuantity > 0) // Ensure original quantity was valid (e.g., 1)
+                  int originalQuantity = itemToAdd.quantity; // This is just for logging/debug
+                  success = combiner.AddSingleInstance(itemToAdd); // Combiner.AddSingleInstance does NOT modify itemToAdd.quantity.
+
+                  // --- MODIFIED: Removed the incorrect quantity = 0 setting ---
+                  // The quantity of a non-stackable item instance should remain 1 as long as it exists.
+                  // The input parameter is NOT used as a remainder for non-stackables.
+                  if (success)
                   {
-                       itemToAdd.quantity = 0; // Indicate to the caller that the single instance was fully added.
-                       Debug.Log($"Inventory ({gameObject.name}): Added single instance of '{itemToAdd.details.Name}'. Input quantity set to 0.");
+                       Debug.Log($"Inventory ({gameObject.name}): Added single instance of '{itemToAdd.details.Name}'. Original quantity was {originalQuantity}.");
                   }
-                  else if (!success)
+                  else // AddSingleInstance returned false
                   {
                        // Log warning about failure to add single instance
                        Debug.LogWarning($"Inventory ({gameObject.name}): Failed to add single instance of '{itemToAdd.details.Name}'. Inventory full or item depleted.");
@@ -256,10 +256,18 @@ namespace Systems.Inventory
                   }
              }
 
-             // Return true if the *entire* original item quantity/instance was added.
-             // This happens if the original itemToAdd.quantity became 0 (for stackables)
-             // or if AddSingleInstance returned true and we set itemToAdd.quantity to 0 (for non-stackables).
-             return itemToAdd.quantity <= 0;
+             // --- MODIFIED: Adjusted return logic for non-stackable items ---
+             // For stackable, return true if the original quantity was fully added (remaining quantity is 0).
+             // For non-stackable, return true if the single instance was successfully added.
+             if (itemToAdd.details.maxStack > 1)
+             {
+                 return itemToAdd.quantity <= 0; // Stackable: true if original quantity is all gone
+             }
+             else
+             {
+                 return success; // Non-stackable: true if AddSingleInstance succeeded
+             }
+             // --- END MODIFIED ---
         }
 
         // Expose Combiner methods needed by DragAndDropManager and others
@@ -304,5 +312,61 @@ namespace Systems.Inventory
              // Filtering check is assumed to have been done by the caller.
              return Combiner.TryStackQuantityToSpecificSlot(itemToAdd, targetSlotIndex);
          }
+
+        // --- NEW Wrapper Methods for Health Modification ---
+
+        /// <summary>
+        /// Attempts to find a specific item instance by its unique instance Id and reduce its health.
+        /// Primarily for non-stackable durable items.
+        /// Delegates to the Combiner's method.
+        /// </summary>
+        /// <param name="itemInstance">The exact Item instance to modify.</param>
+        /// <param name="healthToReduce">The amount of health to reduce.</param>
+        /// <returns>True if the instance was found and health was reduced (or item removed), false otherwise.</returns>
+        public bool ReduceItemHealth(Item itemInstance, int healthToReduce)
+        {
+            if (Combiner == null)
+            {
+                Debug.LogError($"Inventory ({gameObject.name}): Cannot reduce item health, Combiner is null.", this);
+                return false;
+            }
+            if (itemInstance == null)
+            {
+                 Debug.LogWarning($"Inventory ({gameObject.name}): Cannot reduce health on a null item instance.");
+                 return false;
+            }
+            // Delegate to Combiner's method
+            return Combiner.ReduceHealthOnInstance(itemInstance.Id, healthToReduce);
+        }
+
+        /// <summary>
+        /// Attempts to find a specific item instance by its unique instance Id and set its health.
+        /// Primarily for non-stackable durable items.
+        /// Delegates to the Combiner's method.
+        /// </summary>
+        /// <param name="itemInstance">The exact Item instance to modify.</param>
+        /// <param name="healthToSet">The health value to set.</param>
+        /// <returns>True if the instance was found and health was set, false otherwise.</returns>
+        public bool SetItemHealth(Item itemInstance, int healthToSet)
+        {
+             if (Combiner == null)
+            {
+                Debug.LogError($"Inventory ({gameObject.name}): Cannot set item health, Combiner is null.", this);
+                return false;
+            }
+            if (itemInstance == null)
+            {
+                 Debug.LogWarning($"Inventory ({gameObject.name}): Cannot set health on a null item instance.");
+                 return false;
+            }
+            // Delegate to Combiner's method
+            return Combiner.SetHealthOnInstance(itemInstance.Id, healthToSet);
+        }
+
+        // --- END NEW Wrapper Methods ---
+
+
+        // TODO: Add methods here later for initial item population triggered by game events
+        // e.g., public void AddInitialItem(Item item, int targetSlotIndex = -1) { ... }
     }
 }

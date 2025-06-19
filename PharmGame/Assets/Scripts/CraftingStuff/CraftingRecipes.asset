@@ -13,12 +13,17 @@ MonoBehaviour:
   m_Name: CraftingRecipes
   m_EditorClassIdentifier: 
   recipes:
-  - inputs:
+  - recipeName: PillRecipe
+    inputs:
     - itemDetails: {fileID: 11400000, guid: 69f1b03e451938640814c16dfb83e0fa, type: 2}
-      quantity: 1
+      amount: 10
+      amountType: 1
+      isPrimaryInput: 1
     - itemDetails: {fileID: 11400000, guid: 9607fa79f6d13da4288857b89316ab1c, type: 2}
-      quantity: 1
+      amount: 1
+      amountType: 0
+      isPrimaryInput: 0
     outputs:
     - itemDetails: {fileID: 11400000, guid: 95b4a37ff1d45cc43b8f2cd605fa26fa, type: 2}
-      quantity: 1
-    recipeName: PillRecipe
+      amount: 10
+      amountType: 1

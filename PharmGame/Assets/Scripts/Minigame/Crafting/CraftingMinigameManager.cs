@@ -16,6 +16,7 @@ namespace Systems.CraftingMinigames // Use the same namespace
     /// Manages the activation and orchestration of specific crafting minigames.
     /// Listens for requests from the CraftingStation to start a minigame.
     /// Handles cleanup and communicates minigame outcome (success/failure/abort) back to the station.
+    /// --- MODIFIED: Now passes actual crafted amount to the CraftingStation. ---
     /// </summary>
     public class CraftingMinigameManager : MonoBehaviour
     {
@@ -38,9 +39,15 @@ namespace Systems.CraftingMinigames // Use the same namespace
         // Event to notify the CraftingStation when the minigame is completed or aborted
         /// <summary>
         /// Event triggered when a crafting minigame session is completed or aborted.
-        /// The object parameter is a boolean: true for success, false for failure/abort.
+        /// --- MODIFIED: Now passes boolean success status AND the actual crafted amount. ---
         /// </summary>
-        public event Action<object> OnMinigameSessionCompleted;
+        /// <remarks>
+        /// The parameters are:
+        /// bool: true if the minigame reached its natural end sequence, false if aborted or critical failure.
+        /// int: The actual number of units/amount successfully crafted by the minigame (e.g., pill count).
+        /// The CraftingStation will subscribe to this event.
+        /// </remarks>
+        public event Action<bool, int> OnMinigameSessionCompleted; // <-- MODIFIED Signature
 
 
         private void Awake()
@@ -86,7 +93,8 @@ namespace Systems.CraftingMinigames // Use the same namespace
             // Clean up any active minigame if manager is destroyed
             if (currentActiveMinigame != null)
             {
-                 currentActiveMinigame.OnCraftingMinigameCompleted -= HandleActiveMinigameCompleted;
+                 // Unsubscribe using the new signature
+                 currentActiveMinigame.OnCraftingMinigameCompleted -= HandleActiveMinigameCompleted; // <-- MODIFIED Unsubscribe
                  // Call EndMinigame with true to signal cleanup due to external manager destruction
                  currentActiveMinigame.EndMinigame(true); // Call end for cleanup, mark as aborted due to destroy
                  if (currentActiveMinigame?.gameObject != null)
@@ -132,7 +140,8 @@ namespace Systems.CraftingMinigames // Use the same namespace
                 {
                     Debug.Log($"CraftingMinigameManager: Instantiated and setting up minigame for recipe '{recipe.recipeName}'.", this);
 
-                    currentActiveMinigame.OnCraftingMinigameCompleted += HandleActiveMinigameCompleted;
+                    // Subscribe using the new signature
+                    currentActiveMinigame.OnCraftingMinigameCompleted += HandleActiveMinigameCompleted; // <-- MODIFIED Subscribe
 
                     // Activate the GameObject (should be off in prefab but ensure)
                     currentActiveMinigame.gameObject.SetActive(true);
@@ -180,19 +189,21 @@ namespace Systems.CraftingMinigames // Use the same namespace
 
         /// <summary>
         /// Called when the currently active crafting minigame reports completion or abortion via its event.
+        /// --- MODIFIED: Receives actualAmount parameter. ---
         /// </summary>
-        /// <param name="resultData">A boolean: true for success, false for failure/abort.</param>
-        private void HandleActiveMinigameCompleted(object resultData)
+        /// <param name="minigameWasSuccessful">True for success, false for failure/abort.</param>
+        /// <param name="actualCraftedAmount">The actual amount crafted by the minigame.</param>
+        private void HandleActiveMinigameCompleted(bool minigameWasSuccessful, int actualCraftedAmount) // <-- MODIFIED Parameters
         {
-            bool minigameWasSuccessful = (resultData is bool success) ? success : false;
-            Debug.Log($"CraftingMinigameManager: Received completion event from active minigame. Outcome: {(minigameWasSuccessful ? "Success" : "Failure/Aborted")}.", this);
+            Debug.Log($"CraftingMinigameManager: Received completion event from active minigame. Outcome: {(minigameWasSuccessful ? "Success" : "Failure/Aborted")}, Actual Amount: {actualCraftedAmount}.", this);
 
             // Unsubscribe from the completed minigame's event and clean it up
             // Check if currentActiveMinigame is still valid before trying to unsubscribe/cleanup.
             // It might be null if EndCurrentMinigame was called externally just before this handler fired.
             if (currentActiveMinigame != null)
             {
-                 currentActiveMinigame.OnCraftingMinigameCompleted -= HandleActiveMinigameCompleted;
+                 // Unsubscribe using the new signature
+                 currentActiveMinigame.OnCraftingMinigameCompleted -= HandleActiveMinigameCompleted; // <-- MODIFIED Unsubscribe
                  // The minigame's EndMinigame method should have been called internally already
                  // by the minigame itself when it transitioned to the None state, or by an external EndCurrentMinigame call.
                  // We clear the reference and destroy the GameObject here.
@@ -210,8 +221,8 @@ namespace Systems.CraftingMinigames // Use the same namespace
             }
 
 
-            // Notify the CraftingStation that the minigame session is complete, passing the result data
-            OnMinigameSessionCompleted?.Invoke(minigameWasSuccessful); // Pass the boolean result
+            // Notify the CraftingStation that the minigame session is complete, passing the result data AND the actual amount
+            OnMinigameSessionCompleted?.Invoke(minigameWasSuccessful, actualCraftedAmount); // <-- MODIFIED Parameters
 
 
             // --- Conditional State Transition ---
@@ -226,7 +237,7 @@ namespace Systems.CraftingMinigames // Use the same namespace
             }
             else
             {
-                 // If not successful, or if MenuManager state is already changing,
+                 // If not successful (aborted or critical failure), or if MenuManager state is already changing,
                  // we let MenuManager continue its transition (likely to Playing).
                  Debug.Log($"CraftingMinigameManager: Minigame not successful OR state is already changing ({MenuManager.Instance?.currentState}). Not forcing return to InCrafting.");
             }
@@ -254,4 +265,3 @@ namespace Systems.CraftingMinigames // Use the same namespace
         }
     }
 }
-// --- END OF FILE CraftingMinigameManager.cs ---

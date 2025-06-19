@@ -206,11 +206,13 @@ namespace Game.Events // Keep events in their dedicated namespace
     {
         public GameObject NpcObject; // The GameObject of the NPC that received the delivery.
         public PrescriptionOrder OrderDetails; // The details of the order that was fulfilled. // Optional, but useful for logging/tracking
+        public bool IsPerfectDelivery; // Indicates if the item health matched the order requirement
 
-        public NpcPrescriptionDeliveredEvent(GameObject npcObject, PrescriptionOrder orderDetails)
+        public NpcPrescriptionDeliveredEvent(GameObject npcObject, PrescriptionOrder orderDetails, bool isPerfectDelivery)
         {
             NpcObject = npcObject;
             OrderDetails = orderDetails;
+            IsPerfectDelivery = isPerfectDelivery;
         }
     }
     // --- END NEW ---

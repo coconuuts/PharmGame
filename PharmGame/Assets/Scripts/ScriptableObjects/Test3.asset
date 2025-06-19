@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: Test3
   m_EditorClassIdentifier: 
   Name: Test3
-  maxStack: 3
+  maxStack: 1
   Id:
     Part1: 568358213
     Part2: 1083832071
@@ -25,8 +25,8 @@ MonoBehaviour:
   shelfArrangement: 0
   itemLabel: 7
   price: 5
-  maxHealth: 1
-  usageLogic: 3
+  maxHealth: 50
+  usageLogic: 0
   defaultVariableHealthLoss: 1
   usageEventsPerHealthLoss: 1
   healthLossPerEventThreshold: 1

@@ -1,5 +1,3 @@
-// --- START OF FILE CraftingStation.cs ---
-
 // Systems/Inventory/CraftingStation.cs
 using UnityEngine;
 using UnityEngine.UI;
@@ -8,7 +6,7 @@ using System.Linq;
 using System;
 using Systems.CraftingMinigames;
 using Systems.GameStates; // Needed for MenuManager
-using Systems.Crafting; // Needed for DrugRecipeMappingSO
+using Systems.Crafting; // Needed for DrugRecipeMappingSO, CraftingItemModifier
 using Systems.Player; // Needed for PlayerPrescriptionTracker
 using Game.Prescriptions; // Needed for PrescriptionOrder
 
@@ -25,6 +23,12 @@ namespace Systems.Inventory
     /// Handles minigame outcomes including success and abort.
     /// Now references DrugRecipeMappingSO for prescription crafting.
     /// --- MODIFIED: Uses recipe name string from DrugRecipeMappingSO. ---
+    /// --- MODIFIED: Added logic to reset from Outputting to Inputting if output is empty on UI open. ---
+    /// --- MODIFIED: Updated CheckForRecipeMatch to use separate primary/secondary input lists. ---
+    /// --- MODIFIED: Updated OnCraftButtonClicked and CompleteCraft to handle prescription units. ---
+    /// --- MODIFIED: Removed redundant IsOutputInventoryEmpty check in HandleStateEntry(Outputting). ---
+    /// --- MODIFIED: Receives actual crafted amount from CraftingMinigameManager. --- // <--- ADDED
+    /// --- MODIFIED: Passes actual crafted amount to CraftingExecutor. --- // <--- ADDED
     /// </summary>
     public class CraftingStation : MonoBehaviour
     {
@@ -60,7 +64,7 @@ namespace Systems.Inventory
 
         // --- NEW: Prescription Crafting Mapping ---
         [Header("Prescription Crafting")]
-        [Tooltip("The ScriptableObject containing mappings from prescription drug names to crafting recipes.")]
+        [Tooltip("Reference to the ScriptableObject containing mappings from prescription drug names to crafting recipes and output items.")]
         [SerializeField] private DrugRecipeMappingSO drugRecipeMapping; // <-- Added reference
         // --- END NEW ---
 
@@ -71,6 +75,8 @@ namespace Systems.Inventory
 
         private CraftingRecipe currentMatchedRecipe;
         private int maxCraftableBatches = 0;
+        private int totalPrescriptionUnits = 0; // <-- Store total units from prescription order (needed for delivery validation)
+        private int actualCraftedAmount = 0; // <-- NEW: Store the actual amount crafted by the minigame
 
 
         private void Awake()
@@ -105,20 +111,25 @@ namespace Systems.Inventory
         {
             if (craftingMinigameManager != null)
             {
-                 craftingMinigameManager.OnMinigameSessionCompleted += HandleCraftingMinigameCompleted;
+                 // Subscribe using the new signature
+                 craftingMinigameManager.OnMinigameSessionCompleted -= HandleCraftingMinigameCompleted; // Remove before adding
+                 craftingMinigameManager.OnMinigameSessionCompleted += HandleCraftingMinigameCompleted; // <-- MODIFIED Subscription
                  Debug.Log($"CraftingStation ({gameObject.name}): Subscribed to CraftingMinigameManager completion event.", this);
             }
+             // Resubscribe to inventory events in OnEnable
+             SetupInventoryListeners();
         }
 
         private void OnDisable()
         {
             if (craftingMinigameManager != null)
             {
-                craftingMinigameManager.OnMinigameSessionCompleted -= HandleCraftingMinigameCompleted;
+                // Unsubscribe using the new signature
+                craftingMinigameManager.OnMinigameSessionCompleted -= HandleCraftingMinigameCompleted; // <-- MODIFIED Unsubscription
                 Debug.Log($"CraftingStation ({gameObject.name}): Unsubscribed from CraftingMinigameManager completion event.", this);
             }
 
-            // Unsubscribe from inventory events
+            // Unsubscribe from inventory events in OnDisable
             if (primaryInputInventory?.InventoryState != null)
             {
                 primaryInputInventory.InventoryState.AnyValueChanged -= HandlePrimaryInputChange;
@@ -141,17 +152,37 @@ namespace Systems.Inventory
 
         /// <summary>
         /// Called by the MenuManager to open the crafting UI.
-        /// Resumes the state the station was in when the UI was closed.
+        /// Resumes the state the station was in when the UI was closed,
+        /// UNLESS it was in Outputting state and the output inventory is now empty,
+        /// in which case it transitions to Inputting.
         /// </summary>
         public void OpenCraftingUI()
         {
-            Debug.Log($"CraftingStation ({gameObject.name}): Opening Crafting UI. Resuming state: {currentState}.", this);
+            Debug.Log($"CraftingStation ({gameObject.name}): Opening Crafting UI. Current state was: {currentState}.", this);
+
+            CraftingState stateToEnter = currentState; // Assume we resume the old state
+
+            // --- NEW LOGIC: Check if we were in Outputting state and the output is now empty ---
+            if (currentState == CraftingState.Outputting)
+            {
+                if (IsOutputInventoryEmpty())
+                {
+                    Debug.Log($"CraftingStation ({gameObject.name}): Output inventory is empty upon opening UI. Forcing state to Inputting.", this);
+                    stateToEnter = CraftingState.Inputting; // Force transition to Inputting
+                }
+                else
+                {
+                     Debug.Log($"CraftingStation ({gameObject.name}): Output inventory is NOT empty upon opening UI. Remaining in Outputting state.", this);
+                }
+            }
+            // --- END NEW LOGIC ---
+
             craftingUIRoot.SetActive(true);
             // Link UI Handler if it exists
             if (uiHandler != null) uiHandler.LinkCraftingStation(this);
 
-            // SetState with the *current* state to trigger UI update and entry action
-            SetState(currentState);
+            // SetState with the determined state (either the old one or forced Inputting)
+            SetState(stateToEnter);
         }
 
         /// <summary>
@@ -209,7 +240,9 @@ namespace Systems.Inventory
                     // We do NOT explicitly call EndCurrentMinigame here from the station's internal state exit.
                     break;
                 case CraftingState.Outputting:
+                    Debug.Log($"CraftingStation ({gameObject.name}): Exiting Outputting state.", this);
                     // Clean up after exiting Outputting state (e.g., after items are taken)
+                    // No specific cleanup needed here, output inventory handles itself.
                     break;
             }
         }
@@ -222,13 +255,18 @@ namespace Systems.Inventory
                 case CraftingState.Inputting:
                     // On entering input state, re-check recipe match
                     Debug.Log($"CraftingStation ({gameObject.name}): Entering Inputting state. Checking for recipe match.", this);
-                    CheckForRecipeMatch();
+                    CheckForRecipeMatch(); // Trigger recipe check whenever entering Inputting
+                    // Clear stored craft data when returning to Inputting
+                    currentMatchedRecipe = null;
+                    maxCraftableBatches = 0;
+                    totalPrescriptionUnits = 0;
+                    actualCraftedAmount = 0; // Clear actual amount
                     break;
                 case CraftingState.Crafting:
                     Debug.Log($"CraftingStation ({gameObject.name}): Entering Crafting state. Starting minigame via manager.", this);
                     if (craftingMinigameManager != null)
                     {
-                        // --- MODIFIED: Prepare parameters for the minigame, including prescription data if applicable ---
+                        // Prepare parameters for the minigame, including prescription data if applicable
                         Dictionary<string, object> minigameParameters = new Dictionary<string, object>();
 
                         // Check if the player has an active prescription order
@@ -239,17 +277,16 @@ namespace Systems.Inventory
                             playerTracker = playerGO.GetComponent<Systems.Player.PlayerPrescriptionTracker>();
                         }
 
+                        // Calculate and store totalPrescriptionUnits if there's an active order
+                        totalPrescriptionUnits = 0; // Reset before checking
                         if (playerTracker != null && playerTracker.ActivePrescriptionOrder.HasValue)
                         {
                             Game.Prescriptions.PrescriptionOrder activeOrder = playerTracker.ActivePrescriptionOrder.Value;
-                            Debug.Log($"CraftingStation ({gameObject.name}): Player has active prescription order for '{activeOrder.prescribedDrug}'. Preparing minigame parameters.", this);
+                            totalPrescriptionUnits = activeOrder.dosePerDay * activeOrder.lengthOfTreatmentDays;
+                            Debug.Log($"CraftingStation ({gameObject.name}): Player has active prescription order for '{activeOrder.prescribedDrug}'. Calculated total prescription units: {totalPrescriptionUnits}. Preparing minigame parameters.", this);
 
-                            // Calculate the target quantity for the pill minigame
-                            int targetPillCount = activeOrder.dosePerDay * activeOrder.lengthOfTreatmentDays;
-                            Debug.Log($"CraftingStation ({gameObject.name}): Calculated target pill count: {activeOrder.dosePerDay} dose * {activeOrder.lengthOfTreatmentDays} days = {targetPillCount}.", this);
-
-                            // Add the target pill count to the parameters dictionary
-                            minigameParameters["TargetPillCount"] = targetPillCount; // Use a consistent key
+                            // Add the target pill count (total units) to the parameters dictionary for the minigame
+                            minigameParameters["TargetPillCount"] = totalPrescriptionUnits; // Use a consistent key
 
                             // Add other relevant order data if needed by minigame (e.g., drug name)
                             minigameParameters["PrescribedDrugName"] = activeOrder.prescribedDrug; // Example
@@ -259,11 +296,10 @@ namespace Systems.Inventory
                         }
                         else
                         {
-                            Debug.Log($"CraftingStation ({gameObject.name}): Player does not have an active prescription order. Starting minigame with default parameters.", this);
+                            Debug.Log($"CraftingStation ({gameObject.name}): Player does not have an active prescription order. Starting minigame with default parameters (totalPrescriptionUnits = 0).", this);
                             // If no active order, the minigame will use its default logic (e.g., random target count for pills)
-                            // No specific parameters related to prescription are added here.
+                            // No specific parameters related to prescription are added here, totalPrescriptionUnits remains 0.
                         }
-                        // --- END MODIFIED ---
 
 
                         // Start the appropriate minigame based on the matched recipe
@@ -275,7 +311,7 @@ namespace Systems.Inventory
                             Debug.LogError("CraftingStation: Failed to start crafting minigame. Returning to Inputting.", this);
                             // If minigame failed to start, immediately return to Inputting state
                             SetState(CraftingState.Inputting);
-                            // Clear the potentially problematic recipe/batches - this is handled below in HandleCraftingMinigameCompleted on failure.
+                            // Clearing recipe/batches/units is handled by entering Inputting state.
                         }
                     }
                     else
@@ -286,6 +322,8 @@ namespace Systems.Inventory
                     break;
                 case CraftingState.Outputting:
                     Debug.Log($"CraftingStation ({gameObject.name}): Crafting complete. Item(s) available in output.", this);
+                    // The check for empty output on ENTERING Outputting state is only needed when OPENING the UI.
+                    // The transition back to Inputting when the output is cleared is handled by HandleOutputInventoryChange.
                     break;
             }
         }
@@ -294,44 +332,46 @@ namespace Systems.Inventory
         /// Handles the completion event from the crafting minigame manager.
         /// Proceeds with item consumption and production if successful, then transitions to Outputting.
         /// Transitions back to Inputting if the minigame failed or was aborted.
-        /// Parameter is boolean indicating success.
+        /// --- MODIFIED: Receives actualCraftedAmount parameter. ---
         /// </summary>
-        /// <param name="resultData">Boolean: true if minigame was successful, false if it failed or was aborted.</param>
-        private void HandleCraftingMinigameCompleted(object resultData)
+        /// <param name="minigameWasSuccessful">Boolean: true if minigame was successful, false if it failed or was aborted.</param>
+        /// <param name="actualCraftedAmount">The actual amount crafted by the minigame.</param>
+        private void HandleCraftingMinigameCompleted(bool minigameWasSuccessful, int actualCraftedAmount) // <-- MODIFIED Signature
         {
-            bool minigameWasSuccessful = (resultData is bool success) ? success : false;
-            Debug.Log($"CraftingStation ({gameObject.name}): Received Crafting Minigame Completed event. Outcome: {(minigameWasSuccessful ? "Success" : "Failure/Aborted")}.", this);
+            Debug.Log($"CraftingStation ({gameObject.name}): Received Crafting Minigame Completed event. Outcome: {(minigameWasSuccessful ? "Success" : "Failure/Aborted")}, Actual Amount: {actualCraftedAmount}.", this);
+
+            // Store the actual crafted amount received from the minigame
+            this.actualCraftedAmount = actualCraftedAmount; // <-- Store the actual amount
 
             // Handle success or failure/abort
             if (minigameWasSuccessful)
             {
                 Debug.Log($"CraftingStation: Crafting minigame reported success. Proceeding with craft execution.", this);
                 // Proceed with the actual item consumption and production
-                // Use the stored currentMatchedRecipe and maxCraftableBatches from BEFORE the minigame started
-                // Call CompleteCraft with the stored members, as they are available at this point in the success case.
-                CompleteCraft(currentMatchedRecipe, maxCraftableBatches);
+                // Use the stored currentMatchedRecipe, maxCraftableBatches, totalPrescriptionUnits, AND actualCraftedAmount
+                CompleteCraft(currentMatchedRecipe, maxCraftableBatches, totalPrescriptionUnits, this.actualCraftedAmount); // <-- Pass actualCraftedAmount
                 // After completing the craft (items consumed/produced), transition to the Outputting state
                 SetState(CraftingState.Outputting);
             }
             else
             {
-                Debug.LogWarning($"CraftingStation: Crafting minigame reported failure or was aborted. Not consuming items or producing output. Returning to Inputting state.", this);
+                Debug.LogWarning($"CraftingStation ({gameObject.name}): Crafting minigame reported failure or was aborted. Not consuming items or producing output. Returning to Inputting state.", this);
                 // If the minigame failed or was aborted, return to the input state without completing the craft
                 SetState(CraftingState.Inputting);
             }
 
-            // Clear the matched recipe and batches NOW, after execution or failure handling
-            // This happens regardless of success or failure, preventing leftover state.
-            currentMatchedRecipe = null;
-            maxCraftableBatches = 0;
+            // Clearing the matched recipe, batches, and units is handled by entering Inputting state.
+            // The actualCraftedAmount is also cleared when entering Inputting.
         }
 
         // --- Inventory Event Handling ---
 
         private void SetupInventoryListeners()
         {
+            // Ensure we don't double-subscribe by removing first
             if (primaryInputInventory?.InventoryState != null)
             {
+                primaryInputInventory.InventoryState.AnyValueChanged -= HandlePrimaryInputChange; // Remove before adding
                 primaryInputInventory.InventoryState.AnyValueChanged += HandlePrimaryInputChange;
                 Debug.Log($"CraftingStation ({gameObject.name}): Subscribed to Primary Input Inventory changes.", this);
             }
@@ -342,6 +382,7 @@ namespace Systems.Inventory
 
             if (secondaryInputInventory?.InventoryState != null)
             {
+                secondaryInputInventory.InventoryState.AnyValueChanged -= HandleSecondaryInputChange; // Remove before adding
                 secondaryInputInventory.InventoryState.AnyValueChanged += HandleSecondaryInputChange;
                 Debug.Log($"CraftingStation ({gameObject.name}): Subscribed to Secondary Input Inventory changes.", this);
             }
@@ -353,6 +394,7 @@ namespace Systems.Inventory
             // Subscribe to changes in the output inventory to detect when output is taken
             if (outputInventory?.InventoryState != null)
             {
+                outputInventory.InventoryState.AnyValueChanged -= HandleOutputInventoryChange; // Remove before adding
                 outputInventory.InventoryState.AnyValueChanged += HandleOutputInventoryChange;
                 Debug.Log($"CraftingStation ({gameObject.name}): Subscribed to Output Inventory changes.", this);
             }
@@ -384,6 +426,7 @@ namespace Systems.Inventory
         /// Handles changes in the output inventory. Specifically checks for
         /// item removal via drag-and-drop from the ghost slot to trigger
         /// state transition if the inventory becomes empty.
+        /// --- MODIFIED: Check IsOutputInventoryEmpty() on any change while in Outputting state. ---
         /// </summary>
         private void HandleOutputInventoryChange(ArrayChangeInfo<Item> changeInfo)
         {
@@ -393,26 +436,16 @@ namespace Systems.Inventory
                  return;
              }
 
-             // We want to detect when an item has been successfully dragged *out*
-             // This is signaled by the source array (which was the output inventory)
-             // clearing its *ghost slot* (the last index) as the final step of a drop.
-             bool isGhostSlotUpdateFromOutput = changeInfo.Type == ArrayChangeType.SlotUpdated &&
-                                                outputInventory?.Combiner?.InventoryState != null && // Ensure references are valid
-                                                changeInfo.Index == outputInventory.Combiner.InventoryState.Length - 1 &&
-                                                changeInfo.NewItem == null; // Check if the ghost slot became empty
-
-             if (isGhostSlotUpdateFromOutput)
+             // Check if the *physical* slots are all empty
+             if (IsOutputInventoryEmpty())
              {
-                 Debug.Log($"CraftingStation ({gameObject.name}): Detected Output Inventory ghost slot cleared (likely due to drag completion). Checking if output is now empty.", this);
-                 if (IsOutputInventoryEmpty())
-                 {
-                     Debug.Log($"CraftingStation ({gameObject.name}): Output inventory is now empty. Transitioning back to Inputting.", this);
-                     SetState(CraftingState.Inputting); // Transition back when output is fully cleared
-                 }
-                 else
-                 {
-                     Debug.Log($"CraftingStation ({gameObject.name}): Output inventory ghost slot cleared, but physical slots still contain items. Remaining in Outputting state.", this);
-                 }
+                 Debug.Log($"CraftingStation ({gameObject.name}): Output inventory is now empty. Transitioning back to Inputting.", this);
+                 SetState(CraftingState.Inputting); // Transition back when output is fully cleared
+             }
+             else
+             {
+                 // Log if a change occurred but the inventory is still not empty
+                 // Debug.Log($"CraftingStation ({gameObject.name}): Output inventory changed, but physical slots still contain items. Remaining in Outputting state."); // Too noisy
              }
         }
 
@@ -422,41 +455,46 @@ namespace Systems.Inventory
             // Only check in the Inputting state
             if (currentState != CraftingState.Inputting)
             {
-                currentMatchedRecipe = null;
-                maxCraftableBatches = 0;
+                // Clearing is handled by HandleStateEntry(Inputting)
                 if (uiHandler != null) uiHandler.SetCraftButtonInteractable(false);
                 return;
             }
 
-            if (craftingRecipes == null || primaryInputInventory?.Combiner?.InventoryState == null || drugRecipeMapping == null) // Added drugRecipeMapping check
+            if (craftingRecipes == null || primaryInputInventory?.Combiner?.InventoryState == null || outputInventory == null || drugRecipeMapping == null) // Added drugRecipeMapping check
             {
                 Debug.LogError($"CraftingStation ({gameObject.name}): Cannot check for recipe match, missing essential references.", this);
-                currentMatchedRecipe = null;
-                maxCraftableBatches = 0;
+                // Clearing is handled by HandleStateEntry(Inputting)
                 if (uiHandler != null) uiHandler.SetCraftButtonInteractable(false);
                 return;
             }
 
-            // Collect all relevant items from input inventories
-            List<Item> allInputItems = new List<Item>();
-            allInputItems.AddRange(primaryInputInventory.Combiner.InventoryState.GetCurrentArrayState()
-                                    .Take(primaryInputInventory.Combiner.PhysicalSlotCount)
-                                    .Where(item => item != null && item.details != null && item.quantity > 0));
-
-            if (secondaryInputInventory?.Combiner?.InventoryState != null)
+            // Collect items from primary and secondary inventories separately
+            List<Item> primaryInputItems = new List<Item>();
+            if (primaryInputInventory?.Combiner?.InventoryState != null)
             {
-                allInputItems.AddRange(secondaryInputInventory.Combiner.InventoryState.GetCurrentArrayState()
-                                        .Take(secondaryInputInventory.Combiner.PhysicalSlotCount)
-                                        .Where(item => item != null && item.details != null && item.quantity > 0));
+                primaryInputItems.AddRange(primaryInputInventory.Combiner.InventoryState.GetCurrentArrayState()
+                                            .Take(primaryInputInventory.Combiner.PhysicalSlotCount)
+                                            .Where(item => item != null && item.details != null)); // Include items with quantity 0 for health check
             }
 
-            // --- Delegate recipe matching to the external helper ---
-            RecipeMatchResult matchResult = CraftingMatcher.FindRecipeMatch(craftingRecipes, allInputItems);
+            List<Item> secondaryInputItems = new List<Item>();
+            if (secondaryInputInventory?.Combiner?.InventoryState != null)
+            {
+                secondaryInputItems.AddRange(secondaryInputInventory.Combiner.InventoryState.GetCurrentArrayState()
+                                            .Take(secondaryInputInventory.Combiner.PhysicalSlotCount)
+                                            .Where(item => item != null && item.details != null && item.quantity > 0)); // Only include items with quantity > 0 for secondary
+            }
+
+            // Delegate recipe matching to the external helper, passing separate lists
+            RecipeMatchResult matchResult = CraftingMatcher.FindRecipeMatch(craftingRecipes, primaryInputItems, secondaryInputItems); // <-- Pass separate lists
 
             currentMatchedRecipe = matchResult.MatchedRecipe;
             maxCraftableBatches = matchResult.MaxCraftableBatches;
+            // totalPrescriptionUnits is NOT set here, it's set in OnCraftButtonClicked just before crafting starts.
+            // actualCraftedAmount is NOT set here, it's set in HandleCraftingMinigameCompleted.
 
-            // --- NEW: If there's an active prescription order, validate the matched recipe against it ---
+
+            // If there's an active prescription order, validate the matched recipe against it
             Systems.Player.PlayerPrescriptionTracker playerTracker = null;
             GameObject playerGO = GameObject.FindGameObjectWithTag("Player"); // Assuming player has the "Player" tag
             if (playerGO != null)
@@ -464,12 +502,12 @@ namespace Systems.Inventory
                 playerTracker = playerGO.GetComponent<Systems.Player.PlayerPrescriptionTracker>();
             }
 
+            bool isCorrectPrescriptionRecipe = false;
             if (playerTracker != null && playerTracker.ActivePrescriptionOrder.HasValue)
             {
                  Game.Prescriptions.PrescriptionOrder activeOrder = playerTracker.ActivePrescriptionOrder.Value;
-                 // --- MODIFIED: Get required recipe by name using the updated mapping method ---
+                 // Get required recipe by name using the updated mapping method
                  CraftingRecipe requiredRecipe = drugRecipeMapping.GetCraftingRecipeForDrug(activeOrder.prescribedDrug);
-                 // --- END MODIFIED ---
 
                  if (matchResult.HasMatch && matchResult.MatchedRecipe != requiredRecipe)
                  {
@@ -482,6 +520,7 @@ namespace Systems.Inventory
                  {
                       // Found a match, AND it's the correct recipe for the active prescription order.
                       Debug.Log($"CraftingStation ({gameObject.name}): Recipe matched ({matchResult.MatchedRecipe.recipeName}) and it IS the recipe required for the active prescription order ('{activeOrder.prescribedDrug}'). Craft button will be enabled.", this);
+                      isCorrectPrescriptionRecipe = true; // Flag this as the correct objective recipe
                  }
                  else if (!matchResult.HasMatch && requiredRecipe != null)
                  {
@@ -489,12 +528,11 @@ namespace Systems.Inventory
                      Debug.Log($"CraftingStation ({gameObject.name}): No recipe matched, but player has active prescription order for '{activeOrder.prescribedDrug}' which requires recipe '{requiredRecipe.recipeName}'. Craft button will be disabled.", this);
                  }
             }
-            // --- END NEW ---
 
 
-            // --- Update Craft Button based on result ---
-            // This logic remains the same: enable the button if *any* recipe matches with > 0 batches.
-            // Validation against the prescription order happens when the button is clicked.
+            // Update Craft Button based on result
+            // The button is enabled if ANY recipe matches with > 0 batches.
+            // The actual crafting (and minigame) is blocked in OnCraftButtonClicked if it's not the prescription recipe.
             if (uiHandler != null)
             {
                 uiHandler.SetCraftButtonInteractable(matchResult.HasMatch);
@@ -502,10 +540,14 @@ namespace Systems.Inventory
                 if (matchResult.HasMatch)
                 {
                     // Log moved inside the NEW block above for clarity when prescription is active
-                    if (!(playerTracker != null && playerTracker.ActivePrescriptionOrder.HasValue))
+                    // If no prescription is active, or if the matched recipe is the correct one, log the positive match.
+                    if (!(playerTracker != null && playerTracker.ActivePrescriptionOrder.HasValue && !isCorrectPrescriptionRecipe))
                     {
                          Debug.Log($"CraftingStation ({gameObject.name}): Recipe matched: {currentMatchedRecipe.recipeName}! Can craft {maxCraftableBatches} batch(es).", this);
                     }
+                } else {
+                     // If no match, log that crafting is not possible.
+                     Debug.Log($"CraftingStation ({gameObject.name}): No recipe matched with current input items.", this);
                 }
             }
         }
@@ -513,11 +555,11 @@ namespace Systems.Inventory
         /// <summary>
         /// Called when the Craft button is clicked. Initiates the crafting process
         /// by transitioning to the Crafting state, which will start the minigame.
-        /// Includes validation against active prescription order if present.
+        /// Includes validation against active prescription order if present, blocking craft if it's not the required recipe.
         /// </summary>
         private void OnCraftButtonClicked()
         {
-            Debug.Log($"CraftingStation ({gameObject.name}): Craft button clicked. Attempting to transition to Crafting state.", this);
+            Debug.Log($"CraftingStation ({gameObject.name}): Craft button clicked. Attempting to start craft process.", this);
 
             // Double-check state, recipe match, and batches before allowing transition
             if (currentState != CraftingState.Inputting || currentMatchedRecipe == null || maxCraftableBatches <= 0)
@@ -532,6 +574,80 @@ namespace Systems.Inventory
                 }
             }
 
+            // Check if there's an active prescription order and if the matched recipe is the correct one
+            Systems.Player.PlayerPrescriptionTracker playerTracker = null;
+            GameObject playerGO = GameObject.FindGameObjectWithTag("Player");
+            if (playerGO != null)
+            {
+                playerTracker = playerGO.GetComponent<Systems.Player.PlayerPrescriptionTracker>();
+            }
+
+            // Calculate totalPrescriptionUnits here, just before starting the craft
+            totalPrescriptionUnits = 0; // Reset before calculating
+            bool isPrescriptionCraft = false;
+
+            if (playerTracker != null && playerTracker.ActivePrescriptionOrder.HasValue)
+            {
+                 Game.Prescriptions.PrescriptionOrder activeOrder = playerTracker.ActivePrescriptionOrder.Value;
+                 CraftingRecipe requiredRecipe = drugRecipeMapping.GetCraftingRecipeForDrug(activeOrder.prescribedDrug);
+
+                 if (currentMatchedRecipe != requiredRecipe)
+                 {
+                      // Recipe matched, but it's NOT the one required by the active prescription order.
+                      Debug.LogWarning($"CraftingStation ({gameObject.name}): Cannot craft '{currentMatchedRecipe.recipeName}'. Player has active prescription order for '{activeOrder.prescribedDrug}' which requires recipe '{requiredRecipe?.recipeName ?? "NULL"}'. Craft blocked.", this);
+                      // Optionally provide UI feedback here (e.g., a message "This is not the correct drug")
+                      return; // Abort the craft process
+                 }
+                 else
+                 {
+                      Debug.Log($"CraftingStation ({gameObject.name}): Matched recipe '{currentMatchedRecipe.recipeName}' is the correct recipe for the active prescription order. Proceeding.", this);
+                      isPrescriptionCraft = true;
+                      totalPrescriptionUnits = activeOrder.dosePerDay * activeOrder.lengthOfTreatmentDays; // Calculate units
+                      Debug.Log($"CraftingStation ({gameObject.name}): Calculated total prescription units for order: {totalPrescriptionUnits}.", this);
+
+                      // Additional check for prescription crafts - ensure primary input has enough health
+                      // Find the primary input requirement in the matched recipe
+                      RecipeInput primaryInputRequirement = currentMatchedRecipe.inputs.FirstOrDefault(input => input.isPrimaryInput);
+
+                      if (primaryInputRequirement == null || primaryInputRequirement.amountType != AmountType.Health)
+                      {
+                           Debug.LogError($"CraftingStation ({gameObject.name}): Matched recipe '{currentMatchedRecipe.recipeName}' is expected to be a prescription recipe but has no primary health input defined! Aborting craft.", this);
+                           return; // Abort if recipe structure is invalid for prescription craft
+                      }
+
+                      // Find the actual item instance in the primary input inventory (assuming first physical slot)
+                      Item primaryInputItem = primaryInputInventory?.Combiner?.InventoryState?.GetCurrentArrayState()
+                                            .Take(primaryInputInventory.Combiner.PhysicalSlotCount)
+                                            .FirstOrDefault(item => item != null && item.details == primaryInputRequirement.itemDetails); // Use FirstOrDefault to get the instance
+
+
+                      if (primaryInputItem == null)
+                      {
+                           // This should have been caught by CheckForRecipeMatch, but defensive check.
+                           Debug.LogError($"CraftingStation ({gameObject.name}): Primary input item '{primaryInputRequirement.itemDetails?.Name ?? "NULL"}' required for prescription craft not found in primary input slots! Aborting craft.", this);
+                           return; // Abort if primary item is missing
+                      }
+
+                      // Check if the primary input item has enough health for the *required* total units from the order
+                      // This check is based on the *order requirement*, not the minigame outcome, as the player needs enough stock to *attempt* the full order.
+                      if (primaryInputItem.health < totalPrescriptionUnits)
+                      {
+                           Debug.LogWarning($"CraftingStation ({gameObject.name}): Primary input item '{primaryInputItem.details.Name}' (Health: {primaryInputItem.health}) does not have enough health ({totalPrescriptionUnits} required) for this prescription order. Aborting craft.", primaryInputItem.details);
+                           // Optionally provide UI feedback "Not enough stock"
+                           return; // Abort if not enough health
+                      }
+                       Debug.Log($"CraftingStation ({gameObject.name}): Primary input item '{primaryInputItem.details.Name}' has sufficient health ({primaryInputItem.health} >= {totalPrescriptionUnits}). Proceeding.", primaryInputItem.details);
+                 }
+            }
+             else
+             {
+                 // No active prescription order, allow crafting any matched recipe.
+                 Debug.Log($"CraftingStation ({gameObject.name}): No active prescription order. Allowing craft of matched recipe '{currentMatchedRecipe.recipeName}'.", this);
+                 isPrescriptionCraft = false;
+                 totalPrescriptionUnits = 0; // Ensure units are 0 for non-prescription crafts
+             }
+
+
             // Proceed with starting the crafting state, which will trigger the minigame
             SetState(CraftingState.Crafting);
         }
@@ -540,8 +656,9 @@ namespace Systems.Inventory
         /// Performs the actual item consumption and creation for the calculated batches.
         /// Delegates the core logic to CraftingExecutor.
         /// Called by HandleCraftingMinigameCompleted after the minigame is finished and successful.
+        /// --- MODIFIED: Added totalPrescriptionUnits and actualCraftedAmount parameters. ---
         /// </summary>
-        private void CompleteCraft(CraftingRecipe recipeToCraft, int batchesToCraft)
+        private void CompleteCraft(CraftingRecipe recipeToCraft, int batchesToCraft, int totalPrescriptionUnits, int actualCraftedAmount) // <-- MODIFIED Signature
         {
              // Use the stored members, which are guaranteed to be valid if this method is reached
              // based on the logic in HandleCraftingMinigameCompleted.
@@ -551,23 +668,29 @@ namespace Systems.Inventory
                 return;
             }
 
-            // --- Delegate craft execution to the external helper ---
+            // Delegate craft execution to the external helper
+            // Pass the totalPrescriptionUnits (for delivery validation later) and the actualCraftedAmount (for consumption/production)
             bool executionSuccess = CraftingExecutor.ExecuteCraft(
                 currentMatchedRecipe,
                 maxCraftableBatches,
                 primaryInputInventory,
                 secondaryInputInventory,
-                outputInventory);
+                outputInventory,
+                totalPrescriptionUnits, // Pass the required units from the order
+                actualCraftedAmount); // <-- Pass the actual amount crafted
 
-            // --- Handle execution result ---
+            // Handle execution result
             if (!executionSuccess)
             {
                 Debug.LogError($"CraftingStation ({gameObject.name}): CRITICAL ERROR: Craft execution failed AFTER minigame completion! Input consumption may be inconsistent. Check CraftingExecutor logs.");
+                // TODO: Consider more robust error handling here - maybe try to revert consumed items?
+                // For now, we proceed to Outputting state anyway, as inputs *might* have been consumed partially.
             }
             else
             {
                 Debug.Log($"CraftingStation ({gameObject.name}): Craft execution successful.");
             }
+             // The transition to Outputting is handled in HandleCraftingMinigameCompleted regardless of this executionSuccess flag.
         }
 
         /// <summary>
@@ -578,22 +701,39 @@ namespace Systems.Inventory
              if (outputInventory?.Combiner?.InventoryState == null)
              {
                  Debug.LogWarning($"CraftingStation ({gameObject.name}): Cannot check if output inventory is empty, references are null.", this);
+                 // Assume empty if we can't check? Or assume not? Let's assume empty if references are broken.
                  return true;
              }
 
              // Check physical slots only. The ghost slot is not relevant here.
              Item[] outputItems = outputInventory.Combiner.InventoryState.GetCurrentArrayState();
 
+             // Iterate only up to the number of physical slots
              for (int i = 0; i < outputInventory.Combiner.PhysicalSlotCount; i++)
              {
-                 // Ensure index is within array bounds and slot is not null
-                 if (i < outputItems.Length && outputItems[i] != null && outputItems[i].quantity > 0)
+                 // Ensure index is within array bounds and slot is not null/empty
+                 // Also check quantity > 0 or health > 0 for non-stackable durable items
+                 if (i < outputItems.Length && outputItems[i] != null && outputItems[i].details != null)
                  {
-                     return false; // Found an item in a physical slot
+                     if (outputItems[i].details.maxStack > 1)
+                     {
+                         if (outputItems[i].quantity > 0) return false; // Stackable with quantity
+                     }
+                     else // Non-stackable
+                     {
+                         if (outputItems[i].details.maxHealth > 0)
+                         {
+                             if (outputItems[i].health > 0) return false; // Durable with health
+                         }
+                         else
+                         {
+                             if (outputItems[i].quantity > 0) return false; // Non-durable non-stackable with quantity (should be 1)
+                         }
+                     }
                  }
              }
-             return true; // No items found in physical slots
+             // If the loop finishes without finding any items in physical slots with quantity/health > 0
+             return true;
         }
     }
 }
-// --- END OF FILE CraftingStation.cs ---

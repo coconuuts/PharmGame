@@ -45,13 +45,14 @@ namespace Systems.CraftingMinigames
 
         /// <summary>
         /// Event triggered when the crafting minigame session is completed or aborted.
-        /// --- MODIFIED: The object parameter indicates success (true) or failure/abort (false). ---
+        /// --- MODIFIED: Now passes boolean success status AND the actual crafted amount. ---
         /// </summary>
         /// <remarks>
-        /// The object parameter should be a boolean: true for success, false for failure/abort.
+        /// The parameters are:
+        /// bool: true if the minigame reached its natural end sequence, false if aborted or critical failure.
+        /// int: The actual number of units/amount successfully crafted by the minigame (e.g., pill count).
         /// The central CraftingMinigameManager will subscribe to this event.
         /// </remarks>
-        event Action<object> OnCraftingMinigameCompleted;
+        event Action<bool, int> OnCraftingMinigameCompleted; // <-- MODIFIED Signature
     }
 }
-// --- END OF FILE ICraftingMinigame.cs ---

@@ -118,6 +118,7 @@ namespace Game.NPC.States // Place alongside other active states
             }
 
             // --- Clear player's active prescription order and UI popup ---
+            context.PublishEvent(new FreePrescriptionClaimSpotEvent(context.NpcObject));
             PlayerUIPopups.Instance?.HidePopup("Prescription Order"); // Ensure UI is hidden on exit
             GameObject playerGO = GameObject.FindGameObjectWithTag("Player");
             PlayerPrescriptionTracker playerTracker = null;

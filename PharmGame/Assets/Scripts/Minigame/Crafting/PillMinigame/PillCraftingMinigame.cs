@@ -27,6 +27,10 @@ namespace Systems.CraftingMinigames
     /// --- MODIFIED: Configuration data partially moved to ScriptableObject. ---
     /// --- MODIFIED: Uses MinigameUIHandler for managing UI elements. ---
     /// --- MODIFIED: Accepts target pill count from parameters dictionary. --- // <--- ADDED
+    /// --- MODIFIED: MarkMinigameCompleted now always signals success for the process. --- // <--- ADDED
+    /// --- MODIFIED: Added critical failure handling in coroutines. --- // <--- ADDED
+    /// --- MODIFIED: "Finish Counting" button is now always interactable in the Counting state. --- // <--- ADDED
+    /// --- MODIFIED: Passes actual count to base class MarkMinigameCompleted. --- // <--- ADDED
     /// </summary>
     public class PillCraftingMinigame : CraftingMinigameBase
     {
@@ -128,8 +132,8 @@ namespace Systems.CraftingMinigames
             if (pillConfig == null)
             {
                 Debug.LogError($"PillCraftingMinigame ({gameObject.name}): Pill Config Data ScriptableObject is not assigned! Cannot start minigame.", this);
-                minigameSuccessStatus = false;
-                EndMinigame(true); // Signal failure/abort due to setup error
+                MarkMinigameFailedCritically(); // Use base method for critical failure
+                // EndMinigame(false) is called inside MarkMinigameFailedCritically
                 return;
             }
             if (clickInteractor != null)
@@ -142,7 +146,8 @@ namespace Systems.CraftingMinigames
             _initialCameraTarget = pouringCameraTarget;
             _initialCameraDuration = pillConfig.cameraMoveDuration;
 
-            minigameSuccessStatus = false;
+            // minigameSuccessStatus = false; // Initialized in base SetupAndStart
+            // actualCraftedAmount = 0; // Initialized in base SetupAndStart
 
             instantiatedPills.Clear();
             discardedPills.Clear();
@@ -258,6 +263,9 @@ namespace Systems.CraftingMinigames
                  uiHandler.Show(); // Use the handler's show method
                  uiHandler.OnFinishButtonClicked -= OnFinishCountingClicked;
                  uiHandler.OnFinishButtonClicked += OnFinishCountingClicked;
+                 // --- NEW: Make Finish button interactable immediately ---
+                 uiHandler.SetFinishButtonInteractable(true);
+                 // --- END NEW ---
             }
             else Debug.LogError($"PillCraftingMinigame ({gameObject.name}): UI Handler is null! Cannot manage UI.", this);
 
@@ -282,6 +290,9 @@ namespace Systems.CraftingMinigames
             {
                 uiHandler.Hide(); // Use the handler's hide method
                 uiHandler.OnFinishButtonClicked -= OnFinishCountingClicked; // Unsubscribe
+                 // --- NEW: Ensure button is disabled when hiding UI ---
+                 uiHandler.SetFinishButtonInteractable(false);
+                 // --- END NEW ---
             }
             if (clickInteractor != null)
              {
@@ -326,9 +337,8 @@ namespace Systems.CraftingMinigames
         {
             if (pillConfig == null || pillConfig.containerPrefab == null || pillSpawnPoint == null || pillConfig.pillPrefab == null || PoolingManager.Instance == null || pillCraftingAnimator == null || pouringContainerSpawnPoint == null || stockContainerSetdown == null)
             {
-                Debug.LogError($"PillCraftingMinigame ({gameObject.name}): Missing essential references for pouring sequence or animator or spawn point!", this);
-                 minigameSuccessStatus = false;
-                 EndMinigame(false);
+                Debug.LogError($"PillCraftingMinigame ({gameObject.name}): Missing essential references for pouring sequence or animator or spawn point! Signalling internal failure.", this);
+                 MarkMinigameFailedCritically(); // Use base method for critical failure
                 yield break;
             }
 
@@ -341,8 +351,7 @@ namespace Systems.CraftingMinigames
             else
             {
                 Debug.LogError($"PillCraftingMinigame ({gameObject.name}): Failed to get container from pool! Signalling internal failure.", this);
-                 minigameSuccessStatus = false;
-                 EndMinigame(false);
+                 MarkMinigameFailedCritically(); // Use base method for critical failure
                 yield break;
             }
 
@@ -369,7 +378,9 @@ namespace Systems.CraftingMinigames
              }
              else
              {
-                 Debug.LogError($"PillCraftingMinigame ({gameObject.name}): Pouring animation sequence failed to start.");
+                 Debug.LogError($"PillCraftingMinigame ({gameObject.name}): Pouring animation sequence failed to start. Signalling internal failure.", this);
+                 MarkMinigameFailedCritically(); // Use base method for critical failure
+                 yield break; // Stop the coroutine
              }
 
 
@@ -398,7 +409,8 @@ namespace Systems.CraftingMinigames
         {
              if (pillConfig == null || pillConfig.pillPrefab == null || PoolingManager.Instance == null || pillSpawnPoint == null || pillCraftingAnimator == null || movementManager == null)
              {
-                  Debug.LogError($"PillCraftingMinigame ({gameObject.name}): Missing references (PillConfig, prefab, pool, points, animator) for spawning pills during pour!", this);
+                  Debug.LogError($"PillCraftingMinigame ({gameObject.name}): Missing references (PillConfig, prefab, pool, points, animator) for spawning pills during pour! Signalling internal failure.", this);
+                  MarkMinigameFailedCritically(); // Use base method for critical failure
                   yield break;
              }
 
@@ -425,8 +437,9 @@ namespace Systems.CraftingMinigames
                      Transform spawnPoint = pillCraftingAnimator?.pillStockPourPoint != null ? pillCraftingAnimator.pillStockPourPoint : pillSpawnPoint;
                      if (spawnPoint == null)
                      {
-                         Debug.LogError($"PillCraftingMinigame ({gameObject.name}): Pill spawn point is null after checks!", this);
+                         Debug.LogError($"PillCraftingMinigame ({gameObject.name}): Pill spawn point is null after checks! Signalling internal failure.", this);
                          PoolingManager.Instance.ReturnPooledObject(pillGO);
+                         MarkMinigameFailedCritically(); // Use base method for critical failure
                          yield break;
                      }
 
@@ -439,8 +452,9 @@ namespace Systems.CraftingMinigames
                  }
                  else
                  {
-                     Debug.LogError($"PillCraftingMinigame ({gameObject.name}): Failed to get pill {i} from pool during pour! Aborting spawning.", this);
-                     yield break;
+                     Debug.LogError($"PillCraftingMinigame ({gameObject.name}): Failed to get pill {i} from pool during pour! Aborting spawning. Signalling internal failure.", this);
+                     MarkMinigameFailedCritically(); // Use base method for critical failure
+                     yield break; // Stop the coroutine
                  }
 
                  if (timePerPill > 0)
@@ -617,7 +631,9 @@ namespace Systems.CraftingMinigames
             if (uiHandler != null)
             {
                 uiHandler.UpdateText($"Pills: {currentPillCountOnTable}/{targetPillCount}");
-                 uiHandler.SetFinishButtonInteractable(currentPillCountOnTable == targetPillCount);
+                 // --- REMOVED: Button interactability is now set only on state entry ---
+                 // uiHandler.SetFinishButtonInteractable(currentPillCountOnTable == targetPillCount);
+                 // --- END REMOVED ---
             }
         }
 
@@ -631,39 +647,32 @@ namespace Systems.CraftingMinigames
             // Only proceed if currently in the Counting state
             if (currentMinigameState == MinigameState.Middle)
             {
-                 // Check if count is correct *before* transitioning
+                 // Log whether the count was correct for debugging/feedback, but don't use it to set success status
                 if (currentPillCountOnTable == targetPillCount)
                 {
-                    Debug.Log($"PillCraftingMinigame ({gameObject.name}): Count is correct ({currentPillCountOnTable}/{targetPillCount}). Transitioning to Packaging.", this);
-
-                    // Collect only the pills NOT in the discarded pile
-                    countedPills.Clear();
-                    foreach(GameObject pillGO in instantiatedPills)
-                    {
-                        if (pillGO != null && !discardedPills.Contains(pillGO))
-                        {
-                             countedPills.Add(pillGO);
-                        }
-                    }
-
-                    if (countedPills.Count != targetPillCount)
-                    {
-                        Debug.LogError($"PillCraftingMinigame ({gameObject.name}): Mismatch! Collected {countedPills.Count} pills but target was {targetPillCount}. This should not happen if logic is correct. Signalling internal failure.", this);
-                        minigameSuccessStatus = false; // Ensure failure if collection logic was wrong
-                    }
-                    else
-                    {
-                         minigameSuccessStatus = true; // Success!
-                    }
-
-                    SetMinigameState(MinigameState.End); // Transition to packaging
+                    Debug.Log($"PillCraftingMinigame ({gameObject.name}): Player finished counting with the CORRECT count ({currentPillCountOnTable}/{targetPillCount}).", this);
                 }
                 else
                 {
-                    Debug.LogWarning($"PillCraftingMinigame ({gameObject.name}): Finish Counting button clicked, but count is incorrect. Count: {currentPillCountOnTable}, Target: {targetPillCount}. Signalling internal failure.", this);
-                    minigameSuccessStatus = false; // Explicitly set failure
-                     SetMinigameState(MinigameState.End); // Still transition to End state (failure)
+                    Debug.LogWarning($"PillCraftingMinigame ({gameObject.name}): Player finished counting with an INCORRECT count. Count: {currentPillCountOnTable}, Target: {targetPillCount}.", this);
                 }
+
+                // Collect only the pills NOT in the discarded pile
+                countedPills.Clear();
+                foreach(GameObject pillGO in instantiatedPills)
+                {
+                    if (pillGO != null && !discardedPills.Contains(pillGO))
+                    {
+                         countedPills.Add(pillGO);
+                    }
+                }
+
+                // --- MODIFIED: Always call MarkMinigameCompleted with the actual count ---
+                // The minigame process is considered successful if the player reaches this point.
+                MarkMinigameCompleted(countedPills.Count); // <-- Call with the actual count
+                // --- END MODIFIED ---
+
+                // The transition to End state happens inside MarkMinigameCompleted()
             }
              else
              {
@@ -677,8 +686,7 @@ namespace Systems.CraftingMinigames
             if (pillConfig == null || pillConfig.prescriptionContainerPrefab == null || pillConfig.prescriptionContainerLidPrefab == null || prescriptionContainerSpawnPoint == null || prescriptionContainerLidSpawnPoint == null || PoolingManager.Instance == null || pillCraftingAnimator == null)
             {
                 Debug.LogError($"PillCraftingMinigame ({gameObject.name}): Missing essential references (PillConfig, prefabs, points, pool, animator) for packaging sequence! Signalling internal failure.", this);
-                 minigameSuccessStatus = false;
-                 EndMinigame(false);
+                 MarkMinigameFailedCritically(); // Use base method for critical failure
                 yield break;
             }
 
@@ -693,8 +701,7 @@ namespace Systems.CraftingMinigames
             else
             {
                  Debug.LogError($"PillCraftingMinigame ({gameObject.name}): Failed to get prescription container from pool! Signalling internal failure.", this);
-                 minigameSuccessStatus = false;
-                 EndMinigame(false);
+                 MarkMinigameFailedCritically(); // Use base method for critical failure
                  yield break;
             }
 
@@ -713,8 +720,7 @@ namespace Systems.CraftingMinigames
                  if(instantiatedPrescriptionContainer != null) PoolingManager.Instance.ReturnPooledObject(instantiatedPrescriptionContainer);
                  instantiatedPrescriptionContainer = null;
 
-                 minigameSuccessStatus = false;
-                 EndMinigame(false);
+                 MarkMinigameFailedCritically(); // Use base method for critical failure
                  yield break;
             }
 
@@ -733,7 +739,7 @@ namespace Systems.CraftingMinigames
                  }
                  else
                  {
-                      Debug.LogWarning($"PillCraftingMinigame ({gameObject.name}): Null pill found in countedPills list during packaging setup.", this);
+                      Debug.LogWarning($"PillCraftingMinigame ({gameObject.name}): Null pill found in list during packaging setup. Skipping this pill.", this);
                  }
              }
 
@@ -743,9 +749,15 @@ namespace Systems.CraftingMinigames
              {
                  yield return new WaitForSeconds(pillConfig.lidAnimateDuration * 0.3f);
 
-                 if (currentMinigameState != MinigameState.None)
+                 if (currentMinigameState != MinigameState.None) // Check state before starting parallel coroutine
                  {
-                      StartCoroutine(AnimatePillsIntoContainerCoroutine(countedPills, scatteredPositions, pillConfig.pillPackageAnimateDuration));
+                      // --- MODIFIED: Check if StartCoroutine was successful ---
+                      Coroutine animatePillsCoroutine = StartCoroutine(AnimatePillsIntoContainerCoroutine(countedPills, scatteredPositions, pillConfig.pillPackageAnimateDuration));
+                      // We don't explicitly check the return value of StartCoroutine, but if the coroutine itself
+                      // fails critically (e.g., missing references inside it), it will call MarkMinigameFailedCritically()
+                      // and yield break, which will stop this PackagingSequence coroutine.
+                      // No explicit check needed here, the failure handling is inside the called coroutine.
+                      // --- END MODIFIED ---
                  }
 
                  yield return packagingAnimSequence.WaitForCompletion();
@@ -753,13 +765,20 @@ namespace Systems.CraftingMinigames
              }
              else
              {
-                  Debug.LogWarning($"PillCraftingMinigame ({gameObject.name}): Packaging animation sequence failed to start. Proceeding without animation sync.");
-                  yield return new WaitForSeconds(1.0f);
+                  Debug.LogError($"PillCraftingMinigame ({gameObject.name}): Packaging animation sequence failed to start. Signalling internal failure.", this);
+                  MarkMinigameFailedCritically(); // Use base method for critical failure
+                  yield break; // Stop the coroutine
              }
 
             yield return new WaitForSeconds(0.2f);
 
-            EndMinigame(false); // Signal completion (success/failure status is already set)
+            // --- MODIFIED: Always call EndMinigame(false) here ---
+            // The minigame process reached its natural end. The success status (true) was set in MarkMinigameCompleted.
+            // However, if a critical error occurred *during* packaging (e.g., AnimatePillsIntoContainerCoroutine failed,
+            // or one of the checks above failed), minigameSuccessStatus would have been set to false.
+            // EndMinigame(false) will correctly report the final minigameSuccessStatus (true or false) and the actualCraftedAmount (non-zero or 0).
+            EndMinigame(false); // Signal completion (not aborted)
+            // --- END MODIFIED ---
 
             Debug.Log($"PillCraftingMinigame ({gameObject.name}) PackagingSequence: Coroutine finished.");
         }
@@ -768,7 +787,8 @@ namespace Systems.CraftingMinigames
          {
               if (pills == null || targetPositions == null || pills.Count != targetPositions.Count || pillCraftingAnimator == null)
               {
-                   Debug.LogError($"PillCraftingMinigame ({gameObject.name}): Invalid data for AnimatePillsIntoContainerCoroutine!", this);
+                   Debug.LogError($"PillCraftingMinigame ({gameObject.name}): Invalid data for AnimatePillsIntoContainerCoroutine! Signalling internal failure.", this);
+                   MarkMinigameFailedCritically(); // Use base method for critical failure
                    yield break;
               }
 
@@ -776,29 +796,42 @@ namespace Systems.CraftingMinigames
 
               for (int i = 0; i < pills.Count; i++)
               {
-                   if (currentMinigameState == MinigameState.None || currentMinigameState == MinigameState.Middle)
+                   if (currentMinigameState == MinigameState.None || currentMinigameState == MinigameState.Middle) // Check state before starting each tween
                    {
-                        Debug.Log($"PillCraftingMinigame ({gameObject.name}): Aborting pill packaging animation coroutine due to minigame ending.");
+                        Debug.Log($"PillCraftingMinigame ({gameObject.name}): Aborting pill packaging animation coroutine due to minigame ending or state change.");
                         yield break;
                    }
 
                    GameObject pillGO = pills[i];
                    if (pillGO == null)
                    {
-                        Debug.LogWarning($"PillCraftingMinigame ({gameObject.name}): Null pill found in list at index {i} during packaging animation.", this);
-                        continue;
+                        Debug.LogWarning($"PillCraftingMinigame ({gameObject.name}): Null pill found in list at index {i} during packaging animation. Skipping this pill.", this);
+                        continue; // Skip this specific pill, don't fail the whole craft for one null entry
                    }
                    Vector3 targetPos = targetPositions[i];
 
                    if (pillCraftingAnimator != null)
                    {
+                        // AnimatePillIntoContainer returns a Tween. We could check if the tween creation failed.
+                        // However, AnimatePillIntoContainer itself logs errors and returns null if it fails critically (e.g., missing midpoint).
+                        // If it returns null, the animation for this specific pill is skipped, but the coroutine continues.
+                        // A single pill animation failing shouldn't fail the whole craft.
+                        // If the animator itself is null, the initial check handles it.
                         pillCraftingAnimator.AnimatePillIntoContainer(pillGO, targetPos);
                    }
-                   else Debug.LogWarning($"PillCraftingMinigame ({gameObject.name}): Animator is null during packaging animation for pill {pillGO.name}.", this);
+                   else
+                   {
+                       // This case should be caught by the initial null check for pillCraftingAnimator,
+                       // but as a defensive measure:
+                       Debug.LogError($"PillCraftingMinigame ({gameObject.name}): Animator is null during packaging animation for pill {pillGO.name}! Signalling internal failure.", this);
+                       MarkMinigameFailedCritically(); // Use base method for critical failure
+                       yield break; // Stop the coroutine
+                   }
 
                    yield return new WaitForSeconds(stagger);
               }
               Debug.Log($"PillCraftingMinigame ({gameObject.name}): Finished starting pill packaging animations.");
+              // Note: This coroutine doesn't call EndMinigame itself; PackagingSequence does after waiting for this one conceptually.
          }
 
 
@@ -859,4 +892,3 @@ namespace Systems.CraftingMinigames
         }
     }
 }
-// --- END OF FILE PillCraftingMinigame.cs ---

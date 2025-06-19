@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: Test1
   m_EditorClassIdentifier: 
   Name: Test1
-  maxStack: 2
+  maxStack: 1
   Id:
     Part1: 1954108932
     Part2: 1128778770
