@@ -29,6 +29,8 @@ namespace Systems.Inventory
     /// --- MODIFIED: Removed redundant IsOutputInventoryEmpty check in HandleStateEntry(Outputting). ---
     /// --- MODIFIED: Receives actual crafted amount from CraftingMinigameManager. --- // <--- ADDED
     /// --- MODIFIED: Passes actual crafted amount to CraftingExecutor. --- // <--- ADDED
+    /// --- MODIFIED: Removed state transition from HandleOutputInventoryChange. --- // <--- ADDED
+    /// --- MODIFIED: Added state transition logic to CloseCraftingUI. --- // <--- ADDED
     /// </summary>
     public class CraftingStation : MonoBehaviour
     {
@@ -75,7 +77,7 @@ namespace Systems.Inventory
 
         private CraftingRecipe currentMatchedRecipe;
         private int maxCraftableBatches = 0;
-        private int totalPrescriptionUnits = 0; // <-- Store total units from prescription order (needed for delivery validation)
+        private int totalPrescriptionUnits = 0; // <-- Store total units from prescription order (needed for delivery validation later)
         private int actualCraftedAmount = 0; // <-- NEW: Store the actual amount crafted by the minigame
 
 
@@ -163,6 +165,7 @@ namespace Systems.Inventory
             CraftingState stateToEnter = currentState; // Assume we resume the old state
 
             // --- NEW LOGIC: Check if we were in Outputting state and the output is now empty ---
+            // This logic correctly handles the case where the player cleared the output *before* closing the UI.
             if (currentState == CraftingState.Outputting)
             {
                 if (IsOutputInventoryEmpty())
@@ -186,11 +189,32 @@ namespace Systems.Inventory
         }
 
         /// <summary>
-        /// Called to close the crafting UI. The station retains its state.
+        /// Called to close the crafting UI. The station retains its state,
+        /// UNLESS it is in the Outputting state and the output inventory is empty,
+        /// in which case it transitions to Inputting.
+        /// --- MODIFIED: Added logic to check output inventory and transition state if empty. ---
         /// </summary>
         public void CloseCraftingUI()
         {
             Debug.Log($"CraftingStation ({gameObject.name}): Closing Crafting UI. Current state: {currentState}.", this);
+
+            // --- NEW LOGIC: Check if in Outputting state and output is empty upon closing ---
+            // This is the new trigger for transitioning from Outputting to Inputting.
+            if (currentState == CraftingState.Outputting)
+            {
+                if (IsOutputInventoryEmpty())
+                {
+                    Debug.Log($"CraftingStation ({gameObject.name}): Output inventory is empty upon closing UI. Transitioning to Inputting.", this);
+                    SetState(CraftingState.Inputting); // Transition to Inputting state
+                }
+                else
+                {
+                     Debug.Log($"CraftingStation ({gameObject.name}): Output inventory is NOT empty upon closing UI. Remaining in Outputting state.", this);
+                     // State remains Outputting, so when UI is reopened, it will check again in OpenCraftingUI
+                }
+            }
+            // --- END NEW LOGIC ---
+
             craftingUIRoot.SetActive(false);
         }
 
@@ -243,6 +267,7 @@ namespace Systems.Inventory
                     Debug.Log($"CraftingStation ({gameObject.name}): Exiting Outputting state.", this);
                     // Clean up after exiting Outputting state (e.g., after items are taken)
                     // No specific cleanup needed here, output inventory handles itself.
+                    // The transition back to Inputting is now handled by CloseCraftingUI if output is empty.
                     break;
             }
         }
@@ -323,7 +348,7 @@ namespace Systems.Inventory
                 case CraftingState.Outputting:
                     Debug.Log($"CraftingStation ({gameObject.name}): Crafting complete. Item(s) available in output.", this);
                     // The check for empty output on ENTERING Outputting state is only needed when OPENING the UI.
-                    // The transition back to Inputting when the output is cleared is handled by HandleOutputInventoryChange.
+                    // The transition back to Inputting when the output is cleared is now handled by CloseCraftingUI.
                     break;
             }
         }
@@ -423,10 +448,8 @@ namespace Systems.Inventory
         }
 
         /// <summary>
-        /// Handles changes in the output inventory. Specifically checks for
-        /// item removal via drag-and-drop from the ghost slot to trigger
-        /// state transition if the inventory becomes empty.
-        /// --- MODIFIED: Check IsOutputInventoryEmpty() on any change while in Outputting state. ---
+        /// Handles changes in the output inventory.
+        /// --- MODIFIED: Removed state transition logic. The transition now happens only when the UI is closed. ---
         /// </summary>
         private void HandleOutputInventoryChange(ArrayChangeInfo<Item> changeInfo)
         {
@@ -439,8 +462,8 @@ namespace Systems.Inventory
              // Check if the *physical* slots are all empty
              if (IsOutputInventoryEmpty())
              {
-                 Debug.Log($"CraftingStation ({gameObject.name}): Output inventory is now empty. Transitioning back to Inputting.", this);
-                 SetState(CraftingState.Inputting); // Transition back when output is fully cleared
+                 Debug.Log($"CraftingStation ({gameObject.name}): Output inventory is now empty. State will transition back to Inputting when UI is closed.", this);
+                 // REMOVED: SetState(CraftingState.Inputting); // <-- THIS LINE IS REMOVED IN STEP 1
              }
              else
              {
