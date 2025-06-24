@@ -19,6 +19,8 @@ namespace Game.NPC.BasicStates
         BasicIdleAtHome,
         BasicLookToPrescription,
         BasicWaitForPrescription,
+        BasicWaitingAtPrescriptionSpot, // NEW: Simulating waiting at the *prescription claim spot* (corresponds to active WaitingForPrescription)
+        BasicWaitingForDeliverySim,
         
         // Add other basic states as needed in the future
     }

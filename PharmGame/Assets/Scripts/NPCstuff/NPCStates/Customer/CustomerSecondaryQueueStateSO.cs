@@ -32,7 +32,6 @@ namespace Game.NPC.States
             impatientTimer = 0f;
             // Use context properties now
             Debug.Log($"{context.NpcObject.name}: Entering {name}. Starting impatience timer for {impatientDuration:F2} seconds at spot {context.AssignedQueueSpotIndex} in {context.CurrentQueueMoveType} queue.", context.NpcObject);
-            // ------------------------------
 
             // Note: Play waiting animation
             // context.PlayAnimation("WaitingOutside");
@@ -71,7 +70,7 @@ namespace Game.NPC.States
             base.OnUpdate(context);
 
             // --- Impatience Timer Update and Check (Migration) ---
-            impatientTimer += context.DeltaTime; // <-- MODIFIED: Use context.DeltaTime
+            impatientTimer += Time.deltaTime; 
 
             if (impatientTimer >= impatientDuration)
             {
@@ -80,7 +79,6 @@ namespace Game.NPC.States
                 context.PublishEvent(new NpcImpatientEvent(context.NpcObject, CustomerState.SecondaryQueue));
                 // The Runner's handler for this event will transition the state.
             }
-            // -------------------------------------------
 
              // Check IsAtDestination logic is now in the Runner's Update.
              // The Runner calls OnReachedDestination when true.

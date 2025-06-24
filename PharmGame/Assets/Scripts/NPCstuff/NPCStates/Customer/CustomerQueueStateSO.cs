@@ -32,12 +32,11 @@ namespace Game.NPC.States
             impatientTimer = 0f;
             // Use context properties now
             Debug.Log($"{context.NpcObject.name}: Entering {name}. Starting impatience timer for {impatientDuration:F2} seconds at spot {context.AssignedQueueSpotIndex} in {context.CurrentQueueMoveType} queue.", context.NpcObject);
-            // ------------------------------
 
             // Note: Play waiting/idle animation
             // context.PlayAnimation("WaitingInLine");
 
-            // --- Phase 3, Substep 1: Initiate movement to the assigned queue spot ---
+            // --- Initiate movement to the assigned queue spot ---
             // The spot's transform was set as Runner.CurrentTargetLocation by TryJoinQueue before the transition.
             // Access CurrentTargetLocation via Runner property on Context
             if (context.Runner.CurrentTargetLocation.HasValue && context.Runner.CurrentTargetLocation.Value.browsePoint != null && context.AssignedQueueSpotIndex != -1)
@@ -70,7 +69,6 @@ namespace Game.NPC.States
                 context.TransitionToState(CustomerState.Exiting); // Fallback
                 // The Runner's TransitionToState will handle stopping movement and resetting Runner flags.
             }
-            // --- END Phase 3, Substep 1 ---
         }
 
         public override void OnUpdate(NpcStateContext context)
@@ -78,7 +76,7 @@ namespace Game.NPC.States
             base.OnUpdate(context);
 
             // --- Impatience Timer Update and Check (Migration) ---
-            impatientTimer += context.DeltaTime; // <-- MODIFIED: Use context.DeltaTime
+            impatientTimer += Time.deltaTime; 
 
             if (impatientTimer >= impatientDuration)
             {
@@ -87,7 +85,6 @@ namespace Game.NPC.States
                 context.PublishEvent(new NpcImpatientEvent(context.NpcObject, CustomerState.Queue));
                 // The Runner's handler for this event will transition the state.
             }
-            // -------------------------------------------
 
              // Check IsAtDestination logic is now in the Runner's Update.
              // The Runner calls OnReachedDestination when true.
@@ -98,7 +95,7 @@ namespace Game.NPC.States
 
             impatientTimer = 0f;
 
-            // --- Phase 3, Substep 1: Publish the QueueSpotFreedEvent ---
+            // --- Publish the QueueSpotFreedEvent ---
              // This event must be published when the NPC EXITS this state, regardless of the reason.
              // The CustomerManager will receive this event, free the spot, and start the cascade if needed.
              // Use context properties now
@@ -111,15 +108,9 @@ namespace Game.NPC.States
              {
                   Debug.LogWarning($"{context.NpcObject.name}: Queue spot index not set when exiting {name} state! Cannot publish QueueSpotFreedEvent.", context.NpcObject);
              }
-            // --- END Phase 3, Substep 1 ---
 
             // Example: Stop waiting animation
             // context.PlayAnimation("Idle");
-
-            // --- REMOVED AssigedQueueSpotIndex reset from here ---
-            // This is handled by NpcQueueHandler.Reset() called from Runner.ResetRunnerTransientData
-            // context.Runner.AssignedQueueSpotIndex = -1; // REMOVED
-            // --- END REMOVED ---
         }
 
         public override void OnReachedDestination(NpcStateContext context) // <-- Implement OnReachedDestination if CheckMovementArrival is true

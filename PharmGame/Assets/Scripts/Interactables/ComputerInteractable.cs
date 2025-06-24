@@ -7,10 +7,11 @@ using System.Collections.Generic;
 using System.Text;
 using TMPro;
 using Systems.Inventory; // Needed for ItemDetails and Inventory
-using Systems.Interaction; // ADD THIS USING
-using Systems.UI; // Needed for PlayerUIPopups
+using Systems.Interaction; // Needed for IInteractable, InteractionResponse
+using Systems.UI; // Needed for PlayerUIPopups, IPanelActivatable
 
-public class ComputerInteractable : MonoBehaviour, IInteractable
+// Implement the new IPanelActivatable interface
+public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivatable // ADD IPanelActivatable
 {
     [Header("Camera View Point")]
     [Tooltip("The transform the camera should move to when interacting with the computer.")]
@@ -23,7 +24,7 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
     [SerializeField] private string interactionPrompt = "Access Computer (E)";
 
     [Tooltip("Should this interactable be enabled by default when registered?")]
-    [SerializeField] private bool enableOnStart = true;
+    [SerializeField] private bool enableOnStart = true; // Keep this field for InteractionManager
 
     [Header("Prompt Settings")]
     public Vector3 computerTextPromptOffset = Vector3.zero;
@@ -31,28 +32,34 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
 
     public string InteractionPrompt => interactionPrompt;
 
-    // The purpose of isInteracting needs re-evaluation now that state/UI is external.
-    // If it's just to prevent re-interacting while already using *this* computer, keep it and reset elsewhere.
-    // If MenuManager handles entering/exiting computer state, its state check might be sufficient.
-    // For now, let's keep it but its state management connection is removed.
-    private bool isInteracting = false; // Tracks if *this* computer is conceptually being used
+    // isInteracting is still used to prevent re-triggering Interact() while in the computer state
+    private bool isInteracting = false;
 
     // --- Shopping Cart and UI Logic ---
     [Header("Computer UI References")]
-    [Tooltip("The root GameObject containing all the computer screen UI elements.")]
+    [Tooltip("The root GameObject containing all the computer screen UI elements (the one with TabManager).")]
     [SerializeField] private GameObject computerUIContainer;
 
-    [Tooltip("Button for the first medicine item.")]
-    [SerializeField] private Button item1Button;
+    // NEW: Reference to the specific content panel this script manages (the Shop panel)
+    [Tooltip("The GameObject panel within the computer UI that contains the shop elements.")]
+    [SerializeField] private GameObject shopContentPanel;
 
-    [Tooltip("Button for the second medicine item.")]
-    [SerializeField] private Button item2Button;
+    // REMOVED: Direct [SerializeField] references to UI elements.
+    // [Tooltip("Button for the first medicine item.")]
+    // [SerializeField] private Button item1Button;
+    // [Tooltip("Button for the second medicine item.")]
+    // [SerializeField] private Button item2Button;
+    // [Tooltip("Text component to display the shopping cart contents.")]
+    // [SerializeField] private TextMeshProUGUI shoppingCartText;
+    // [Tooltip("Button to process the purchase.")]
+    // [SerializeField] private Button buyButton;
 
-    [Tooltip("Text component to display the shopping cart contents.")]
-    [SerializeField] private TextMeshProUGUI shoppingCartText;
+    // NEW: Private fields to hold dynamically found UI element references
+    private Button item1Button;
+    private Button item2Button;
+    private TextMeshProUGUI shoppingCartText;
+    private Button buyButton;
 
-    [Tooltip("Button to process the purchase.")]
-    [SerializeField] private Button buyButton;
 
     // --- Item Details and Delivery Inventory ---
     [Header("Inventory Integration")]
@@ -68,25 +75,23 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
 
     private Dictionary<ItemDetails, int> shoppingCart = new Dictionary<ItemDetails, int>();
 
-    // --- NEW: Awake Method for Registration ---
+    // --- Awake Method for Registration ---
     private void Awake()
     {
-         // --- NEW: Register with the singleton InteractionManager ---
-         if (Systems.Interaction.InteractionManager.Instance != null) // Use full namespace if needed
+         // Register with the singleton InteractionManager
+         if (Systems.Interaction.InteractionManager.Instance != null)
          {
              Systems.Interaction.InteractionManager.Instance.RegisterInteractable(this);
          }
          else
          {
-             // This error is critical as the component won't be managed
              Debug.LogError($"ComputerInteractable on {gameObject.name}: InteractionManager.Instance is null in Awake! Cannot register.", this);
-             // Optionally disable here if registration is absolutely required for function
+             // Consider disabling the component if registration is essential
              // enabled = false;
          }
-         // --- END NEW ---
 
          // REMOVED: Any manual enabled = false calls from Awake if they existed
-         // The InteractionManager handles the initial enabled state.
+         // The InteractionManager handles the initial enabled state based on enableOnStart.
     }
     // --- END NEW ---
 
@@ -119,54 +124,136 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
         {
             Debug.LogError("ComputerInteractable: 'Camera View Point' Transform is not assigned!", this);
         }
+        if (computerUIContainer == null)
+        {
+             Debug.LogError("ComputerInteractable: 'Computer UI Container' GameObject is not assigned!", this);
+        }
+        if (shopContentPanel == null)
+        {
+             Debug.LogError("ComputerInteractable: 'Shop Content Panel' GameObject is not assigned! Shop UI functionality will not work.", this);
+        }
+        if (item1Details == null) Debug.LogWarning("ComputerInteractable: Item 1 Details are not assigned. Item 1 button functionality may be limited.");
+        if (item2Details == null) Debug.LogWarning("ComputerInteractable: Item 2 Details are not assigned. Item 2 button functionality may be limited.");
+        if (targetDeliveryInventory == null) Debug.LogWarning("ComputerInteractable: Target Delivery Inventory is not assigned. Purchase functionality will not work.");
 
-        // Subscribe to button click events
+
+        // REMOVED: Button subscription logic from Start.
+        // This will now happen in OnPanelActivated.
+
+        // REMOVED: Initial UpdateShoppingCartUI() call from Start.
+        // This will now happen in OnPanelActivated.
+    }
+
+    // --- NEW: Implement IPanelActivatable methods ---
+
+    /// <summary>
+    /// Called by the TabManager when the shopContentPanel becomes active.
+    /// Finds UI elements and subscribes button listeners.
+    /// </summary>
+    public void OnPanelActivated()
+    {
+        Debug.Log("ComputerInteractable: Shop Panel Activated. Finding UI elements and subscribing listeners.");
+
+        if (shopContentPanel == null)
+        {
+            Debug.LogError("ComputerInteractable: shopContentPanel is null in OnPanelActivated! Cannot find UI elements.", this);
+            return;
+        }
+
+        // --- Find UI elements dynamically within the shopContentPanel ---
+        // Using GetComponentInChildren is generally safe if the elements are children.
+        // You might need to adjust if they are deeply nested or named differently.
+        item1Button = shopContentPanel.transform.Find("ShopItemsScrollArea/Viewport/ShopButtons/Med1")?.GetComponent<Button>();
+        item2Button = shopContentPanel.transform.Find("ShopItemsScrollArea/Viewport/ShopButtons/Med2")?.GetComponent<Button>();
+        shoppingCartText = shopContentPanel.transform.Find("ShoppingCart/Text")?.GetComponent<TextMeshProUGUI>(); 
+        buyButton = shopContentPanel.transform.Find("ShoppingCart/BuyButton")?.GetComponent<Button>(); 
+
+        // --- Subscribe to button click events ---
         if (item1Button != null && item1Details != null)
         {
             item1Button.onClick.AddListener(() => AddItemToCart(item1Details));
+            Debug.Log("ComputerInteractable: Subscribed Item 1 Button listener.");
         }
         else
         {
-            if(item1Button == null) Debug.LogWarning("ComputerInteractable: Item 1 Button is not assigned.");
-            if(item1Details == null) Debug.LogWarning("ComputerInteractable: Item 1 Details are not assigned. Item 1 button will not work.");
+            if(item1Button == null) Debug.LogWarning("ComputerInteractable: Item 1 Button not found under shopContentPanel.");
+            // item1Details warning is already in Start
         }
 
         if (item2Button != null && item2Details != null)
         {
             item2Button.onClick.AddListener(() => AddItemToCart(item2Details));
+            Debug.Log("ComputerInteractable: Subscribed Item 2 Button listener.");
         }
         else
         {
-             if(item2Button == null) Debug.LogWarning("ComputerInteractable: Item 2 Button is not assigned.");
-             if(item2Details == null) Debug.LogWarning("ComputerInteractable: Item 2 Details are not assigned. Item 2 button will not work.");
+             if(item2Button == null) Debug.LogWarning("ComputerInteractable: Item 2 Button not found under shopContentPanel.");
+             // item2Details warning is already in Start
         }
 
         if(buyButton != null)
         {
             buyButton.onClick.AddListener(ProcessPurchase);
+            Debug.Log("ComputerInteractable: Subscribed Buy Button listener.");
         }
         else
         {
-             Debug.LogWarning("ComputerInteractable: Buy Button is not assigned. Purchase functionality will not work.");
+             Debug.LogWarning("ComputerInteractable: Buy Button not found under shopContentPanel.");
         }
 
+        // Update the UI display when the panel becomes active
         UpdateShoppingCartUI();
     }
+
+    /// <summary>
+    /// Called by the TabManager when the shopContentPanel becomes inactive.
+    /// Unsubscribes button listeners and clears references.
+    /// </summary>
+    public void OnPanelDeactivated()
+    {
+        Debug.Log("ComputerInteractable: Shop Panel Deactivated. Unsubscribing listeners and clearing references.");
+
+        // --- Unsubscribe button events ---
+        // Check if references are valid before removing listeners
+        if(item1Button != null)
+        {
+            item1Button.onClick.RemoveAllListeners(); // Remove all listeners added to this button
+            Debug.Log("ComputerInteractable: Unsubscribed Item 1 Button listeners.");
+        }
+        if(item2Button != null)
+        {
+            item2Button.onClick.RemoveAllListeners(); // Remove all listeners added to this button
+            Debug.Log("ComputerInteractable: Unsubscribed Item 2 Button listeners.");
+        }
+        if(buyButton != null)
+        {
+            buyButton.onClick.RemoveAllListeners(); // Remove all listeners added to this button
+            Debug.Log("ComputerInteractable: Unsubscribed Buy Button listeners.");
+        }
+
+        // --- Clear dynamic references ---
+        item1Button = null;
+        item2Button = null;
+        shoppingCartText = null;
+        buyButton = null;
+    }
+
+    // --- END NEW ---
+
 
     // --- Existing OnDestroy Method ---
     private void OnDestroy()
     {
-        // Unsubscribe button events
-        if(item1Button != null) item1Button.onClick.RemoveAllListeners();
-        if(item2Button != null) item2Button.onClick.RemoveAllListeners();
-        if(buyButton != null) buyButton.onClick.RemoveAllListeners();
+        // Ensure listeners are removed if the object is destroyed while the panel is active
+        // OnPanelDeactivated might not have been called if the whole UI root is destroyed.
+        // This provides a final cleanup.
+        OnPanelDeactivated(); // Call the deactivation logic for cleanup
 
-        // --- NEW: Unregister from the singleton InteractionManager ---
+        // Unregister from the singleton InteractionManager
         if (Systems.Interaction.InteractionManager.Instance != null)
         {
              Systems.Interaction.InteractionManager.Instance.UnregisterInteractable(this);
         }
-        // --- END NEW ---
     }
 
     /// <summary>
@@ -176,16 +263,15 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
     /// <returns>An InteractionResponse object describing the result of the interaction.</returns>
     public InteractionResponse Interact() // CHANGED RETURN TYPE
     {
-        // Only interact if the game is in the Playing state (MenuManager checks this)
-        // We can remove the state check here if PlayerInteractionManager only calls Interact in Playing state.
-        // Let's keep the isInteracting check if it's used elsewhere to prevent re-triggering.
-        if (isInteracting) // Check if *this* computer is already in use
+        // Only interact if *this* computer is not already in use
+        if (isInteracting)
         {
             Debug.Log("ComputerInteractable: Already interacting with this computer.");
             return null; // Return null response if already interacting
         }
 
-        if (cameraViewPoint == null || computerUIContainer == null) // Check essential data for response
+        // Check essential data for response
+        if (cameraViewPoint == null || computerUIContainer == null)
         {
              Debug.LogError("ComputerInteractable: Cannot create EnterComputerResponse - Camera View Point or Computer UI Container not assigned.", this);
              return null;
@@ -193,16 +279,16 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
 
         Debug.Log("ComputerInteractable: Interact called. Returning EnterComputerResponse.");
 
-        // --- Create and return the response ---
+        // Create and return the response
         // The PlayerInteractionManager will receive this and pass it to the MenuManager
         EnterComputerResponse response = new EnterComputerResponse(
             cameraViewPoint,
             cameraMoveDuration,
-            computerUIContainer,
-            this
+            computerUIContainer, // Pass the root UI container GameObject
+            this // Pass a reference to this ComputerInteractable instance
         );
 
-        // Mark as interacting *immediately* before returning the response
+        // Mark as interacting immediately before returning the response
         // The state exit action in MenuManager will be responsible for clearing this flag.
         isInteracting = true;
 
@@ -215,7 +301,7 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
     /// Adds one quantity of the specified item details to the shopping cart.
     /// </summary>
     /// <param name="itemDetails">The ItemDetails of the item to add.</param>
-    private void AddItemToCart(ItemDetails itemDetails) // CHANGE PARAMETER TYPE
+    private void AddItemToCart(ItemDetails itemDetails)
     {
          if(itemDetails == null)
          {
@@ -242,9 +328,11 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
     /// </summary>
     private void UpdateShoppingCartUI()
     {
+        // Use the dynamically found reference
         if (shoppingCartText == null)
         {
-            Debug.LogError("ComputerInteractable: ShoppingCartText is not assigned!");
+            // This warning might happen if the panel is deactivated, which is fine.
+            // Debug.LogWarning("ComputerInteractable: ShoppingCartText reference is null. Cannot update UI.");
             return;
         }
 
@@ -257,10 +345,11 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
         }
         else
         {
-            foreach (KeyValuePair<ItemDetails, int> itemEntry in new Dictionary<ItemDetails, int>(shoppingCart)) // Iterate using KeyValuePair<ItemDetails, int>
+            // Iterate over a copy to avoid issues if the collection is modified during iteration (though unlikely here)
+            foreach (KeyValuePair<ItemDetails, int> itemEntry in new Dictionary<ItemDetails, int>(shoppingCart))
             {
                 // Get the item name from the ItemDetails key
-                cartDisplay.AppendLine($"{itemEntry.Value}x {itemEntry.Key.Name}"); // Use itemEntry.Key.Name
+                cartDisplay.AppendLine($"{itemEntry.Value}x {itemEntry.Key.Name}");
             }
         }
 
@@ -276,18 +365,16 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
     {
         Debug.Log("ComputerInteractable: Processing purchase!");
 
-        // We now just need the target Inventory, not its Combiner directly
-        if (targetDeliveryInventory == null) // *** MODIFIED CHECK ***
+        if (targetDeliveryInventory == null)
         {
             Debug.LogError("ComputerInteractable: Target Delivery Inventory is not assigned! Cannot deliver items.", this);
-            PlayerUIPopups.Instance?.ShowPopup("Purchase Failed", "Delivery inventory not set up!"); // Added popup
+            PlayerUIPopups.Instance?.ShowPopup("Purchase Failed", "Delivery inventory not set up!");
             return;
         }
-        // Optional: Check if the Inventory *does* have a Combiner, as AddItem relies on it
         if (targetDeliveryInventory.Combiner == null)
          {
              Debug.LogError("ComputerInteractable: Target Delivery Inventory is missing its Combiner component! Cannot deliver items.", this);
-             PlayerUIPopups.Instance?.ShowPopup("Purchase Failed", "Delivery inventory misconfigured!"); // Added popup
+             PlayerUIPopups.Instance?.ShowPopup("Purchase Failed", "Delivery inventory misconfigured!");
              return;
          }
 
@@ -295,11 +382,10 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
         if (shoppingCart.Count == 0)
         {
              Debug.Log("ComputerInteractable: Shopping cart is empty. Nothing to purchase.");
-             PlayerUIPopups.Instance?.ShowPopup("Purchase Failed", "Your cart is empty!"); // Added popup
+             PlayerUIPopups.Instance?.ShowPopup("Purchase Failed", "Your cart is empty!");
              return;
         }
 
-        // Create a list to hold all the individual Item instances to be added
         List<Item> itemsToDeliver = new List<Item>();
 
         // Iterate through the shopping cart contents
@@ -316,15 +402,15 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
 
             Debug.Log($"ComputerInteractable: Preparing to purchase {totalQuantityToCreate}x {details.Name} (Max Stack: {details.maxStack}).");
 
-            // --- Create Item instances respecting maxStack ---
+            // Create Item instances respecting maxStack
             int quantityRemaining = totalQuantityToCreate;
 
             // If maxStack is 1, create individual instances
-            if (details.maxStack == 1) // Check specifically for maxStack == 1 for single instances
+            if (details.maxStack == 1)
             {
                 for (int i = 0; i < totalQuantityToCreate; i++)
                 {
-                    itemsToDeliver.Add(details.Create(1)); // Create item with quantity 1
+                    itemsToDeliver.Add(details.Create(1));
                      Debug.Log($"ComputerInteractable: Created 1x {details.Name} instance (maxStack 1).");
                 }
             }
@@ -335,7 +421,7 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
                 // Create full stacks
                 while (quantityRemaining >= maxStack)
                 {
-                    itemsToDeliver.Add(details.Create(maxStack)); // Create item with a full stack quantity
+                    itemsToDeliver.Add(details.Create(maxStack));
                     quantityRemaining -= maxStack;
                      Debug.Log($"ComputerInteractable: Created {maxStack}x {details.Name} instance (full stack). Remaining: {quantityRemaining}.");
                 }
@@ -343,51 +429,43 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
                 // Create remaining items if any
                 if (quantityRemaining > 0)
                 {
-                    itemsToDeliver.Add(details.Create(quantityRemaining)); // Create item with the remaining quantity
+                    itemsToDeliver.Add(details.Create(quantityRemaining));
                      Debug.Log($"ComputerInteractable: Created {quantityRemaining}x {details.Name} instance (remaining).");
                 }
             }
         }
 
-        // --- Add the created Item instances to the delivery inventory ---
+        // Add the created Item instances to the delivery inventory
         Debug.Log($"ComputerInteractable: Delivering {itemsToDeliver.Count} item instances to inventory.");
 
-        bool anyFailedToAdd = false; // Flag to track if ANY item failed to add
+        bool anyFailedToAdd = false;
 
         foreach (Item itemInstance in itemsToDeliver)
         {
             // Use the public AddItem method on the target Inventory
-            // Inventory.AddItem will handle the logic based on itemInstance's maxStack
-            bool added = targetDeliveryInventory.AddItem(itemInstance); // *** MODIFIED ***
+            bool added = targetDeliveryInventory.AddItem(itemInstance);
 
             if (!added)
             {
-                 // If AddItem fails for any instance (inventory full or filtering disallowed), log a warning
-                 // The itemInstance.quantity will reflect what couldn't be added (0 if non-stackable, >0 if stackable partial fail)
                  Debug.LogWarning($"ComputerInteractable: Failed to add item instance '{itemInstance.details?.Name ?? "Unknown"}' (Initial Qty: {itemInstance.quantity}) to delivery inventory. Remaining on instance: {itemInstance.quantity}. It might be full or filtering disallowed.", this);
                  anyFailedToAdd = true;
-                 // Decide if you want to stop adding if the inventory becomes full mid-delivery
-                 // For now, it will continue trying to add remaining items.
             }
              else
              {
-                 // Log success message including remaining quantity (should be 0 if fully added)
                   Debug.Log($"ComputerInteractable: Successfully added item instance '{itemInstance.details?.Name ?? "Unknown"}' to delivery inventory. Remaining on instance: {itemInstance.quantity}.");
              }
         }
 
-         // Provide feedback based on whether any items failed to add
-         if (!anyFailedToAdd) // If no items failed to add
+         if (!anyFailedToAdd)
          {
              Debug.Log("ComputerInteractable: All purchased item instances successfully delivered.");
-             PlayerUIPopups.Instance?.ShowPopup("Purchase Complete", "Your order has been placed!"); // Added popup
+             PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer    ", "Your order has been placed!");
          }
          else
          {
              Debug.LogWarning("ComputerInteractable: Some purchased item instances could not be delivered.", this);
-             PlayerUIPopups.Instance?.ShowPopup("Delivery Failed", "Some items could not be delivered! Inventory might be full."); // Added popup
+             PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Some items could not be delivered! Inventory might be full.");
          }
-
 
         // Clear the shopping cart after attempting to process all items
         shoppingCart.Clear();
@@ -403,3 +481,4 @@ public class ComputerInteractable : MonoBehaviour, IInteractable
         Debug.Log($"ComputerInteractable ({gameObject.name}): ResetInteraction called. isInteracting is now false.", this);
     }
 }
+// --- END OF FILE ComputerInteractable.cs ---

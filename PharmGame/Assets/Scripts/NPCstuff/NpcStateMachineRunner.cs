@@ -531,7 +531,7 @@ namespace Game.NPC
                          _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                          _stateContext.Runner = this;
                          _stateContext.InterruptionHandler = interruptionHandler;
-                         _stateContext.QueueHandler = queueHandler;
+                         _stateContext.QueueHandler = QueueHandler;
                          _stateContext.PathFollowingHandler = npcPathFollowingHandler;
                          _stateContext.TiData = TiData;
                          // REMOVED: _stateContext.MultiInteractableManager = MultiInteractableManager; // No longer populate this
@@ -755,7 +755,7 @@ namespace Game.NPC
 
                // Note: TiData.CurrentStateEnumKey/Type should have already been set by TiNpcManager
                // *before* calling TransitionToState(ReturningToPool) during deactivation.
-               // This ensures the correct BasicState is saved.
+               // This ensures the correct BasicState (or saved Active state) is saved.
 
                Debug.Log($"NpcStateMachineRunner ({gameObject.name}): State '{TiData.CurrentStateEnumKey}' already set and saved to TiData by TiNpcManager for simulation.");
 
@@ -763,6 +763,8 @@ namespace Game.NPC
 
                // Reset other Runner's transient fields and handlers (Manager reference is kept)
                ResetRunnerTransientData(); // Ensures handlers are reset
+
+               Debug.Log($"NpcStateMachineRunner ({gameObject.name}): TI NPC '{TiData.Id}' Deactivated."); // Corrected log message
           }
 
 
@@ -797,6 +799,8 @@ namespace Game.NPC
                tempFollowReverse = false;
 
                // --- Reset transient prescription fields ---
+               // These fields are specific to TRANSIENT NPCs.
+               // Persistent TI NPC prescription data (pendingPrescription, assignedOrder) is NOT reset here.
                hasPendingPrescriptionTransient = false;
                assignedOrderTransient = new PrescriptionOrder(); // Reset to default struct values
 
@@ -875,7 +879,7 @@ namespace Game.NPC
                     _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                     _stateContext.Runner = this;
                     _stateContext.InterruptionHandler = interruptionHandler;
-                    _stateContext.QueueHandler = queueHandler;
+                    _stateContext.QueueHandler = QueueHandler;
                     _stateContext.PathFollowingHandler = npcPathFollowingHandler;
                     _stateContext.TiData = TiData;
                     // REMOVED: _stateContext.MultiInteractableManager = MultiInteractableManager; // No longer populate this

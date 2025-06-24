@@ -169,13 +169,6 @@ namespace Game.NPC.States // Place alongside other active states
              }
             // --- END NEW ---
 
-            // --- Clear player's active prescription order and UI popup ---
-            // NOTE: The active order is set on PlayerPrescriptionTracker in ObtainPrescription.Interact(),
-            // and the UI is shown by SimpleActionDispatcher.
-            // We should clear the UI on exiting this state regardless of whether the player interacted or not.
-            PlayerUIPopups.Instance?.HidePopup("Prescription Order");
-
-
             // Reset the state of the ObtainPrescription component (clears its internal flag)
             ObtainPrescription obtainPrescriptionComponent = context.GetObtainPrescription(); // Get from context helper (assuming context caches it) or context.NpcObject.GetComponent<ObtainPrescription>()
             if (obtainPrescriptionComponent != null)
@@ -188,7 +181,10 @@ namespace Game.NPC.States // Place alongside other active states
                  Debug.LogWarning($"{context.NpcObject.name}: ObtainPrescription component not found on exit! Cannot reset its state.", context.NpcObject);
             }
 
-            Debug.Log($"{context.NpcObject.name}: Exiting {name}. Claim spot freeing handled by impatience coroutine or next state.", context.NpcObject);
+            // --- MODIFIED: Removed premature claim spot freeing ---
+            // The ClaimPrescriptionSpotEvent is published on ENTER.
+            // Freeing the spot is now handled ONLY by the impatience coroutine or successful delivery.
+            Debug.Log($"{context.NpcObject.name}: Exiting {name}. Claim spot freeing handled by impatience coroutine or successful delivery.", context.NpcObject);
             // --- END MODIFIED ---
         }
 
@@ -206,7 +202,7 @@ namespace Game.NPC.States // Place alongside other active states
                       Debug.Log($"{context.NpcObject.name}: WaitingRoutine interrupted due to state change.", context.NpcObject);
                       yield break; // Exit coroutine if state changes
                  }
-                 timer += context.DeltaTime; // Use context.DeltaTime for frame-rate independent timing
+                 timer += Time.deltaTime; 
                  yield return null; // Wait for the next frame
             }
 
@@ -217,6 +213,33 @@ namespace Game.NPC.States // Place alongside other active states
             Debug.Log($"{context.NpcObject.name}: Impatience timer finished. Publishing FreePrescriptionClaimSpotEvent.", context.NpcObject);
             context.PublishEvent(new FreePrescriptionClaimSpotEvent(context.NpcObject));
             // --- END NEW ---
+
+            // --- Notify PrescriptionManager to remove the assigned order on impatience exit ---
+            PrescriptionManager prescriptionManager = PrescriptionManager.Instance; // Get the instance
+            if (prescriptionManager != null && context.Runner != null)
+            {
+                 if (context.Runner.IsTrueIdentityNpc && context.TiData != null)
+                 {
+                      prescriptionManager.RemoveAssignedTiOrder(context.Runner.TiData.Id);
+                      Debug.Log($"{context.NpcObject.name}: Impatience exit: Notified PrescriptionManager to remove assigned TI order for '{context.Runner.TiData.Id}'.", context.NpcObject);
+                 }
+                 else if (!context.Runner.IsTrueIdentityNpc)
+                 {
+                      // Use context.NpcObject to reference the NPC's GameObject
+                      prescriptionManager.RemoveAssignedTransientOrder(context.NpcObject);
+                      Debug.Log($"{context.NpcObject.name}: Impatience exit: Notified PrescriptionManager to remove assigned Transient order for '{context.NpcObject.name}'.", context.NpcObject);
+                 }
+                 else
+                 {
+                      Debug.LogError($"{context.NpcObject.name}: Impatience exit: Runner is TI but TiData is null, or Runner is null. Cannot notify PrescriptionManager to remove assigned order.", context.NpcObject);
+                 }
+            }
+            else
+            {
+                 Debug.LogError($"{context.NpcObject.name}: Impatience exit: PrescriptionManager or Runner is null! Cannot notify manager to remove assigned order.", context.NpcObject);
+            }
+            // --- END NEW ---
+
 
             // No need to publish NpcImpatientEvent here, just transition directly as per the vision.
             context.TransitionToState(CustomerState.Exiting);

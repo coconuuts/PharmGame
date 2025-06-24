@@ -1,12 +1,10 @@
-// --- START OF FILE WaitingForDeliverySO.cs ---
-
-// --- START OF FILE WaitingForDeliverySO.cs ---
+// --- START OF FILE WaitingForDeliverySO.cs (Remove UI Hide on Exit) ---
 
 using UnityEngine;
 using System;
 using Game.NPC.States; // Needed for NpcStateSO and NpcStateContext
 using Game.NPC; // Needed for CustomerState and GeneralState enums
-using Systems.Interaction; // Needed for IInteractable, InteractionManager // <-- MODIFIED using directive
+using Systems.Interaction; // Needed for IInteractable, InteractionManager
 using Game.Interaction; // Needed for ObtainPrescription and DeliverPrescription
 using Game.Prescriptions; // Needed for PrescriptionManager, PrescriptionOrder
 using Systems.Player; // Needed for PlayerPrescriptionTracker
@@ -23,6 +21,7 @@ namespace Game.NPC.States // Place alongside other active states
     /// for the player to deliver the crafted item.
     /// Corresponds to CustomerState.WaitingForDelivery.
     /// Uses the InteractionManager singleton directly.
+    /// --- MODIFIED: Removed UI Hide from OnExit. ---
     /// </summary>
     [CreateAssetMenu(fileName = "CustomerWaitingForDeliveryState", menuName = "NPC/Customer States/Waiting For Delivery", order = 5)] // Order after WaitingForPrescription
     public class WaitingForDeliverySO : NpcStateSO
@@ -110,6 +109,7 @@ namespace Game.NPC.States // Place alongside other active states
                 // This will also deactivate its prompt via the component's OnDisable/OnDestroy if needed.
                 InteractionManager.Instance.DisableInteractableComponent<DeliverPrescription>(context.NpcObject);
 
+                // Re-enable the default interaction (e.g., Open Inventory)
                 InteractionManager.Instance.EnableOnlyInteractableComponent<OpenNPCInventory>(context.NpcObject);
             }
             else
@@ -117,24 +117,7 @@ namespace Game.NPC.States // Place alongside other active states
                 Debug.LogWarning($"{context.NpcObject.name}: InteractionManager.Instance is null on exit! Cannot disable interactables.", context.NpcObject);
             }
 
-            // --- Clear player's active prescription order and UI popup ---
-            context.PublishEvent(new FreePrescriptionClaimSpotEvent(context.NpcObject));
-            PlayerUIPopups.Instance?.HidePopup("Prescription Order"); // Ensure UI is hidden on exit
-            GameObject playerGO = GameObject.FindGameObjectWithTag("Player");
-            PlayerPrescriptionTracker playerTracker = null;
-            if (playerGO != null)
-            {
-                playerTracker = playerGO.GetComponent<PlayerPrescriptionTracker>();
-            }
-
-            if (playerTracker != null && playerTracker.ActivePrescriptionOrder.HasValue)
-            {
-                Debug.Log($"{context.NpcObject.name}: Exiting {name}. Clearing player's active prescription order.", context.NpcObject);
-                playerTracker.ClearActiveOrder();
-            }
-
-
-            Debug.Log($"{context.NpcObject.name}: Exiting {name}.", context.NpcObject);
+            Debug.Log($"{context.NpcObject.name}: Exiting {name}. Claim spot freeing handled by impatience coroutine or successful delivery.", context.NpcObject);
         }
 
         // Coroutine method for the impatience timer
@@ -151,7 +134,7 @@ namespace Game.NPC.States // Place alongside other active states
                     Debug.Log($"{context.NpcObject.name}: WaitingRoutine interrupted due to state change.", context.NpcObject);
                     yield break; // Exit coroutine if state changes
                 }
-                timer += context.DeltaTime; // Use context.DeltaTime for frame-rate independent timing
+                timer += Time.deltaTime;
                 yield return null; // Wait for the next frame
             }
 
@@ -161,11 +144,13 @@ namespace Game.NPC.States // Place alongside other active states
             // --- Publish event to free the claim spot just before exiting due to impatience ---
             Debug.Log($"{context.NpcObject.name}: Impatience timer finished. Publishing FreePrescriptionClaimSpotEvent.", context.NpcObject);
             context.PublishEvent(new FreePrescriptionClaimSpotEvent(context.NpcObject));
+            // --- END NEW ---
 
+            // --- Notify PrescriptionManager to remove the assigned order on impatience exit ---
             PrescriptionManager prescriptionManager = PrescriptionManager.Instance; // Get the instance
             if (prescriptionManager != null && context.Runner != null)
             {
-                 if (context.Runner.IsTrueIdentityNpc && context.Runner.TiData != null)
+                 if (context.Runner.IsTrueIdentityNpc && context.TiData != null)
                  {
                       prescriptionManager.RemoveAssignedTiOrder(context.Runner.TiData.Id);
                       Debug.Log($"{context.NpcObject.name}: Impatience exit: Notified PrescriptionManager to remove assigned TI order for '{context.Runner.TiData.Id}'.", context.NpcObject);
@@ -185,11 +170,28 @@ namespace Game.NPC.States // Place alongside other active states
             {
                  Debug.LogError($"{context.NpcObject.name}: Impatience exit: PrescriptionManager or Runner is null! Cannot notify manager to remove assigned order.", context.NpcObject);
             }
+            // --- END NEW ---
+
+            // --- Clear player's active prescription order on impatience exit ---
+            // The UI should also be hidden here.
+            GameObject playerGO = GameObject.FindGameObjectWithTag("Player");
+            PlayerPrescriptionTracker playerTracker = null;
+            if (playerGO != null)
+            {
+                playerTracker = playerGO.GetComponent<PlayerPrescriptionTracker>();
+            }
+            if (playerTracker != null && playerTracker.ActivePrescriptionOrder.HasValue)
+            {
+                 Debug.Log($"{context.NpcObject.name}: Impatience exit: Clearing player's active prescription order.", context.NpcObject);
+                 playerTracker.ClearActiveOrder();
+                 // Hide the UI popup here as well
+                 PlayerUIPopups.Instance?.HidePopup("Prescription Order"); // <-- ADDED UI HIDE ON IMPATIENCE
+            }
+            // --- END NEW ---
+
 
             // No need to publish NpcImpatientEvent here, just transition directly as per the vision.
             context.TransitionToState(CustomerState.Exiting);
         }
     }
 }
-
-// --- END OF FILE WaitingForDeliverySO.cs ---

@@ -9,10 +9,9 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 771dbd815af778b4a85e41aa8b05ef83, type: 3}
-  m_Name: TimeSettings
+  m_Script: {fileID: 11500000, guid: e3d71d387f0f49b47ae73ccefd76ba90, type: 3}
+  m_Name: BasicWaitingForDeliverySimState
   m_EditorClassIdentifier: 
-  timeMultiplier: 420
-  startHour: 6
-  sunriseHour: 7
-  sunsetHour: 20
+  shouldUseTimeout: 1
+  minInactiveTimeout: 40
+  maxInactiveTimeout: 50

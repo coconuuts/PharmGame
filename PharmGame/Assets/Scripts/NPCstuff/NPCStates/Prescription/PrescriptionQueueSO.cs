@@ -210,7 +210,7 @@ namespace Game.NPC.States // Place alongside other active states
                       Debug.Log($"{context.NpcObject.name}: WaitingRoutine interrupted due to state change.", context.NpcObject);
                       yield break; // Exit coroutine if state changes
                  }
-                 timer += context.DeltaTime; // Use context.DeltaTime for frame-rate independent timing
+                 timer += Time.deltaTime; // Use context.DeltaTime for frame-rate independent timing
                  yield return null; // Wait for the next frame
             }
 

@@ -1,11 +1,11 @@
-// --- START OF FILE TiNpcManager.cs (Modified Activation for Pending Prescription Waiting) ---
+// --- START OF FILE TiNpcManager.cs (Modified State Saving) ---
 
 using UnityEngine;
 using System.Collections.Generic;
 using System.Linq; // Needed for LINQ (Where, FirstOrDefault)
-using Game.NPC; // Needed for NpcStateMachineRunner, GeneralState, CustomerState enums, PathState enum
+using Game.NPC; // Needed for NpcStateMachineRunner, GeneralState, CustomerState, PathState enum
 using Game.NPC.States; // Needed for State SOs (to check HandledState)
-using Game.NPC.BasicStates; // Needed for BasicState enum, BasicPathState enum, BasicNpcStateManager, BasicNpcStateSO
+using Game.NPC.BasicStates; // Needed for BasicState enum, BasicPathState enum, BasicNpcStateManager
 using Utils.Pooling; // Needed for PoolingManager
 using System.Collections; // Needed for Coroutine
 using System; // Needed for Enum and Type
@@ -31,7 +31,9 @@ namespace Game.NPC.TI // Keep in the TI namespace
     /// Now includes mappings for path following states, loads schedule time ranges,
     /// loads unique decision options, configures intended day start behavior,
     /// and handles activation/deactivation logic.
-    /// MODIFIED: Added specific activation logic for BasicWaitForPrescription state.
+    /// MODIFIED: Added specific activation logic for BasicWaitForCashier, BasicBrowse, BasicPathState, BasicWaitingAtPrescriptionSpot, BasicWaitingForDeliverySim states.
+    /// MODIFIED: Saves the mapped basic state for all active states, including prescription waiting/delivery.
+    /// MODIFIED: Updated state mappings to include new basic states for prescription waiting/delivery.
     /// </summary>
     public class TiNpcManager : MonoBehaviour
     {
@@ -47,14 +49,15 @@ namespace Game.NPC.TI // Keep in the TI namespace
         [SerializeField] private Transform playerTransform;
         // Reference to BasicNpcStateManager (will be obtained in Awake/Start)
         private BasicNpcStateManager basicNpcStateManager;
-        // Reference to GridManager (will be obtained in Awake/Start)
-        private GridManager gridManager;
+        // Reference to GridManager (needed for updating position during simulation)
+        // This reference will be obtained in Awake/Start
+        private GridManager gridManager; // <-- ADDED GridManager reference
         // Reference to ProximityManager (will be obtained in Awake/Start)
         private ProximityManager proximityManager;
         // Reference to WaypointManager (will be obtained in Awake/Start)
         private WaypointManager waypointManager; // <-- Reference to WaypointManager
         // Reference to PrescriptionManager (will be obtained in Awake/Start)
-        private PrescriptionManager prescriptionManager; // <-- Reference to PrescriptionManager
+        private PrescriptionManager prescriptionManager;
 
 
         [Header("TI NPC Setup")]
@@ -198,7 +201,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
                   // Do NOT disable manager entirely, just simulation won't work.
              }
 
-             // Get reference to GridManager
+             // --- GET GridManager reference ---
              gridManager = GridManager.Instance;
              if (gridManager == null)
              {
@@ -320,7 +323,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
                      // Draw a sphere at the data's stored world position
                      Gizmos.DrawSphere(tiData.CurrentWorldPosition, inactiveGizmoRadius);
                      // Optional: Draw the ID as text for easier identification (Requires UnityEditor and Handles)
-                     // try { UnityEditor.Handles.Label(tiData.CurrentWorldPosition + Vector3.up * (inactiveGizmoRadius + 0.1f), tiData.Id); } catch {}
+                     // try { UnityEditor.Handles.Label(npcPosition + Vector3.up * (zoneGizmoRadius + 0.1f), zone.ToString()); } catch {}
 
                      // --- Draw line to simulated target position if it exists ---
                      if (tiData.simulatedTargetPosition.HasValue)
@@ -369,13 +372,17 @@ namespace Game.NPC.TI // Keep in the TI namespace
 
              activeToBaseStateMap[PathState.FollowPath] = BasicPathState.BasicFollowPath;
 
-             // --- NEW Prescription State Mappings ---
+             // --- NEW Prescription State Mappings (MODIFIED) ---
              // These mappings are STILL needed for Transient NPCs and for TI NPCs *before* they hit a Decision Point
              // if they somehow ended up in these states via old logic or specific non-DecisionPoint transitions.
              activeToBaseStateMap[CustomerState.LookToPrescription] = BasicState.BasicLookToPrescription;
-             activeToBaseStateMap[CustomerState.PrescriptionEntering] = BasicState.BasicWaitForPrescription; // Map to BasicWaitForPrescription
-             activeToBaseStateMap[CustomerState.WaitingForPrescription] = BasicState.BasicWaitForPrescription; // Map to BasicWaitForPrescription
-             activeToBaseStateMap[CustomerState.PrescriptionQueue] = BasicState.BasicWaitForPrescription; // Map to BasicWaitForPrescription
+             activeToBaseStateMap[CustomerState.PrescriptionEntering] = BasicState.BasicWaitForPrescription; // Map to BasicWaitForPrescription (queue sim)
+             activeToBaseStateMap[CustomerState.PrescriptionQueue] = BasicState.BasicWaitForPrescription; // Map to BasicWaitForPrescription (queue sim)
+
+             // --- ADDED MAPPINGS FOR NEW BASIC STATES ---
+             activeToBaseStateMap[CustomerState.WaitingForPrescription] = BasicState.BasicWaitingAtPrescriptionSpot; // Map active WaitingForPrescription to new basic state
+             activeToBaseStateMap[CustomerState.WaitingForDelivery] = BasicState.BasicWaitingForDeliverySim; // Map active WaitingForDelivery to new basic state
+             // --- END ADDED ---
              // --- END NEW ---
 
 
@@ -391,11 +398,16 @@ namespace Game.NPC.TI // Keep in the TI namespace
              // --- Basic Path State Mapping ---
              basicToActiveStateMap[BasicPathState.BasicFollowPath] = PathState.FollowPath;
 
-             // --- NEW Basic -> Active Mappings ---
+             // --- NEW Basic -> Active Mappings (MODIFIED) ---
              // These mappings are STILL needed for Transient NPCs and for TI NPCs *before* they hit a Decision Point
              // if they somehow ended up in these states via old logic or specific non-DecisionPoint transitions.
              basicToActiveStateMap[BasicState.BasicLookToPrescription] = CustomerState.LookToPrescription;
              basicToActiveStateMap[BasicState.BasicWaitForPrescription] = CustomerState.PrescriptionQueue; // Map back to the queue state as the default
+
+             // --- ADDED MAPPINGS FOR NEW BASIC STATES ---
+             basicToActiveStateMap[BasicState.BasicWaitingAtPrescriptionSpot] = CustomerState.WaitingForPrescription; // Map new basic state back to active WaitingForPrescription
+             basicToActiveStateMap[BasicState.BasicWaitingForDeliverySim] = CustomerState.WaitingForDelivery; // Map new basic state back to active WaitingForDelivery
+             // --- END ADDED ---
              // --- END NEW ---
 
 
@@ -541,7 +553,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
                   // Iterate over *all* known TI NPCs
                   foreach (var data in allTiNpcs.Values)
                   {
-                       // Check if inactive AND currently in a BasicPathState AND flagged as following a path simulation
+                       // Only count if inactive AND currently in a BasicPathState AND flagged as following a path simulation
                        bool isInactivePathFollowing = !data.IsActiveGameObject &&
                                                       data.isFollowingPathBasic &&
                                                       data.CurrentStateEnum != null &&
@@ -627,11 +639,30 @@ namespace Game.NPC.TI // Keep in the TI namespace
                        BasicNpcStateSO currentStateSO = basicNpcStateManager?.GetBasicStateSO(npcData.CurrentStateEnum);
                        if (currentStateSO == null)
                        {
-                           Debug.LogError($"SIM {npcData.Id}: Current Basic State SO not found for Enum '{npcData.CurrentStateEnum?.GetType().Name}.{npcData.CurrentStateEnum?.ToString() ?? "NULL"}' during simulation tick! Cannot simulate. Transitioning to BasicPatrol (fallback).", npcData.NpcGameObject);
-                           // Delegate the fallback transition to BasicNpcStateManager, which handles missing states.
-                           basicNpcStateManager.TransitionToBasicState(npcData, BasicState.BasicPatrol); // Use BasicState enum directly
-                           countProcessedThisTick++; // Count this entry
-                           continue; // Skip simulation logic for this NPC this tick
+                           // This is the error case we are fixing. The saved state is an Active state enum.
+                           Debug.LogError($"SIM {npcData.Id}: Current Basic State SO not found for Enum '{npcData.CurrentStateEnum?.GetType().Name}.{npcData.CurrentStateEnum?.ToString() ?? "NULL"}' during simulation tick! This is likely an Active state enum saved incorrectly. Attempting to map to Basic State and transition.", npcData.NpcGameObject);
+
+                           // Attempt to map the saved Active state enum to a Basic state enum
+                           Enum mappedBasicState = GetBasicStateFromActiveState(npcData.CurrentStateEnum);
+
+                           if (mappedBasicState != null)
+                           {
+                                Debug.LogWarning($"SIM {npcData.Id}: Successfully mapped saved Active state '{npcData.CurrentStateEnum?.ToString() ?? "NULL"}' to Basic state '{mappedBasicState.ToString()}'. Transitioning to mapped basic state.", npcData.NpcGameObject);
+                                // Transition to the correctly mapped basic state
+                                basicNpcStateManager.TransitionToBasicState(npcData, mappedBasicState);
+                                // The new state's logic will run on the *next* simulation tick for this NPC.
+                                countProcessedThisTick++; // Count this entry
+                                continue; // Skip simulation logic for this NPC this tick
+                           }
+                           else
+                           {
+                                // Mapping failed, fallback to BasicPatrol
+                                Debug.LogError($"SIM {npcData.Id}: Failed to map saved state '{npcData.CurrentStateEnum?.ToString() ?? "NULL"}' to any Basic state. Transitioning to BasicPatrol (fallback).", npcData.NpcGameObject);
+                                basicNpcStateManager.TransitionToBasicState(npcData, BasicState.BasicPatrol); // Use BasicState enum directly
+                                // Note: TransitionToBasicState logs errors if BasicPatrol isn't found either.
+                                countProcessedThisTick++; // Count this entry
+                                continue; // Skip simulation logic for this NPC this tick
+                           }
                        }
 
                        // --- Check if StartDay has begun and transition from BasicIdleAtHome ---
@@ -729,7 +760,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
          /// Handles the process of activating a single TI NPC.
          /// Gets a pooled GameObject and calls the Runner's Activate method.
          /// Called by ProximityManager.
-         /// MODIFIED: Added specific handling for BasicWaitForPrescription state.
+         /// MODIFIED: Added specific handling for BasicWaitForCashier, BasicBrowse, BasicPathState, and NEW BasicWaitingAtPrescriptionSpot/BasicWaitingForDeliverySim states.
          /// </summary>
          /// <param name="tiData">The persistent data of the NPC to activate.</param>
          public void RequestActivateTiNpc(TiNpcData tiData)
@@ -769,24 +800,26 @@ namespace Game.NPC.TI // Keep in the TI namespace
                        tiData.LinkGameObject(npcObject); // Use helper to set NpcGameObject and isActiveGameObject=true
                        // --- END ---
 
-                       // --- Determine the starting state based on saved data (MODIFIED HERE) ---
-                       Enum savedStateEnum = tiData.CurrentStateEnum;
+                       // --- Determine the starting state based on saved data ---
+                       // The saved state should now always be a BasicState enum or null.
+                       Enum savedBasicStateEnum = tiData.CurrentStateEnum;
                        Enum startingActiveStateEnum = null; // The active state we will transition to
 
 
+                         // --- Handle activation based on the saved BasicStateEnum ---
+
                          // --- Handle activation from BasicIdleAtHome ---
-                         if (savedStateEnum != null && savedStateEnum.Equals(BasicState.BasicIdleAtHome))
+                         if (savedBasicStateEnum != null && savedBasicStateEnum.Equals(BasicState.BasicIdleAtHome))
                          {
-                             Debug.Log($"PROXIMITY {tiData.Id}: Saved state is BasicIdleAtHome. Checking schedule for activation.", npcObject);
+                             Debug.Log($"PROXIMITY {tiData.Id}: Saved Basic state is BasicIdleAtHome. Checking schedule for activation.", npcObject);
 
                              if (tiData.startDay.IsWithinRange(currentTime))
                              {
                                   // Day has started, activate to the intended day start state (uses the refined property)
-                                  Debug.Log($"PROXIMITY {tiData.Id}: Day has started ({tiData.startDay}, Current Time: {currentTime:HH:mm}). Activating to intended day start state.", npcObject);
+                                  Debug.Log($"PROXIMITY {tiData.Id}: Day has started ({tiData.startDay}, Current Time: {currentTime:HH:mm}). Activating to intended day start Active state.", npcObject);
                                   startingActiveStateEnum = tiData.DayStartActiveStateEnum;
 
                                    // --- If activating into a PathState, prime the TiData's simulated path data from the dayStart fields ---
-                                   // This data is read by PathStateSO.OnEnter when it detects activation from a saved state.
                                    // This logic uses the DayStart... fields directly from TiNpcData.
                                    if (startingActiveStateEnum != null && startingActiveStateEnum.Equals(PathState.FollowPath))
                                    {
@@ -823,9 +856,9 @@ namespace Game.NPC.TI // Keep in the TI namespace
                          }
 
                          // --- Handle activation from BasicWaitForCashierState ---
-                         else if (savedStateEnum != null && savedStateEnum.Equals(BasicState.BasicWaitForCashier))
+                         else if (savedBasicStateEnum != null && savedBasicStateEnum.Equals(BasicState.BasicWaitForCashier))
                          {
-                              Debug.Log($"PROXIMITY {tiData.Id}: Saved state is BasicWaitForCashier. Checking live queue/register status.", npcObject);
+                              Debug.Log($"PROXIMITY {tiData.Id}: Saved Basic state is BasicWaitForCashier (Queue Sim). Checking live queue/register status.", npcObject);
 
                               // Check register occupancy
                               if (customerManager.IsRegisterOccupied() == false)
@@ -905,9 +938,9 @@ namespace Game.NPC.TI // Keep in the TI namespace
                          // --- END BasicWaitForCashierState handling ---
 
                          // --- Handle activation from BasicBrowseState ---
-                         else if (savedStateEnum != null && savedStateEnum.Equals(BasicState.BasicBrowse))
+                         else if (savedBasicStateEnum != null && savedBasicStateEnum.Equals(BasicState.BasicBrowse))
                          {
-                              Debug.Log($"PROXIMITY {tiData.Id}: Saved state is BasicBrowse. Getting a new browse location from CustomerManager.", npcObject);
+                              Debug.Log($"PROXIMITY {tiData.Id}: Saved Basic state is BasicBrowse. Getting a new browse location from CustomerManager.", npcObject);
 
                               BrowseLocation? newBrowseLocation = customerManager?.GetRandomBrowseLocation();
 
@@ -947,12 +980,12 @@ namespace Game.NPC.TI // Keep in the TI namespace
                          // --- END BasicBrowseState handling ---
 
                          // --- Handle activation from BasicPathState ---
-                         else if (savedStateEnum != null && savedStateEnum.Equals(BasicPathState.BasicFollowPath))
+                         else if (savedBasicStateEnum != null && savedBasicStateEnum.Equals(BasicPathState.BasicFollowPath))
                          {
-                              Debug.Log($"PROXIMITY {tiData.Id}: Saved state is BasicFollowPath. Restoring path progress.", npcObject);
+                              Debug.Log($"PROXIMITY {tiData.Id}: Saved Basic state is BasicFollowPath. Restoring path progress.", npcObject);
 
                               // Get the corresponding active path state enum
-                              startingActiveStateEnum = GetActiveStateFromBasicState(savedStateEnum); // Should map to PathState.FollowPath
+                              startingActiveStateEnum = GetActiveStateFromBasicState(savedBasicStateEnum); // Should map to PathState.FollowPath
 
                               // Check if path data is valid on TiData
                               if (string.IsNullOrWhiteSpace(tiData.simulatedPathID) || tiData.simulatedWaypointIndex < 0 || waypointManager == null)
@@ -984,128 +1017,160 @@ namespace Game.NPC.TI // Keep in the TI namespace
                               }
                          }
 
-                         // --- NEW: Handle activation from BasicWaitForPrescriptionState ---
-                         else if (savedStateEnum != null && savedStateEnum.Equals(BasicState.BasicWaitForPrescription))
+                         // --- NEW: Handle activation from BasicWaitForPrescriptionState (Queue Sim) ---
+                         // This handles NPCs who were waiting in the *prescription queue* simulation.
+                         else if (savedBasicStateEnum != null && savedBasicStateEnum.Equals(BasicState.BasicWaitForPrescription))
                          {
-                              Debug.Log($"PROXIMITY {tiData.Id}: Saved state is BasicWaitForPrescription. Checking live prescription spot/queue status.", npcObject);
+                              Debug.Log($"PROXIMITY {tiData.Id}: Saved Basic state is BasicWaitForPrescription (Queue Sim). Attempting to rejoin prescription queue.", npcObject);
 
-                              // Check prescription claim spot occupancy
-                              if (prescriptionManager.IsPrescriptionClaimSpotOccupied() == false) // Use PrescriptionManager
+                              NpcQueueHandler queueHandler = runner.QueueHandler;
+                              if (queueHandler != null)
                               {
-                                   // Claim spot is free, go straight there
-                                   Debug.Log($"PROXIMITY {tiData.Id}: Prescription claim spot is free. Activating to PrescriptionEntering state.", npcObject);
-                                   startingActiveStateEnum = CustomerState.PrescriptionEntering; // Transition to PrescriptionEntering
-                                   // Clear simulation data as active state takes over
-                                   tiData.simulatedTargetPosition = null;
-                                   tiData.simulatedStateTimer = 0f;
-                                   // Clear path simulation data
-                                   tiData.simulatedPathID = null;
-                                   tiData.simulatedWaypointIndex = -1;
-                                   tiData.simulatedFollowReverse = false;
-                                   tiData.isFollowingPathBasic = false;
-                              }
-                              else
-                              {
-                                   // Claim spot is busy, try to join the prescription queue
-                                   Debug.Log($"PROXIMITY {tiData.Id}: Prescription claim spot is busy. Attempting to join prescription queue.", npcObject);
-
-                                   // Need the Runner's QueueHandler to configure it *before* the state transition
-                                   NpcQueueHandler queueHandler = runner.QueueHandler; // Get handler reference
-                                   if (queueHandler != null)
+                                   Transform assignedSpotTransform;
+                                   int assignedSpotIndex;
+                                   // Attempt to join the prescription queue
+                                   if (prescriptionManager.TryJoinPrescriptionQueue(runner, out assignedSpotTransform, out assignedSpotIndex))
                                    {
-                                        Transform assignedSpotTransform;
-                                        int assignedSpotIndex;
-
-                                        // Use PrescriptionManager to try joining the prescription queue
-                                        if (prescriptionManager.TryJoinPrescriptionQueue(runner, out assignedSpotTransform, out assignedSpotIndex)) // Use PrescriptionManager and QueueType.Prescription implicitly via method
-                                        {
-                                             // Successfully joined queue, setup the handler and transition to PrescriptionQueue state
-                                             Debug.Log($"PROXIMITY {tiData.Id}: Successfully rejoined prescription queue at spot {assignedSpotIndex}. Activating to PrescriptionQueue state.", npcObject);
-                                             // Use SetupQueueSpot method to configure the handler and runner target
-                                             queueHandler.SetupQueueSpot(assignedSpotTransform, assignedSpotIndex, QueueType.Prescription); // Use QueueType.Prescription
-                                             startingActiveStateEnum = CustomerState.PrescriptionQueue; // Transition to PrescriptionQueue
-                                             // Clear simulation data as active state takes over
-                                             tiData.simulatedTargetPosition = null; // Clear simulated target
-                                             tiData.simulatedStateTimer = 0f; // Reset timer
-                                             // Clear path simulation data
-                                             tiData.simulatedPathID = null;
-                                             tiData.simulatedWaypointIndex = -1;
-                                             tiData.simulatedFollowReverse = false;
-                                             tiData.isFollowingPathBasic = false;
-
-                                        }
-                                        else
-                                        {
-                                             // Prescription queue is full, cannot get prescription right now
-                                             Debug.Log($"PROXIMITY {tiData.Id}: Prescription queue is full. Cannot join. Activating to Exiting state.", npcObject);
-                                             startingActiveStateEnum = CustomerState.Exiting; // Give up on prescription
-                                             // Clear simulation data as active state takes over
-                                             tiData.simulatedTargetPosition = null;
-                                             tiData.simulatedStateTimer = 0f;
-                                             // Clear path simulation data
-                                             tiData.simulatedPathID = null;
-                                             tiData.simulatedWaypointIndex = -1;
-                                             tiData.simulatedFollowReverse = false;
-                                             tiData.isFollowingPathBasic = false;
-                                        }
+                                        // Successfully joined queue, setup the handler and transition to PrescriptionQueue state
+                                        Debug.Log($"PROXIMITY {tiData.Id}: Successfully rejoined prescription queue at spot {assignedSpotIndex}. Activating to PrescriptionQueue state.", npcObject);
+                                        queueHandler.SetupQueueSpot(assignedSpotTransform, assignedSpotIndex, QueueType.Prescription);
+                                        startingActiveStateEnum = CustomerState.PrescriptionQueue;
                                    }
                                    else
                                    {
-                                        // QueueHandler missing - critical error for queue state
-                                        Debug.LogError($"PROXIMITY {tiData.Id}: Runner is missing NpcQueueHandler component during BasicWaitForPrescription activation! Cannot handle queue logic. Activating to Exiting as fallback.", npcObject);
-                                        startingActiveStateEnum = CustomerState.Exiting; // Fallback
-                                                                                         // Clear simulation data
-                                        tiData.simulatedTargetPosition = null;
-                                        tiData.simulatedStateTimer = 0f;
-                                        // Clear path simulation data
-                                        tiData.simulatedPathID = null;
-                                        tiData.simulatedWaypointIndex = -1;
-                                        tiData.simulatedFollowReverse = false;
-                                        tiData.isFollowingPathBasic = false;
+                                        // Prescription queue is full, cannot rejoin
+                                        Debug.Log($"PROXIMITY {tiData.Id}: Prescription queue is full. Cannot rejoin. Activating to Exiting state.", npcObject);
+                                        startingActiveStateEnum = CustomerState.Exiting; // Give up
                                    }
                               }
-                         }
-                         // --- END NEW BasicWaitForPrescriptionState handling ---
-
-
-                         // --- Existing Logic (for states OTHER THAN the specific BasicState cases handled above) ---
-                         // This block now handles any other BasicState or a saved Active state.
-                         else if (savedStateEnum != null) // Check if there was *any* saved state
-                         {
-                              if (basicNpcStateManager.IsBasicState(savedStateEnum))
+                              else
                               {
-                                   // If the saved state is a BasicState (but NOT the specific cases above), map it to the corresponding Active State
-                                   startingActiveStateEnum = GetActiveStateFromBasicState(savedStateEnum);
-                                   Debug.Log($"PROXIMITY {tiData.Id}: Saved state '{savedStateEnum.GetType().Name}.{savedStateEnum.ToString() ?? "NULL"}' is a Basic State (generic mapping). Mapping to Active State '{startingActiveStateEnum?.GetType().Name}.{startingActiveStateEnum?.ToString() ?? "NULL"}'.", npcObject);
-                                   // Reset simulation data when transitioning from simulation to active
-                                   tiData.simulatedTargetPosition = null; // Clear simulated target
-                                   tiData.simulatedStateTimer = 0f; // Reset timer on activation
-                                   // Clear path simulation data
+                                   Debug.LogError($"PROXIMITY {tiData.Id}: Runner is missing NpcQueueHandler component during BasicWaitForPrescription activation! Cannot handle queue logic. Activating to Exiting.", npcObject);
+                                   startingActiveStateEnum = CustomerState.Exiting; // Fallback
+                              }
+                              // Clear simulation data after queue evaluation
+                              tiData.simulatedTargetPosition = null;
+                              tiData.simulatedStateTimer = 0f;
+                              tiData.simulatedPathID = null;
+                              tiData.simulatedWaypointIndex = -1;
+                              tiData.simulatedFollowReverse = false;
+                              tiData.isFollowingPathBasic = false;
+                         }
+                         // --- END BasicWaitForPrescriptionState handling ---
+
+                         // --- NEW: Handle activation from BasicWaitingAtPrescriptionSpot (Waiting Sim) ---
+                         // This handles NPCs who were waiting at the claim spot (WaitingForPrescription) simulation.
+                         else if (savedBasicStateEnum != null && savedBasicStateEnum.Equals(BasicState.BasicWaitingAtPrescriptionSpot))
+                         {
+                              Debug.Log($"PROXIMITY {tiData.Id}: Saved Basic state is BasicWaitingAtPrescriptionSpot (Waiting Sim). Activating to WaitingForPrescription state.", npcObject);
+                              // Transition directly back to the active WaitingForPrescription state
+                              startingActiveStateEnum = CustomerState.WaitingForPrescription;
+
+                              // Ensure position is set to the claim spot before activation
+                              if (prescriptionManager != null && prescriptionManager.GetPrescriptionClaimPoint() != null)
+                              {
+                                   Vector3 claimSpotPos = prescriptionManager.GetPrescriptionClaimPoint().position;
+                                   Quaternion claimSpotRot = prescriptionManager.GetPrescriptionClaimPoint().rotation;
+                                   // Warp the NPC to the claim spot position
+                                   if (runner.MovementHandler != null && runner.MovementHandler.Agent != null)
+                                   {
+                                        runner.MovementHandler.EnableAgent(); // Ensure agent is enabled for warp
+                                        if (runner.MovementHandler.Warp(claimSpotPos))
+                                        {
+                                             Debug.Log($"PROXIMITY {tiData.Id}: Warped to claim spot {claimSpotPos} for BasicWaitingAtPrescriptionSpot activation.", npcObject);
+                                             runner.transform.rotation = claimSpotRot; // Set rotation
+                                        } else {
+                                             Debug.LogError($"PROXIMITY {tiData.Id}: Failed to warp to claim spot {claimSpotPos} for BasicWaitingAtPrescriptionSpot activation! Is the point on the NavMesh? Activating to Exiting as fallback.", npcObject);
+                                             startingActiveStateEnum = CustomerState.Exiting; // Fallback
+                                        }
+                                   } else {
+                                        Debug.LogError($"PROXIMITY {tiData.Id}: Runner MovementHandler or Agent is null during BasicWaitingAtPrescriptionSpot activation! Cannot warp. Activating to Exiting as fallback.", npcObject);
+                                        startingActiveStateEnum = CustomerState.Exiting; // Fallback
+                                   }
+                              } else {
+                                   Debug.LogError($"PROXIMITY {tiData.Id}: PrescriptionManager or claim point is null during BasicWaitingAtPrescriptionSpot activation! Cannot warp. Activating to Exiting as fallback.", npcObject);
+                                   startingActiveStateEnum = CustomerState.Exiting; // Fallback
+                              }
+
+                              // Clear simulation data as active state takes over
+                              tiData.simulatedTargetPosition = null;
+                              tiData.simulatedStateTimer = 0f;
+                              tiData.simulatedPathID = null;
+                              tiData.simulatedWaypointIndex = -1;
+                              tiData.simulatedFollowReverse = false;
+                              tiData.isFollowingPathBasic = false;
+                         }
+                         // --- END BasicWaitingAtPrescriptionSpot handling ---
+
+                         // --- NEW: Handle activation from BasicWaitingForDeliverySim (Delivery Sim) ---
+                         // This handles NPCs who were waiting at the claim spot for delivery (WaitingForDelivery) simulation.
+                         else if (savedBasicStateEnum != null && savedBasicStateEnum.Equals(BasicState.BasicWaitingForDeliverySim))
+                         {
+                              Debug.Log($"PROXIMITY {tiData.Id}: Saved Basic state is BasicWaitingForDeliverySim (Delivery Sim). Activating to WaitingForDelivery state.", npcObject);
+                              // Transition directly back to the active WaitingForDelivery state
+                              startingActiveStateEnum = CustomerState.WaitingForDelivery;
+
+                               // Ensure position is set to the claim spot before activation
+                              if (prescriptionManager != null && prescriptionManager.GetPrescriptionClaimPoint() != null)
+                              {
+                                   Vector3 claimSpotPos = prescriptionManager.GetPrescriptionClaimPoint().position;
+                                   Quaternion claimSpotRot = prescriptionManager.GetPrescriptionClaimPoint().rotation;
+                                   // Warp the NPC to the claim spot position
+                                   if (runner.MovementHandler != null && runner.MovementHandler.Agent != null)
+                                   {
+                                        runner.MovementHandler.EnableAgent(); // Ensure agent is enabled for warp
+                                        if (runner.MovementHandler.Warp(claimSpotPos))
+                                        {
+                                             Debug.Log($"PROXIMITY {tiData.Id}: Warped to claim spot {claimSpotPos} for BasicWaitingForDeliverySim activation.", npcObject);
+                                             runner.transform.rotation = claimSpotRot; // Set rotation
+                                        } else {
+                                             Debug.LogError($"PROXIMITY {tiData.Id}: Failed to warp to claim spot {claimSpotPos} for BasicWaitingForDeliverySim activation! Is the point on the NavMesh? Activating to Exiting as fallback.", npcObject);
+                                             startingActiveStateEnum = CustomerState.Exiting; // Fallback
+                                        }
+                                   } else {
+                                        Debug.LogError($"PROXIMITY {tiData.Id}: Runner MovementHandler or Agent is null during BasicWaitingForDeliverySim activation! Cannot warp. Activating to Exiting as fallback.", npcObject);
+                                        startingActiveStateEnum = CustomerState.Exiting; // Fallback
+                                   }
+                              } else {
+                                   Debug.LogError($"PROXIMITY {tiData.Id}: PrescriptionManager or claim point is null during BasicWaitingForDeliverySim activation! Cannot warp. Activating to Exiting as fallback.", npcObject);
+                                   startingActiveStateEnum = CustomerState.Exiting; // Fallback
+                              }
+
+                              // Clear simulation data as active state takes over
+                              tiData.simulatedTargetPosition = null;
+                              tiData.simulatedStateTimer = 0f;
+                              tiData.simulatedPathID = null;
+                              tiData.simulatedWaypointIndex = -1;
+                              tiData.simulatedFollowReverse = false;
+                              tiData.isFollowingPathBasic = false;
+                         }
+                         // --- END BasicWaitingForDeliverySim handling ---
+
+
+                         // --- Handle activation from any other saved BasicState ---
+                         // This covers BasicPatrol, BasicLookToShop, BasicEnteringStore, BasicExitingStore, BasicIdleAtHome, BasicPathState
+                         else if (savedBasicStateEnum != null) // Check if there was *any* saved Basic state
+                         {
+                              // Map the Basic state to the corresponding Active State
+                              startingActiveStateEnum = GetActiveStateFromBasicState(savedBasicStateEnum);
+                              Debug.Log($"PROXIMITY {tiData.Id}: Saved Basic state '{savedBasicStateEnum.GetType().Name}.{savedBasicStateEnum.ToString() ?? "NULL"}' maps to Active State '{startingActiveStateEnum?.GetType().Name}.{startingActiveStateEnum?.ToString() ?? "NULL"}'. Activating to this state.", npcObject);
+                              // Reset simulation data when transitioning from simulation to active
+                              tiData.simulatedTargetPosition = null; // Clear simulated target
+                              tiData.simulatedStateTimer = 0f; // Reset timer on activation
+                              // Clear path simulation data (unless it's BasicPathState, handled above)
+                              if (!savedBasicStateEnum.Equals(BasicPathState.BasicFollowPath))
+                              {
                                    tiData.simulatedPathID = null;
                                    tiData.simulatedWaypointIndex = -1;
                                    tiData.simulatedFollowReverse = false;
                                    tiData.isFollowingPathBasic = false;
                               }
-                              else // Saved state is NOT a BasicState (e.g., an old Active state saved directly)
-                              {
-                                   // Try to use it directly as the starting active state.
-                                   startingActiveStateEnum = savedStateEnum;
-                                   Debug.Log($"PROXIMITY {tiData.Id}: Saved state '{savedStateEnum.GetType().Name}.{savedStateEnum.ToString() ?? "NULL"}' is NOT a Basic State. Attempting to use as Active starting state.", npcObject);
-                                   // Clear existing simulation data anyway as it's old simulation data.
-                                   tiData.simulatedTargetPosition = null;
-                                   tiData.simulatedStateTimer = 0f;
-                                   // Clear path simulation data
-                                   tiData.simulatedPathID = null;
-                                   tiData.simulatedWaypointIndex = -1;
-                                   tiData.simulatedFollowReverse = false;
-                                   tiData.isFollowingPathBasic = false;
-                                }
                          }
-                         else // No saved state at all
+                         else // No saved state at all (should default to primary type start state)
                          {
                               // If no state was saved, or mapping failed, startingActiveStateEnum remains null.
                               // The Runner will then fall back to its GetPrimaryStartingStateSO logic (which checks TypeDefs).
-                              Debug.Log($"PROXIMITY {tiData.Id}: No valid saved state found or mapped. Runner will determine primary starting state from TypeDefs.", npcObject);
+                              Debug.Log($"PROXIMITY {tiData.Id}: No valid saved Basic state found or mapped. Runner will determine primary starting state from TypeDefs.", npcObject);
                               // Ensure simulation data is clean if no saved state existed
                               tiData.simulatedTargetPosition = null;
                               tiData.simulatedStateTimer = 0f;
@@ -1115,14 +1180,15 @@ namespace Game.NPC.TI // Keep in the TI namespace
                               tiData.simulatedFollowReverse = false;
                               tiData.isFollowingPathBasic = false;
                          }
-                         // --- END Existing Logic ---
+                         // --- END Handle activation based on saved BasicStateEnum ---
 
 
                          // Call the Runner's Activate method with the determined starting state override
                          // If startingActiveStateEnum is null, Runner.Activate will use GetPrimaryStartingStateSO().
                          runner.Activate(tiData, customerManager, startingActiveStateEnum); // <-- Pass determined override state Enum
 
-                         Debug.Log($"PROXIMITY TiNpcManager: Activation initiated for TI NPC '{tiData.Id}' (GameObject '{npcObject.name}'). Runner.Activate called with override state: {startingActiveStateEnum?.GetType().Name}.{startingActiveStateEnum?.ToString() ?? "NULL"}");
+                         // Corrected syntax for the log message
+                         Debug.Log($"PROXIMITY TiNpcManager: Activation initiated for TI NPC '{tiData.Id}' (GameObject '{npcObject.name}'). Runner.Activate called with override state: {(startingActiveStateEnum != null ? startingActiveStateEnum.GetType().Name + "." + startingActiveStateEnum.ToString() : "NULL")}");
 
                    }
                    else
@@ -1143,6 +1209,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
          /// Handles the process of deactivating a single TI NPC.
          /// Determines the correct Basic State, saves data, and triggers the pooling flow.
          /// Called by ProximityManager.
+         /// MODIFIED: Saves the mapped basic state for all active states, including prescription waiting/delivery.
          /// </summary>
          /// <param name="tiData">The persistent data of the NPC to deactivate.</param>
          /// <param name="runner">The active NpcStateMachineRunner for this NPC.</param>
@@ -1180,9 +1247,13 @@ namespace Game.NPC.TI // Keep in the TI namespace
 
               if (targetBasicState != null)
               {
-                  // Save the determined Basic State to the TiNpcData
-                   tiData.SetCurrentState(targetBasicState);
-                   Debug.Log($"PROXIMITY {tiData.Id}: Active state '{currentActiveState?.GetType().Name}.{currentActiveState?.ToString() ?? "NULL"}' maps to Basic State '{targetBasicState.GetType().Name}.{targetBasicState.ToString()}'. Saving this state to TiData.");
+                  // Save the mapped basic state for all active states.
+                  // The special handling for WaitingForPrescription/Delivery is now in the MAPPINGS (Phase 1).
+                  // The simulation system will now correctly receive BasicWaitingAtPrescriptionSpot or BasicWaitingForDeliverySim.
+                  tiData.SetCurrentState(targetBasicState); // Save the mapped basic state
+                   // Corrected syntax for the log message
+                  Debug.Log($"PROXIMITY {tiData.Id}: Active state '{currentActiveState?.GetType().Name}.{currentActiveState?.ToString() ?? "NULL"}' maps to Basic State '{targetBasicState.GetType().Name}.{targetBasicState.ToString()}'. Saving this state to TiData for simulation.", runner.gameObject);
+
 
                     // --- MODIFIED: Save Path Progress if currently following a path OR was interrupted from path state ---
                     // We need to save the state as it was *before* any interruption if one is active.
@@ -1238,7 +1309,8 @@ namespace Game.NPC.TI // Keep in the TI namespace
                   } else
                   {
                       // This shouldn't happen if mapping and GetBasicStateSO work, but defensive
-                      Debug.LogError($"PROXIMITY {tiData.Id}: Could not get target Basic State SO for '{targetBasicState.GetType().Name}.{targetBasicState.ToString() ?? "NULL"}' during deactivation request. Cannot initialize simulation state data!", runner.gameObject);
+                       // Corrected syntax for the log message
+                      Debug.LogError($"PROXIMITY {tiData.Id}: Could not get target Basic State SO for '{targetBasicState?.GetType().Name}.{targetBasicState?.ToString() ?? "NULL"}' during deactivation request. Cannot initialize simulation state data!", runner.gameObject);
                       // Data might be left in a bad state, but proceed with pooling.
                   }
                   // --- END Call OnEnter ---
@@ -1257,6 +1329,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
               else
               {
                   // This shouldn't happen if GetBasicStateFromActiveState has a fallback, but defensive.
+                   // Corrected syntax for the log message
                   Debug.LogError($"PROXIMITY {tiData.Id}: Could not determine a Basic State mapping for active state '{currentActiveState?.GetType().Name}.{currentActiveState?.ToString() ?? "NULL"}' during deactivation request. Cannot save state for simulation! Forcing cleanup.", runner.gameObject);
                    // Fallback: Destroy the GameObject and unlink the data without attempting to save a simulation state
                    Destroy(runner.gameObject); // Destroy the GameObject
@@ -1699,5 +1772,3 @@ namespace Game.NPC.TI // Keep in the TI namespace
         // --- End Restored LoadDummyNpcData ---
     }
 }
-
-// --- END OF FILE TiNpcManager.cs (Modified Activation for Pending Prescription Waiting) ---

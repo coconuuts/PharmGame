@@ -61,7 +61,7 @@ namespace Game.NPC.States
         {
             base.OnUpdate(context);
 
-            impatientTimer += context.DeltaTime; // <-- MODIFIED: Use context.DeltaTime
+            impatientTimer += Time.deltaTime;
 
             if (impatientTimer >= impatientDuration)
             {
