@@ -14,6 +14,16 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   allCraftingRecipes: {fileID: 11400000, guid: 2ed4e5dcf5deb9245ad0113ef0e5315a, type: 2}
   mappings:
-  - prescribedDrugName: Drug_1
-    craftingRecipeName: PillRecipe
+  - craftingRecipeName: PillRecipe
     craftedOutputItemDetails: {fileID: 11400000, guid: 95b4a37ff1d45cc43b8f2cd605fa26fa, type: 2}
+    prescribedDrugNames:
+    - Amoxicillin
+    - Lisinopril
+    - Atorvastatin
+    - Levothyroxine
+    - Metformin
+    - Gabapentin
+    - Hydrochlorothiazide
+    - Omeprazole
+    - Sertraline
+    - Albuterol

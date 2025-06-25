@@ -49,3 +49,7 @@ MonoBehaviour:
     initialSize: 1
     maxSize: 3
     canGrow: 1
+  - prefab: {fileID: 1517431264492171049, guid: 98092239c8cb06b4caef815c9ee9445a, type: 3}
+    initialSize: 1
+    maxSize: 50
+    canGrow: 1

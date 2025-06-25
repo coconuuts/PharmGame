@@ -146,20 +146,6 @@ public class FlexibleGridLayout : LayoutGroup
 
         // Calculate and set preferred height
         calculatedPreferredHeight = padding.top + padding.bottom + (rows * calculatedCellHeight) + Mathf.Max(0, rows - 1) * spacing.y;
-
-        // KEEP DEBUG LOGS FOR VERTICAL CALC
-        Debug.Log($"[FlexibleGridLayout Debug] --- Vertical Layout Calculation ---");
-        Debug.Log($"[FlexibleGridLayout Debug] Children Count: {rectChildren.Count}");
-        Debug.Log($"[FlexibleGridLayout Debug] Calculated Rows: {rows}");
-        Debug.Log($"[FlexibleGridLayout Debug] Calculated Columns: {columns}");
-        Debug.Log($"[FlexibleGridLayout Debug] Calculated Cell Size Y: {calculatedCellHeight}"); // Check the value used here
-        Debug.Log($"[FlexibleGridLayout Debug] Spacing Y: {spacing.y}");
-        Debug.Log($"[FlexibleGridLayout Debug] Padding Top: {padding.top}");
-        Debug.Log($"[FlexibleGridLayout Debug] Padding Bottom: {padding.bottom}");
-        Debug.Log($"[FlexibleGridLayout Debug] Calculated Preferred Height: {calculatedPreferredHeight}");
-        Debug.Log($"[FlexibleGridLayout Debug] Fit Y: {fitY}");
-        Debug.Log($"[FlexibleGridLayout Debug] Fit Type: {fitType}");
-        Debug.Log($"[FlexibleGridLayout Debug] ----------------------------------");
     }
 
 

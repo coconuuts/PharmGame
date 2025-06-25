@@ -1,11 +1,9 @@
 // --- START OF FILE PrescriptionManager.cs ---
 
-// --- START OF FILE PrescriptionManager.cs ---
-
 using UnityEngine;
-using System.Collections.Generic; // Needed for List and Dictionary
+using System.Collections.Generic; // Needed for List and Dictionary, HashSet
 using System; // Needed for System.Serializable and Enum
-using Game.Prescriptions; // Needed for PrescriptionOrder
+using Game.Prescriptions; // Needed for PrescriptionOrder, PrescriptionGenerator
 using Game.NPC.TI; // Needed for TiNpcManager, TiNpcData
 using CustomerManagement; // Needed for CustomerManager, QueueType
 using Utils.Pooling; // Needed for PoolingManager
@@ -17,10 +15,10 @@ using Game.NPC.Handlers; // Needed for NpcQueueHandler
 using Game.NPC.States; // Needed for NpcStateSO
 using Random = UnityEngine.Random; // Specify UnityEngine.Random
 using System.Collections; // Needed for Coroutines
-using System.Linq; // Needed for LINQ operations like FirstOrDefault
+using System.Linq; // Needed for LINQ operations like FirstOrDefault, Select, ToHashSet, ToList
 using Game.NPC.BasicStates;
-using Systems.Crafting; // Needed for DrugRecipeMappingSO // <-- Added using directive
-using Systems.Inventory; // Needed for ItemDetails // <-- Added using directive
+using Systems.Crafting; // Needed for DrugRecipeMappingSO
+using Systems.Inventory; // Needed for ItemDetails
 
 
 namespace Game.Prescriptions // Place the Prescription Manager in its own namespace
@@ -29,6 +27,9 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
     /// Manages the generation, assignment, and tracking of prescription orders.
     /// Also manages the Prescription Queue.
     /// Now includes reference to DrugRecipeMappingSO for delivery validation.
+    /// MODIFIED: Uses PrescriptionGenerator for order creation.
+    /// MODIFIED: Provides list of currently used patient names to the generator.
+    /// MODIFIED: Provides a list of currently active orders (unassigned or assigned) for UI display. // <-- Added note
     /// </summary>
     public class PrescriptionManager : MonoBehaviour
     {
@@ -46,12 +47,15 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
         [SerializeField] private PoolingManager poolingManager; // Will get via Instance if not assigned
         [Tooltip("Reference to the WaypointManager instance in the scene.")]
         [SerializeField] private WaypointManager waypointManager; // Will get via Instance if not assigned
+        // --- NEW: Reference to Prescription Generator ---
+        [Tooltip("Reference to the PrescriptionGenerator component in the scene.")]
+        [SerializeField] private PrescriptionGenerator prescriptionGenerator; // Will find if not assigned
+        // --- END NEW ---
 
-        // --- NEW: Reference to Drug Recipe Mapping ---
+
         [Header("Prescription Fulfillment")]
         [Tooltip("Reference to the ScriptableObject containing mappings from prescription drug names to crafting recipes and output items.")]
         [SerializeField] private DrugRecipeMappingSO drugRecipeMapping; // <-- Added reference
-        // --- END NEW ---
 
 
         [Header("Prescription Order Settings")]
@@ -87,6 +91,8 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
 
 
         // --- Internal Data ---
+        // allOrdersGeneratedToday is kept for historical/debugging purposes if needed,
+        // but the UI will now use GetCurrentlyActiveOrders().
         private List<PrescriptionOrder> allOrdersGeneratedToday = new List<PrescriptionOrder>();
         private List<PrescriptionOrder> unassignedOrders = new List<PrescriptionOrder>();
         // We need to track assigned orders, potentially linking them back to the NPC (TI Data or Runner)
@@ -169,7 +175,20 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
                waypointManager = WaypointManager.Instance;
                if (waypointManager == null) Debug.LogError("PrescriptionManager: WaypointManager instance not found!");
 
-               // --- NEW: Check Drug Recipe Mapping reference ---
+               // --- NEW: Get PrescriptionGenerator reference ---
+               if (prescriptionGenerator == null)
+               {
+                   prescriptionGenerator = FindObjectOfType<PrescriptionGenerator>();
+               }
+               if (prescriptionGenerator == null)
+               {
+                   Debug.LogError("PrescriptionManager: PrescriptionGenerator component not found in scene! Cannot generate orders.", this);
+                   // Do NOT disable the manager, other functions might still work, but order generation will fail.
+               }
+               // --- END NEW ---
+
+
+               // --- Check Drug Recipe Mapping reference ---
                if (drugRecipeMapping == null)
                {
                    Debug.LogError("PrescriptionManager: Drug Recipe Mapping SO reference is not assigned! Prescription delivery validation will not work.", this);
@@ -216,10 +235,15 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
              EventManager.Subscribe<FreePrescriptionClaimSpotEvent>(HandleFreePrescriptionClaimSpot);
              EventManager.Subscribe<QueueSpotFreedEvent>(HandlePrescriptionQueueSpotFreed);
 
-             if (orderGenerationCoroutine == null && ordersToGeneratePerDay > 0 && !ordersGeneratedToday && timeManager != null && timeManager.CurrentGameTime != DateTime.MinValue && orderGenerationTime.IsWithinRange(timeManager.CurrentGameTime))
+             // Restart generation coroutine on enable if it was supposed to be running based on time/flags
+             // and the generator is available.
+             if (orderGenerationCoroutine == null && ordersToGeneratePerDay > 0 && !ordersGeneratedToday && timeManager != null && timeManager.CurrentGameTime != DateTime.MinValue && orderGenerationTime.IsWithinRange(timeManager.CurrentGameTime) && prescriptionGenerator != null) // Added generator check
              {
-                 // Only restart generation if it was supposed to be running based on time/flags
+                 Debug.Log("PrescriptionManager: Restarting order generation routine on OnEnable.");
                  StartOrderGenerationRoutine();
+             } else if (prescriptionGenerator == null)
+             {
+                  Debug.LogWarning("PrescriptionManager: Cannot restart order generation routine on OnEnable because PrescriptionGenerator is null.", this);
              }
         }
 
@@ -313,9 +337,18 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
 
         /// <summary>
         /// Coroutine that generates prescription orders one by one with a delay.
+        /// MODIFIED: Uses PrescriptionGenerator to create orders.
+        /// MODIFIED: Checks if the generated order is valid before adding it.
         /// </summary>
         private IEnumerator GenerateOrdersRoutine()
         {
+            if (prescriptionGenerator == null)
+            {
+                Debug.LogError("PrescriptionManager: PrescriptionGenerator reference is null! Cannot generate orders.", this);
+                orderGenerationCoroutine = null; // Clear coroutine reference
+                yield break; // Stop the routine
+            }
+
             Debug.Log($"PrescriptionManager: GenerateOrdersRoutine started. Will generate {ordersToGeneratePerDay} orders.");
             // Lists are cleared on Sunset. Clear them here too for robustness if generation runs multiple times unexpectedly.
             allOrdersGeneratedToday.Clear();
@@ -324,29 +357,93 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
 
             for (int i = 0; i < ordersToGeneratePerDay; i++)
             {
-                // --- Placeholder: Generate a single dummy order ---
-                // In a real scenario, this would involve more complex logic,
-                // potentially pulling from a list of possible drugs, generating
-                // realistic doses/lengths, and linking to actual TI NPC IDs.
-                string patientName = $"Patient_{i + 1}"; // Simple dummy name
-                string prescribedDrug = $"Drug_1"; // Simple dummy drug
-                int dose = Random.Range(1, 4); // 1-3 times a day
-                int length = Random.Range(3, 6); // Increased length range for more persistence
-                bool illegal = false; // 10% chance of being illegal
+                // --- MODIFIED: Use the PrescriptionGenerator to create the order ---
+                // The generator will now handle uniqueness internally by querying this manager.
+                PrescriptionOrder newOrder = prescriptionGenerator.GenerateNewOrder();
+                // --- END MODIFIED ---
 
-                PrescriptionOrder newOrder = new PrescriptionOrder(patientName, prescribedDrug, dose, length, illegal);
+                // --- NEW: Check if the generated order is valid ---
+                // The generator might return a default/invalid order if it couldn't find a unique name.
+                if (!string.IsNullOrEmpty(newOrder.patientName) && newOrder.patientName != "Unknown Patient") // Check for default/fallback name
+                {
+                    allOrdersGeneratedToday.Add(newOrder);
+                    unassignedOrders.Add(newOrder);
+                    Debug.Log($"PrescriptionManager: Generated valid order {i + 1}/{ordersToGeneratePerDay}: {newOrder}");
+                }
+                else
+                {
+                    Debug.LogWarning($"PrescriptionManager: PrescriptionGenerator failed to generate a valid unique order for attempt {i + 1}/{ordersToGeneratePerDay}. Skipping this order.", this);
+                    // Decrement i or handle this case based on whether you want exactly ordersToGeneratePerDay
+                    // or up to ordersToGeneratePerDay valid orders. Decrementing i means we will try again
+                    // to generate the same *number* of orders. Not decrementing means we might end up with fewer.
+                    // Let's not decrement for simplicity; we get *up to* ordersToGeneratePerDay valid orders.
+                }
+                // --- END NEW ---
 
-                allOrdersGeneratedToday.Add(newOrder);
-                unassignedOrders.Add(newOrder);
-                Debug.Log($"PrescriptionManager: Generated order {i + 1}/{ordersToGeneratePerDay}: {newOrder}");
 
                 // Wait before generating the next order
                 yield return new WaitForSeconds(Random.Range(minOrderGenerationInterval, maxOrderGenerationInterval));
             }
 
-            Debug.Log($"PrescriptionManager: Order generation routine finished. {allOrdersGeneratedToday.Count} orders generated.");
+            Debug.Log($"PrescriptionManager: Order generation routine finished. {allOrdersGeneratedToday.Count} valid orders generated.");
             orderGenerationCoroutine = null; // Clear coroutine reference
         }
+
+        /// <summary>
+        /// Gets a HashSet of all patient names currently associated with unassigned or assigned orders.
+        /// Used by PrescriptionGenerator to ensure unique names.
+        /// </summary>
+        /// <returns>A HashSet of strings representing currently used patient names.</returns>
+        public HashSet<string> GetCurrentlyUsedPatientNames()
+        {
+             HashSet<string> usedNames = new HashSet<string>();
+
+             // Add names from unassigned orders
+             foreach (var order in unassignedOrders)
+             {
+                  usedNames.Add(order.patientName);
+             }
+
+             // Add names from assigned TI orders
+             foreach (var order in assignedTiOrders.Values)
+             {
+                  usedNames.Add(order.patientName);
+             }
+
+             // Add names from assigned Transient orders
+             foreach (var order in assignedTransientOrders.Values)
+             {
+                  usedNames.Add(order.patientName);
+             }
+
+             // Debug.Log($"PrescriptionManager: Currently tracking {usedNames.Count} unique patient names."); // Too noisy
+             return usedNames;
+        }
+
+        // --- NEW METHOD: GetCurrentlyActiveOrders ---
+        /// <summary>
+        /// Gets a list of all prescription orders that are currently unassigned or assigned to an NPC.
+        /// These are the orders considered "active" and potentially visible to the player via the UI.
+        /// </summary>
+        /// <returns>A list of PrescriptionOrder structs representing active orders.</returns>
+        public List<PrescriptionOrder> GetCurrentlyActiveOrders()
+        {
+             List<PrescriptionOrder> activeOrders = new List<PrescriptionOrder>();
+
+             // Add all unassigned orders
+             activeOrders.AddRange(unassignedOrders);
+
+             // Add all assigned TI orders (values from the dictionary)
+             activeOrders.AddRange(assignedTiOrders.Values);
+
+             // Add all assigned Transient orders (values from the dictionary)
+             activeOrders.AddRange(assignedTransientOrders.Values);
+
+             // Debug.Log($"PrescriptionManager: Providing {activeOrders.Count} currently active orders."); // Too noisy
+             return activeOrders;
+        }
+        // --- END NEW METHOD ---
+
 
         // --- TI Assignment Logic ---
 
@@ -422,9 +519,18 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
                     // Found a TI NPC matching the patient name
                     if (!tiData.pendingPrescription) // Check if they don't already have a pending prescription
                     {
-                        orderToAssign = order;
-                        targetTi = tiData;
-                        break; // Found a suitable order/NPC, stop searching
+                        // Also check if this TI NPC is currently assigned a *different* order
+                        // This check might be redundant if pendingPrescription flag is the single source of truth,
+                        // but adds robustness. However, the core issue is the *manager* tracking.
+                        // We need to ensure a TI NPC isn't in assignedTiOrders already.
+                        if (!assignedTiOrders.ContainsKey(tiData.Id)) // <-- Add check here
+                        {
+                            orderToAssign = order;
+                            targetTi = tiData;
+                            break; // Found a suitable order/NPC, stop searching
+                        } else {
+                             // Debug.Log($"PrescriptionManager: TI NPC '{tiData.Id}' already has an order assigned in manager tracking. Skipping order for '{order.patientName}'."); // Too noisy
+                        }
                     }
                 }
             }
@@ -439,7 +545,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
                 unassignedOrders.Remove(orderToAssign.Value); // Remove from unassigned
                 assignedTiOrders[targetTi.Id] = orderToAssign.Value; // Add to assigned TI
 
-                Debug.Log($"PrescriptionManager: Assigned prescription order for '{orderToAssign.Value.patientName}' to TI NPC '{targetTi.Id}'. {unassignedOrders.Count} unassigned orders remaining.");
+                Debug.Log($"PrescriptionManager: Assigned prescription order for '{orderToAssign.Value.patientName}' to TI NPC '{targetTi.Id}'. {unassignedOrders.Count} unassigned orders remaining, {assignedTiOrders.Count} TI orders assigned.");
             }
         }
 
@@ -989,33 +1095,44 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
              return prescriptionClaimPoint;
         }
 
-        // --- NEW: Method to get expected output item details for delivery ---
         /// <summary>
-        /// Looks up the expected ItemDetails of the crafted item required for a given prescription order.
-        /// Uses the assigned DrugRecipeMappingSO.
+        /// Gets a list of all prescription orders generated today.
+        /// This list includes completed orders and is primarily for debugging/historical purposes.
+        /// For UI display of active orders, use GetCurrentlyActiveOrders().
         /// </summary>
-        /// <param name="order">The prescription order.</param>
-        /// <returns>The ItemDetails of the expected crafted item, or null if mapping not found or invalid.</returns>
-        public ItemDetails GetExpectedOutputItemDetails(PrescriptionOrder order)
+        /// <returns>A list of PrescriptionOrder structs.</returns>
+        public List<PrescriptionOrder> GetAllGeneratedOrders()
         {
-             if (drugRecipeMapping == null)
-             {
-                 Debug.LogError("PrescriptionManager: Drug Recipe Mapping SO is null! Cannot get expected output item details.", this);
-                 return null;
-             }
-
-             // Use the mapping SO to find the details based on the prescribed drug name
-             ItemDetails expectedDetails = drugRecipeMapping.GetCraftedOutputItemDetailsForDrug(order.prescribedDrug);
-
-             if (expectedDetails == null)
-             {
-                 Debug.LogWarning($"PrescriptionManager: No crafted output item details found in mapping for prescribed drug '{order.prescribedDrug}'.", this);
-             }
-
-             return expectedDetails;
+            // Returning the direct list for simplicity.
+            // Return new List<PrescriptionOrder>(allOrdersGeneratedToday); // Return a copy if external modification is a concern
+            return allOrdersGeneratedToday;
         }
+
+        // --- NEW: Method to get expected output item details for delivery ---
+          /// <summary>
+          /// Looks up the expected ItemDetails of the crafted item required for a given prescription order.
+          /// Uses the assigned DrugRecipeMappingSO.
+          /// </summary>
+          /// <param name="order">The prescription order.</param>
+          /// <returns>The ItemDetails of the expected crafted item, or null if mapping not found or invalid.</returns>
+          public ItemDetails GetExpectedOutputItemDetails(PrescriptionOrder order)
+          {
+               if (drugRecipeMapping == null)
+               {
+                    Debug.LogError("PrescriptionManager: Drug Recipe Mapping SO is null! Cannot get expected output item details.", this);
+                    return null;
+               }
+
+               // Use the mapping SO to find the details based on the prescribed drug name
+               ItemDetails expectedDetails = drugRecipeMapping.GetCraftedOutputItemDetailsForDrug(order.prescribedDrug);
+
+               if (expectedDetails == null)
+               {
+                    Debug.LogWarning($"PrescriptionManager: No crafted output item details found in mapping for prescribed drug '{order.prescribedDrug}'.", this);
+               }
+
+               return expectedDetails;
+          }
         // --- END NEW ---
     }
 }
-
-// --- END OF FILE PrescriptionManager.cs ---

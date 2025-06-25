@@ -459,7 +459,7 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
          if (!anyFailedToAdd)
          {
              Debug.Log("ComputerInteractable: All purchased item instances successfully delivered.");
-             PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer    ", "Your order has been placed!");
+             PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Your order has been placed!");
          }
          else
          {

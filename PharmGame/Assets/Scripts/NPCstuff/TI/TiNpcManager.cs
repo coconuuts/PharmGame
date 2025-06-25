@@ -1,8 +1,10 @@
+// --- START OF FILE TiNpcManager.cs (Modified to add GetTiNpcIds) ---
+
 // --- START OF FILE TiNpcManager.cs (Modified State Saving) ---
 
 using UnityEngine;
 using System.Collections.Generic;
-using System.Linq; // Needed for LINQ (Where, FirstOrDefault)
+using System.Linq; // Needed for LINQ (Where, FirstOrDefault, ToList) // <-- Added ToList
 using Game.NPC; // Needed for NpcStateMachineRunner, GeneralState, CustomerState, PathState enum
 using Game.NPC.States; // Needed for State SOs (to check HandledState)
 using Game.NPC.BasicStates; // Needed for BasicState enum, BasicPathState enum, BasicNpcStateManager
@@ -34,6 +36,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
     /// MODIFIED: Added specific activation logic for BasicWaitForCashier, BasicBrowse, BasicPathState, BasicWaitingAtPrescriptionSpot, BasicWaitingForDeliverySim states.
     /// MODIFIED: Saves the mapped basic state for all active states, including prescription waiting/delivery.
     /// MODIFIED: Updated state mappings to include new basic states for prescription waiting/delivery.
+    /// MODIFIED: Added public method to get list of all TI NPC IDs. // <-- Added note
     /// </summary>
     public class TiNpcManager : MonoBehaviour
     {
@@ -1013,7 +1016,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
                                    tiData.simulatedStateTimer = 0f; // Reset timer on activation
                                    // Note: simulatedPathID, simulatedWaypointIndex, simulatedFollowReverse, isFollowingPathBasic
                                    // are NOT cleared here, as they are needed by the PathStateSO.OnEnter.
-                                   // They will be cleared by the PathFollowingHandler itself when it stops following the path.
+                                   // They WILL be cleared by the PathFollowingHandler itself when it stops following the path.
                               }
                          }
 
@@ -1516,6 +1519,18 @@ namespace Game.NPC.TI // Keep in the TI namespace
             return allTiNpcs.Count;
         }
 
+        // --- NEW METHOD: Get list of all TI NPC IDs ---
+        /// <summary>
+        /// Gets a list of all unique IDs for the managed TI NPCs.
+        /// </summary>
+        public List<string> GetTiNpcIds()
+        {
+            // Return a new list containing all the keys (IDs) from the dictionary
+            return allTiNpcs.Keys.ToList();
+        }
+        // --- END NEW METHOD ---
+
+
          /// <summary>
          /// Gets a random point within the defined XZ patrol area bounds (for simulation).
          /// Uses a fixed Y height (e.g., 0) for simplicity as NavMesh sampling is not available.
@@ -1772,3 +1787,4 @@ namespace Game.NPC.TI // Keep in the TI namespace
         // --- End Restored LoadDummyNpcData ---
     }
 }
+// --- END OF FILE TiNpcManager.cs ---
