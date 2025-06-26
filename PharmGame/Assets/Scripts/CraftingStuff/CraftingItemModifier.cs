@@ -23,6 +23,7 @@ namespace Systems.Crafting // Place in a suitable namespace for crafting logic
         /// <summary>
         /// Consumes a specific amount of health from the primary input item instance.
         /// This is used for durable items like stock containers in prescription crafting.
+        /// Delegates to the Inventory's method.
         /// </summary>
         /// <param name="primaryInputInventory">The inventory containing the primary input item.</param>
         /// <param name="primaryInputItem">The specific Item instance of the primary input.</param>
@@ -73,11 +74,13 @@ namespace Systems.Crafting // Place in a suitable namespace for crafting logic
         /// <summary>
         /// Creates a new Item instance representing the crafted output, specifically setting its initial health.
         /// This is used for durable output items like prepared prescriptions.
+        /// --- MODIFIED: Added patientNameTag parameter. --- // <-- ADDED NOTE
         /// </summary>
         /// <param name="outputItemDetails">The ItemDetails of the crafted output item type.</param>
         /// <param name="targetHealth">The desired initial health for the new item instance (typically from the prescription order).</param>
-        /// <returns>A new Item instance with the specified details and initial health, or null if details are invalid.</returns>
-        public static Item PrepareCraftedOutput(ItemDetails outputItemDetails, int targetHealth)
+        /// <param name="patientNameTag">The patient name to tag this item instance with (from the active prescription order).</param> // <-- ADDED PARAM
+        /// <returns>A new Item instance with the specified details, initial health, and patient name tag, or null if details are invalid.</returns>
+        public static Item PrepareCraftedOutput(ItemDetails outputItemDetails, int targetHealth, string patientNameTag) // <-- ADDED PARAM
         {
             if (outputItemDetails == null)
             {
@@ -91,7 +94,10 @@ namespace Systems.Crafting // Place in a suitable namespace for crafting logic
             {
                  Debug.LogWarning($"CraftingItemModifier: PrepareCraftedOutput called for item type '{outputItemDetails.Name}' which is not a non-stackable durable item type as expected for AmountType.Health. Creating instance with quantity 1 instead of setting health.", outputItemDetails);
                  // Fallback: Create a single instance with quantity 1 if it's not a durable type intended for health
-                 return outputItemDetails.Create(1); // Use the standard Create method
+                 Item fallbackItem = outputItemDetails.Create(1);
+                 // Still assign the tag, even if it's not the expected type, for consistency
+                 if (fallbackItem != null) fallbackItem.patientNameTag = patientNameTag; // <-- ASSIGN TAG ON FALLBACK
+                 return fallbackItem; // Use the standard Create method
             }
 
             // --- Corrected Logic: Create the instance, then set its specific crafting health ---
@@ -107,8 +113,12 @@ namespace Systems.Crafting // Place in a suitable namespace for crafting logic
                  // and also updates gun-specific health fields if applicable.
                  craftedItemInstance.SetHealth(targetHealth); // <-- Set the correct health here
 
+                 // --- NEW: Assign the patient name tag --- // <-- ADDED
+                 craftedItemInstance.patientNameTag = patientNameTag; // <-- ASSIGN THE TAG
+                 // --- END NEW ---
+
                  // Log the health *after* setting it to confirm the value
-                 Debug.Log($"CraftingItemModifier: Prepared crafted output item '{craftedItemInstance.details.Name}' (ID: {craftedItemInstance.Id}) and set initial health to {craftedItemInstance.health} (Target: {targetHealth}).", craftedItemInstance.details);
+                 Debug.Log($"CraftingItemModifier: Prepared crafted output item '{craftedItemInstance.details.Name}' (ID: {craftedItemInstance.Id}) and set initial health to {craftedItemInstance.health} (Target: {targetHealth}). Assigned Patient Tag: '{patientNameTag ?? "NULL"}'.", craftedItemInstance.details); // <-- MODIFIED LOG
             }
             else
             {
@@ -121,6 +131,7 @@ namespace Systems.Crafting // Place in a suitable namespace for crafting logic
         /// <summary>
         /// Consumes a specific quantity of a secondary input item type from the specified inventory.
         /// This is used for quantity-based items like container vials in prescription crafting.
+        /// Delegates to the Inventory's method.
         /// </summary>
         /// <param name="inputInventory">The inventory containing the secondary input item.</param>
         /// <param name="inputItemDetails">The ItemDetails of the secondary input item type to consume.</param>
@@ -169,4 +180,4 @@ namespace Systems.Crafting // Place in a suitable namespace for crafting logic
             return success; // Return true only if the full requested quantity was removed
         }
     }
-}
+}   

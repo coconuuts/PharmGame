@@ -8,6 +8,7 @@ namespace Systems.Inventory
     /// Represents a specific instance of an item in the inventory with a quantity, health/durability,
     /// and gun-specific state if applicable.
     /// Implements IEquatable for comparing item instances based on their unique instance Id.
+    /// --- MODIFIED: Added patientNameTag field. --- // <-- ADDED NOTE
     /// </summary>
     [Serializable]
     public class Item : IEquatable<Item> // Implement IEquatable
@@ -38,6 +39,15 @@ namespace Systems.Inventory
         // The time when the current reload started (used to track progress).
         public float reloadStartTime;
 
+        // --- NEW FIELD: Patient Name Tag --- // <-- ADDED
+        /// <summary>
+        /// Stores the patient name for crafted prescription items.
+        /// Used for delivery validation. Null or empty for non-prescription items.
+        /// </summary>
+        public string patientNameTag; // <-- ADDED FIELD
+        // --- END NEW FIELD ---
+
+
         // Constructor
         public Item(ItemDetails details, int quantity = 1)
         {
@@ -55,6 +65,8 @@ namespace Systems.Inventory
                  this.totalReserveHealth = 0;
                  this.isReloading = false;
                  this.reloadStartTime = 0.0f;
+                 // Initialize new patient name tag field
+                 this.patientNameTag = null; // <-- INITIALIZED NEW FIELD
                  return; // Exit constructor early
             }
 
@@ -100,7 +112,10 @@ namespace Systems.Inventory
             }
             // --- End Initialization Logic ---
 
-            // Debug.Log($"Created Item instance: ID={Id}, Details='{details?.Name ?? "NULL"}', Qty={this.quantity}, Health={this.health}, Mag={this.currentMagazineHealth}, Reserve={this.totalReserveHealth}, MaxStack={details?.maxStack ?? 0}, MaxHealth={details?.maxHealth ?? 0}, UsageLogic={details?.usageLogic.ToString() ?? "NULL"}"); // More detailed optional debug log
+            // Initialize the new patient name tag field
+            this.patientNameTag = null; // <-- INITIALIZED NEW FIELD (again, for clarity after main logic)
+
+            // Debug.Log($"Created Item instance: ID={Id}, Details='{details?.Name ?? "NULL"}', Qty={this.quantity}, Health={this.health}, Mag={this.currentMagazineHealth}, Reserve={this.totalReserveHealth}, MaxStack={details?.maxStack ?? 0}, MaxHealth={details?.maxHealth ?? 0}, UsageLogic={details?.usageLogic.ToString() ?? "NULL"}, PatientTag='{this.patientNameTag ?? "NULL"}'"); // More detailed optional debug log
         }
 
         /// <summary>

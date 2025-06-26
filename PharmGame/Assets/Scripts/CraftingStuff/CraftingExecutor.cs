@@ -10,6 +10,7 @@ namespace Systems.Inventory
     /// Helper class containing static methods to execute the crafting process
     /// (consume inputs, produce outputs) for a matched recipe and batch count.
     /// --- MODIFIED: Now uses the actual crafted amount from the minigame for health-based items. ---
+    /// --- MODIFIED: Added patientNameTag parameter for crafted output. --- // <-- ADDED NOTE
     /// </summary>
     public static class CraftingExecutor
     {
@@ -17,6 +18,7 @@ namespace Systems.Inventory
         /// Executes the crafting process: consumes required inputs and produces outputs.
         /// Handles quantity-based inputs/outputs and health-based primary inputs/outputs
         /// for prescription recipes based on the actual amount crafted by the minigame.
+        /// --- MODIFIED: Added patientNameTag parameter. --- // <-- ADDED NOTE
         /// </summary>
         /// <param name="recipeToCraft">The recipe to craft.</param>
         /// <param name="batchesToCraft">The number of batches to craft (should be 1 for prescription recipes).</param>
@@ -25,6 +27,7 @@ namespace Systems.Inventory
         /// <param name="outputInventory">The output inventory.</param>
         /// <param name="totalPrescriptionUnits">The total units required by the prescription order (needed for delivery validation later). Should be 0 for non-prescription recipes.</param>
         /// <param name="actualCraftedAmount">The actual number of units/amount successfully crafted by the minigame (used for health consumption/production).</param>
+        /// <param name="patientNameTag">The patient name to tag the crafted item instance with (from the active prescription order).</param> // <-- ADDED PARAM
         /// <returns>True if input consumption was successful, false otherwise. Output production success is not guaranteed by this return value.</returns>
         public static bool ExecuteCraft(
             CraftingRecipe recipeToCraft,
@@ -33,7 +36,8 @@ namespace Systems.Inventory
             Inventory secondaryInputInventory,
             Inventory outputInventory,
             int totalPrescriptionUnits, // <-- Parameter for required units (for delivery validation later)
-            int actualCraftedAmount) // <-- Parameter for actual crafted amount (for consumption/production)
+            int actualCraftedAmount, // <-- Parameter for actual crafted amount (for consumption/production)
+            string patientNameTag) // <-- ADDED PARAM
         {
             if (recipeToCraft == null || batchesToCraft <= 0)
             {
@@ -56,7 +60,7 @@ namespace Systems.Inventory
                  return false; // Indicate failure due to missing secondary inventory combiner
             }
 
-            Debug.Log($"CraftingExecutor: Executing craft for recipe '{recipeToCraft.recipeName}' x {batchesToCraft} batches. Required Units: {totalPrescriptionUnits}, Actual Crafted Amount: {actualCraftedAmount}.", primaryInputInventory.gameObject);
+            Debug.Log($"CraftingExecutor: Executing craft for recipe '{recipeToCraft.recipeName}' x {batchesToCraft} batches. Required Units: {totalPrescriptionUnits}, Actual Crafted Amount: {actualCraftedAmount}. Patient Tag: '{patientNameTag ?? "NULL"}'.", primaryInputInventory.gameObject); // <-- MODIFIED LOG
 
 
             // --- Consume Inputs (based on batchesToCraft for quantity, actualCraftedAmount for health) ---
@@ -205,10 +209,10 @@ namespace Systems.Inventory
                     }
 
                     // --- MODIFIED: Use actualCraftedAmount for health production ---
-                    Debug.Log($"CraftingExecutor: Preparing health-based output '{producedOutput.itemDetails.Name}' with initial health {actualCraftedAmount} (Actual Crafted Amount).", producedOutput.itemDetails);
+                    Debug.Log($"CraftingExecutor: Preparing health-based output '{producedOutput.itemDetails.Name}' with initial health {actualCraftedAmount} (Actual Crafted Amount). Assigning Patient Tag: '{patientNameTag ?? "NULL"}'.", producedOutput.itemDetails); // <-- MODIFIED LOG
 
-                    // Use the dedicated modifier method to create the item instance, passing the ACTUAL amount
-                    Item outputItemInstance = CraftingItemModifier.PrepareCraftedOutput(producedOutput.itemDetails, actualCraftedAmount); // <-- Use actualCraftedAmount
+                    // Use the dedicated modifier method to create the item instance, passing the ACTUAL amount AND the patientNameTag
+                    Item outputItemInstance = CraftingItemModifier.PrepareCraftedOutput(producedOutput.itemDetails, actualCraftedAmount, patientNameTag); // <-- PASS patientNameTag // <-- MODIFIED CALL
                     // --- END MODIFIED ---
 
                     if (outputItemInstance != null)
@@ -220,12 +224,12 @@ namespace Systems.Inventory
                          if (!added)
                          {
                              // Log failure, including the remaining quantity on the instance (should be 1 if not fully added)
-                             Debug.LogError($"CraftingExecutor: Failed to add health-based output item '{outputItemInstance.details?.Name ?? "Unknown"}' (Initial Health: {actualCraftedAmount}) to output inventory. Remaining on instance (should be 1): {outputItemInstance.quantity}. Output inventory might be full!");
+                             Debug.LogError($"CraftingExecutor: Failed to add health-based output item '{outputItemInstance.details?.Name ?? "Unknown"}' (Initial Health: {actualCraftedAmount}, Tag: '{outputItemInstance.patientNameTag ?? "NULL"}') to output inventory. Remaining on instance (should be 1): {outputItemInstance.quantity}. Output inventory might be full!"); // <-- MODIFIED LOG
                          }
                           else
                           {
                               // Log success, including the remaining quantity on the instance (should be 0 if fully added)
-                               Debug.Log($"CraftingExecutor: Produced and added health-based output '{outputItemInstance.details.Name}' to output inventory. Remaining on instance: {outputItemInstance.quantity}.");
+                               Debug.Log($"CraftingExecutor: Produced and added health-based output '{outputItemInstance.details.Name}' (Tag: '{outputItemInstance.patientNameTag ?? "NULL"}') to output inventory. Remaining on instance: {outputItemInstance.quantity}."); // <-- MODIFIED LOG
                           }
                     }
                     else
@@ -255,6 +259,7 @@ namespace Systems.Inventory
                     // Create a new Item instance for this output type with the total produced quantity.
                     // Inventory.AddItem will handle creating stacks or adding single instances based on item.maxStack.
                     Item outputItemInstance = producedOutput.itemDetails.Create(totalQuantityToProduce); // Use the Create method
+                    // Note: Patient name tag is NOT assigned to quantity-based outputs.
 
                     // Attempt to add the output item to the output inventory using the public AddItem method on Inventory
                     // Inventory.AddItem will handle whether it's stackable or non-stackable.

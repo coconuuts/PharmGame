@@ -9,6 +9,7 @@ using Game.Events; // Needed for EventManager and new events // <-- NEW: Added u
 using Game.NPC.TI; // Needed for TiNpcManager, TiNpcData // <-- NEW: Added using directive
 using System.Collections; // Needed for Coroutines // <-- NEW: Added using directive
 using CustomerManagement; // Needed for QueueType // <-- NEW: Added using directive
+using Systems.Player; // Needed for PlayerPrescriptionTracker // <-- NEW: Added using directive
 
 
 namespace Game.NPC.States // Place alongside other active states
@@ -16,6 +17,7 @@ namespace Game.NPC.States // Place alongside other active states
     /// <summary>
     /// State for a Prescription Customer moving to the prescription claim spot.
     /// Corresponds to CustomerState.PrescriptionEntering.
+    /// MODIFIED: Checks if the NPC's order is marked ready OR is the player's active task upon arrival and transitions to WaitingForDelivery if it is. // <-- Added note
     /// </summary>
     [CreateAssetMenu(fileName = "CustomerPrescriptionEnteringState", menuName = "NPC/Customer States/Prescription Entering", order = 2)] // Order after Look To Prescription
     public class PrescriptionEnteringSO : NpcStateSO
@@ -122,9 +124,68 @@ namespace Game.NPC.States // Place alongside other active states
             // Ensure movement is stopped before transitioning (Runner does this before calling OnReachedDestination, but defensive)
             context.MovementHandler?.StopMoving();
 
-            // Transition to the WaitingForPrescription state
-            Debug.Log($"{context.NpcObject.name}: Reached claim spot. Transitioning to WaitingForPrescription.", context.NpcObject);
-            context.TransitionToState(CustomerState.WaitingForPrescription);
+            // --- NEW: Check if the order is already marked ready OR is the player's active task ---
+            PrescriptionOrder assignedOrder;
+            bool hasOrder = false;
+
+            if (context.Runner != null)
+            {
+                 if (context.Runner.IsTrueIdentityNpc && context.TiData != null)
+                 {
+                      assignedOrder = context.TiData.assignedOrder; // Struct copy
+                      hasOrder = context.TiData.pendingPrescription; // Check the flag
+                 }
+                 else if (!context.Runner.IsTrueIdentityNpc)
+                 {
+                      assignedOrder = context.Runner.assignedOrderTransient; // Struct copy
+                      hasOrder = context.Runner.hasPendingPrescriptionTransient; // Check the flag
+                 } else {
+                     // Should not happen if entered this state correctly, but defensive
+                     Debug.LogWarning($"{context.NpcObject.name}: OnReachedDestination: Runner is TI but TiData is null or Runner is null! Cannot access assigned order data.", context.NpcObject);
+                     // Fallback to standard flow or exiting? Let's fallback to standard wait for now.
+                     hasOrder = false; // Treat as no order found for the check below
+                     assignedOrder = new PrescriptionOrder(); // Default struct
+                 }
+            } else {
+                 Debug.LogError($"{context.NpcObject.name}: OnReachedDestination: Runner is null! Cannot access assigned order data.", context.NpcObject);
+                 // Fallback to standard flow or exiting? Let's fallback to standard wait for now.
+                 hasOrder = false; // Treat as no order found for the check below
+                 assignedOrder = new PrescriptionOrder(); // Default struct
+            }
+
+            // Get the PlayerPrescriptionTracker instance
+            // Assuming PlayerPrescriptionTracker is a singleton or findable via FindObjectOfType
+            PlayerPrescriptionTracker playerTracker = FindObjectOfType<PlayerPrescriptionTracker>();
+            PrescriptionOrder? currentPlayerActiveOrder = playerTracker?.ActivePrescriptionOrder;
+
+            // Determine if the order is ready OR is the player's active task
+            bool isOrderReadyOrActive = false;
+            if (hasOrder) // Only perform checks if the NPC actually has an assigned order
+            {
+                bool isMarkedReady = context.PrescriptionManager != null && context.PrescriptionManager.IsOrderReady(assignedOrder.patientName);
+                bool isActiveTask = currentPlayerActiveOrder.HasValue && currentPlayerActiveOrder.Value.Equals(assignedOrder);
+
+                isOrderReadyOrActive = isMarkedReady || isActiveTask;
+
+                Debug.Log($"{context.NpcObject.name}: Order for '{assignedOrder.patientName}' arrival check: IsMarkedReady={isMarkedReady}, IsActiveTask={isActiveTask}. Result: IsOrderReadyOrActive={isOrderReadyOrActive}.", context.NpcObject);
+            } else {
+                 Debug.LogWarning($"{context.NpcObject.name}: Arrived at claim spot but hasNoOrder. Skipping ready/active check.", context.NpcObject);
+            }
+
+
+            if (isOrderReadyOrActive)
+            {
+                // Order is ready OR is the player's active task, transition directly to WaitingForDelivery
+                Debug.Log($"{context.NpcObject.name}: Order for '{assignedOrder.patientName}' is ready or active task. Transitioning to WaitingForDelivery.", context.NpcObject);
+                context.TransitionToState(CustomerState.WaitingForDelivery);
+            }
+            else
+            {
+                // Order is not ready AND not the player's active task, transition to WaitingForPrescription
+                Debug.Log($"{context.NpcObject.name}: Order for '{assignedOrder.patientName}' is NOT ready and NOT active task. Transitioning to WaitingForPrescription.", context.NpcObject);
+                context.TransitionToState(CustomerState.WaitingForPrescription);
+            }
+            // --- END NEW ---
         }
 
         public override void OnExit(NpcStateContext context)
@@ -135,11 +196,9 @@ namespace Game.NPC.States // Place alongside other active states
             // context.PlayAnimation("Idle");
 
             // IMPORTANT: The ClaimPrescriptionSpotEvent is published on ENTER.
-            // The PrescriptionManager will need a way to know when the spot is freed,
-            // likely when the NPC transitions OUT of WaitingForPrescription or Exiting.
-            // This might require a new event (e.g., PrescriptionSpotFreedEvent) or logic in those states' OnExit.
-            // Let's plan to handle freeing the claim spot in WaitingForPrescriptionSO.OnExit.
+            // Freeing the spot is now handled ONLY by the impatience coroutine in WaitingForPrescriptionSO/WaitingForDeliverySO
+            // or by the successful delivery in DeliverPrescription.
+            Debug.Log($"{context.NpcObject.name}: Exiting {name}. Claim spot freeing handled by subsequent states.", context.NpcObject);
         }
     }
 }
-// --- END OF FILE PrescriptionEnteringSO.cs ---

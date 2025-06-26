@@ -371,7 +371,7 @@ namespace Game.Prescriptions // Place in the Prescription namespace
             // --- Calculate Money Worth ---
             float pricePerUnit = GetDrugPricePerUnit(prescribedDrug);
             int totalUnits = dosePerDay * lengthOfTreatmentDays;
-            moneyWorth = pricePerUnit * totalUnits;
+            moneyWorth = (pricePerUnit * totalUnits) + 15.0f;
 
             // Create and return the new order
             PrescriptionOrder newOrder = new PrescriptionOrder(patientName, prescribedDrug, dosePerDay, lengthOfTreatmentDays, illegal, moneyWorth);

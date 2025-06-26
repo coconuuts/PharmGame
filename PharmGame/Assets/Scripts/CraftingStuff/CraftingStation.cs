@@ -27,10 +27,11 @@ namespace Systems.Inventory
     /// --- MODIFIED: Updated CheckForRecipeMatch to use separate primary/secondary input lists. ---
     /// --- MODIFIED: Updated OnCraftButtonClicked and CompleteCraft to handle prescription units. ---
     /// --- MODIFIED: Removed redundant IsOutputInventoryEmpty check in HandleStateEntry(Outputting). ---
-    /// --- MODIFIED: Receives actual crafted amount from CraftingMinigameManager. --- // <--- ADDED
-    /// --- MODIFIED: Passes actual crafted amount to CraftingExecutor. --- // <--- ADDED
-    /// --- MODIFIED: Removed state transition from HandleOutputInventoryChange. --- // <--- ADDED
-    /// --- MODIFIED: Added state transition logic to CloseCraftingUI. --- // <--- ADDED
+    /// --- MODIFIED: Receives actual crafted amount from CraftingMinigameManager. ---
+    /// --- MODIFIED: Passes actual crafted amount to CraftingExecutor. ---
+    /// --- MODIFIED: Removed state transition from HandleOutputInventoryChange. ---
+    /// --- MODIFIED: Added state transition logic to CloseCraftingUI. ---
+    /// --- MODIFIED: Added field to store patient name for crafted item. --- // <-- ADDED NOTE
     /// </summary>
     public class CraftingStation : MonoBehaviour
     {
@@ -79,6 +80,14 @@ namespace Systems.Inventory
         private int maxCraftableBatches = 0;
         private int totalPrescriptionUnits = 0; // <-- Store total units from prescription order (needed for delivery validation later)
         private int actualCraftedAmount = 0; // <-- NEW: Store the actual amount crafted by the minigame
+
+        // --- NEW FIELD: Patient Name for Crafted Item --- // <-- ADDED
+        /// <summary>
+        /// Stores the patient name from the active prescription order when entering the Crafting state.
+        /// Used to tag the crafted item instance.
+        /// </summary>
+        private string patientNameForCraftedItem; // <-- ADDED FIELD
+        // --- END NEW FIELD ---
 
 
         private void Awake()
@@ -286,6 +295,7 @@ namespace Systems.Inventory
                     maxCraftableBatches = 0;
                     totalPrescriptionUnits = 0;
                     actualCraftedAmount = 0; // Clear actual amount
+                    patientNameForCraftedItem = null; // <-- CLEAR PATIENT NAME TAG // <-- ADDED
                     break;
                 case CraftingState.Crafting:
                     Debug.Log($"CraftingStation ({gameObject.name}): Entering Crafting state. Starting minigame via manager.", this);
@@ -304,11 +314,14 @@ namespace Systems.Inventory
 
                         // Calculate and store totalPrescriptionUnits if there's an active order
                         totalPrescriptionUnits = 0; // Reset before checking
+                        patientNameForCraftedItem = null; // <-- RESET PATIENT NAME TAG BEFORE CAPTURING // <-- ADDED
+
                         if (playerTracker != null && playerTracker.ActivePrescriptionOrder.HasValue)
                         {
                             Game.Prescriptions.PrescriptionOrder activeOrder = playerTracker.ActivePrescriptionOrder.Value;
                             totalPrescriptionUnits = activeOrder.dosePerDay * activeOrder.lengthOfTreatmentDays;
-                            Debug.Log($"CraftingStation ({gameObject.name}): Player has active prescription order for '{activeOrder.prescribedDrug}'. Calculated total prescription units: {totalPrescriptionUnits}. Preparing minigame parameters.", this);
+                            patientNameForCraftedItem = activeOrder.patientName; // <-- CAPTURE PATIENT NAME // <-- ADDED
+                            Debug.Log($"CraftingStation ({gameObject.name}): Player has active prescription order for '{activeOrder.prescribedDrug}' (Patient: '{patientNameForCraftedItem}'). Calculated total prescription units: {totalPrescriptionUnits}. Preparing minigame parameters.", this); // <-- MODIFIED LOG
 
                             // Add the target pill count (total units) to the parameters dictionary for the minigame
                             minigameParameters["TargetPillCount"] = totalPrescriptionUnits; // Use a consistent key
@@ -321,9 +334,10 @@ namespace Systems.Inventory
                         }
                         else
                         {
-                            Debug.Log($"CraftingStation ({gameObject.name}): Player does not have an active prescription order. Starting minigame with default parameters (totalPrescriptionUnits = 0).", this);
+                            Debug.Log($"CraftingStation ({gameObject.name}): Player does not have an active prescription order. Starting minigame with default parameters (totalPrescriptionUnits = 0, patientNameForCraftedItem = null).", this); // <-- MODIFIED LOG
                             // If no active order, the minigame will use its default logic (e.g., random target count for pills)
                             // No specific parameters related to prescription are added here, totalPrescriptionUnits remains 0.
+                            // patientNameForCraftedItem remains null.
                         }
 
 
@@ -336,7 +350,7 @@ namespace Systems.Inventory
                             Debug.LogError("CraftingStation: Failed to start crafting minigame. Returning to Inputting.", this);
                             // If minigame failed to start, immediately return to Inputting state
                             SetState(CraftingState.Inputting);
-                            // Clearing recipe/batches/units is handled by entering Inputting state.
+                            // Clearing recipe/batches/units/patient name is handled by entering Inputting state.
                         }
                     }
                     else
@@ -373,8 +387,8 @@ namespace Systems.Inventory
             {
                 Debug.Log($"CraftingStation: Crafting minigame reported success. Proceeding with craft execution.", this);
                 // Proceed with the actual item consumption and production
-                // Use the stored currentMatchedRecipe, maxCraftableBatches, totalPrescriptionUnits, AND actualCraftedAmount
-                CompleteCraft(currentMatchedRecipe, maxCraftableBatches, totalPrescriptionUnits, this.actualCraftedAmount); // <-- Pass actualCraftedAmount
+                // Use the stored currentMatchedRecipe, maxCraftableBatches, totalPrescriptionUnits, actualCraftedAmount, AND patientNameForCraftedItem
+                CompleteCraft(currentMatchedRecipe, maxCraftableBatches, totalPrescriptionUnits, this.actualCraftedAmount, patientNameForCraftedItem); // <-- Pass actualCraftedAmount AND patientNameForCraftedItem // <-- MODIFIED CALL
                 // After completing the craft (items consumed/produced), transition to the Outputting state
                 SetState(CraftingState.Outputting);
             }
@@ -385,7 +399,7 @@ namespace Systems.Inventory
                 SetState(CraftingState.Inputting);
             }
 
-            // Clearing the matched recipe, batches, and units is handled by entering Inputting state.
+            // Clearing the matched recipe, batches, units, and patient name is handled by entering Inputting state.
             // The actualCraftedAmount is also cleared when entering Inputting.
         }
 
@@ -515,6 +529,7 @@ namespace Systems.Inventory
             maxCraftableBatches = matchResult.MaxCraftableBatches;
             // totalPrescriptionUnits is NOT set here, it's set in OnCraftButtonClicked just before crafting starts.
             // actualCraftedAmount is NOT set here, it's set in HandleCraftingMinigameCompleted.
+            // patientNameForCraftedItem is NOT set here, it's set in HandleStateEntry(Crafting).
 
 
             // If there's an active prescription order, validate the matched recipe against it
@@ -607,6 +622,7 @@ namespace Systems.Inventory
 
             // Calculate totalPrescriptionUnits here, just before starting the craft
             totalPrescriptionUnits = 0; // Reset before calculating
+            patientNameForCraftedItem = null; // <-- RESET PATIENT NAME TAG BEFORE CAPTURING // <-- ADDED
             bool isPrescriptionCraft = false;
 
             if (playerTracker != null && playerTracker.ActivePrescriptionOrder.HasValue)
@@ -626,7 +642,8 @@ namespace Systems.Inventory
                       Debug.Log($"CraftingStation ({gameObject.name}): Matched recipe '{currentMatchedRecipe.recipeName}' is the correct recipe for the active prescription order. Proceeding.", this);
                       isPrescriptionCraft = true;
                       totalPrescriptionUnits = activeOrder.dosePerDay * activeOrder.lengthOfTreatmentDays; // Calculate units
-                      Debug.Log($"CraftingStation ({gameObject.name}): Calculated total prescription units for order: {totalPrescriptionUnits}.", this);
+                      patientNameForCraftedItem = activeOrder.patientName; // <-- CAPTURE PATIENT NAME // <-- ADDED
+                      Debug.Log($"CraftingStation ({gameObject.name}): Calculated total prescription units for order: {totalPrescriptionUnits}. Captured patient name: '{patientNameForCraftedItem}'.", this); // <-- MODIFIED LOG
 
                       // Additional check for prescription crafts - ensure primary input has enough health
                       // Find the primary input requirement in the matched recipe
@@ -668,6 +685,7 @@ namespace Systems.Inventory
                  Debug.Log($"CraftingStation ({gameObject.name}): No active prescription order. Allowing craft of matched recipe '{currentMatchedRecipe.recipeName}'.", this);
                  isPrescriptionCraft = false;
                  totalPrescriptionUnits = 0; // Ensure units are 0 for non-prescription crafts
+                 patientNameForCraftedItem = null; // Ensure tag is null for non-prescription crafts // <-- ADDED
              }
 
 
@@ -680,8 +698,9 @@ namespace Systems.Inventory
         /// Delegates the core logic to CraftingExecutor.
         /// Called by HandleCraftingMinigameCompleted after the minigame is finished and successful.
         /// --- MODIFIED: Added totalPrescriptionUnits and actualCraftedAmount parameters. ---
+        /// --- MODIFIED: Added patientNameTag parameter. --- // <-- ADDED NOTE
         /// </summary>
-        private void CompleteCraft(CraftingRecipe recipeToCraft, int batchesToCraft, int totalPrescriptionUnits, int actualCraftedAmount) // <-- MODIFIED Signature
+        private void CompleteCraft(CraftingRecipe recipeToCraft, int batchesToCraft, int totalPrescriptionUnits, int actualCraftedAmount, string patientNameTag) // <-- ADDED patientNameTag PARAM // <-- MODIFIED Signature
         {
              // Use the stored members, which are guaranteed to be valid if this method is reached
              // based on the logic in HandleCraftingMinigameCompleted.
@@ -692,7 +711,7 @@ namespace Systems.Inventory
             }
 
             // Delegate craft execution to the external helper
-            // Pass the totalPrescriptionUnits (for delivery validation later) and the actualCraftedAmount (for consumption/production)
+            // Pass the totalPrescriptionUnits (for delivery validation later), the actualCraftedAmount (for consumption/production), AND the patientNameTag
             bool executionSuccess = CraftingExecutor.ExecuteCraft(
                 currentMatchedRecipe,
                 maxCraftableBatches,
@@ -700,7 +719,8 @@ namespace Systems.Inventory
                 secondaryInputInventory,
                 outputInventory,
                 totalPrescriptionUnits, // Pass the required units from the order
-                actualCraftedAmount); // <-- Pass the actual amount crafted
+                actualCraftedAmount, // Pass the actual amount crafted
+                patientNameTag); // <-- Pass the patient name tag // <-- MODIFIED CALL
 
             // Handle execution result
             if (!executionSuccess)

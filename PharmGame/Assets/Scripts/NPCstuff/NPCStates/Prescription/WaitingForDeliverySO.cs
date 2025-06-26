@@ -1,3 +1,5 @@
+// --- START OF FILE WaitingForDeliverySO.cs ---
+
 // --- START OF FILE WaitingForDeliverySO.cs (Remove UI Hide on Exit) ---
 
 using UnityEngine;
@@ -12,6 +14,7 @@ using System.Collections; // Needed for Coroutines
 using Random = UnityEngine.Random; // Specify UnityEngine.Random
 using Game.Events;
 using Systems.GameStates; // Needed for PlayerUIPopups
+using Game.NPC.TI; // Needed for TiNpcData // <-- Added using directive
 
 
 namespace Game.NPC.States // Place alongside other active states
@@ -22,6 +25,7 @@ namespace Game.NPC.States // Place alongside other active states
     /// Corresponds to CustomerState.WaitingForDelivery.
     /// Uses the InteractionManager singleton directly.
     /// --- MODIFIED: Removed UI Hide from OnExit. ---
+    /// --- MODIFIED: Clears the order's ready status in PrescriptionManager on impatience. --- // <-- Added note
     /// </summary>
     [CreateAssetMenu(fileName = "CustomerWaitingForDeliveryState", menuName = "NPC/Customer States/Waiting For Delivery", order = 5)] // Order after WaitingForPrescription
     public class WaitingForDeliverySO : NpcStateSO
@@ -147,9 +151,27 @@ namespace Game.NPC.States // Place alongside other active states
             // --- END NEW ---
 
             // --- Notify PrescriptionManager to remove the assigned order on impatience exit ---
-            PrescriptionManager prescriptionManager = PrescriptionManager.Instance; // Get the instance
-            if (prescriptionManager != null && context.Runner != null)
+            PrescriptionManager prescriptionManager = context.PrescriptionManager; // Get the instance from context
+            PrescriptionOrder npcAssignedOrder = new PrescriptionOrder(); // Default struct
+            bool npcHasOrder = false;
+
+            if (context.Runner != null)
             {
+                 if (context.Runner.IsTrueIdentityNpc && context.TiData != null)
+                 {
+                      npcAssignedOrder = context.TiData.assignedOrder; // Struct copy
+                      npcHasOrder = context.TiData.pendingPrescription; // Check the flag
+                 }
+                 else if (!context.Runner.IsTrueIdentityNpc)
+                 {
+                      npcAssignedOrder = context.Runner.assignedOrderTransient; // Struct copy
+                      npcHasOrder = context.Runner.hasPendingPrescriptionTransient; // Check the flag
+                 }
+            }
+
+            if (npcHasOrder && prescriptionManager != null)
+            {
+                 // Remove the order from assigned tracking (handled by DeliverPrescription on success, but needed here on impatience)
                  if (context.Runner.IsTrueIdentityNpc && context.TiData != null)
                  {
                       prescriptionManager.RemoveAssignedTiOrder(context.Runner.TiData.Id);
@@ -157,18 +179,19 @@ namespace Game.NPC.States // Place alongside other active states
                  }
                  else if (!context.Runner.IsTrueIdentityNpc)
                  {
-                      // Use context.NpcObject to reference the NPC's GameObject
                       prescriptionManager.RemoveAssignedTransientOrder(context.NpcObject);
                       Debug.Log($"{context.NpcObject.name}: Impatience exit: Notified PrescriptionManager to remove assigned Transient order for '{context.NpcObject.name}'.", context.NpcObject);
                  }
-                 else
-                 {
-                      Debug.LogError($"{context.NpcObject.name}: Impatience exit: Runner is TI but TiData is null, or Runner is null. Cannot notify PrescriptionManager to remove assigned order.", context.NpcObject);
-                 }
+
+                 // --- NEW: Unmark the order as ready in the PrescriptionManager ---
+                 // This is crucial if the order was marked ready but the player failed to deliver in time.
+                 prescriptionManager.UnmarkOrderReady(npcAssignedOrder.patientName);
+                 Debug.Log($"{context.NpcObject.name}: Impatience exit: Unmarked order for '{npcAssignedOrder.patientName}' as ready.", context.NpcObject);
+                 // --- END NEW ---
             }
             else
             {
-                 Debug.LogError($"{context.NpcObject.name}: Impatience exit: PrescriptionManager or Runner is null! Cannot notify manager to remove assigned order.", context.NpcObject);
+                 Debug.LogWarning($"{context.NpcObject.name}: Impatience exit: PrescriptionManager or Runner/Order data is null! Cannot notify manager to remove assigned/ready order.", context.NpcObject);
             }
             // --- END NEW ---
 
@@ -180,12 +203,12 @@ namespace Game.NPC.States // Place alongside other active states
             {
                 playerTracker = playerGO.GetComponent<PlayerPrescriptionTracker>();
             }
-            if (playerTracker != null && playerTracker.ActivePrescriptionOrder.HasValue)
+            if (playerTracker != null && playerTracker.ActivePrescriptionOrder.HasValue && playerTracker.ActivePrescriptionOrder.Value.Equals(npcAssignedOrder)) // Only clear if it's *this* NPC's order
             {
-                 Debug.Log($"{context.NpcObject.name}: Impatience exit: Clearing player's active prescription order.", context.NpcObject);
+                 Debug.Log($"{context.NpcObject.name}: Impatience exit: Clearing player's active prescription order (if it was this NPC's).", context.NpcObject);
                  playerTracker.ClearActiveOrder();
                  // Hide the UI popup here as well
-                 PlayerUIPopups.Instance?.HidePopup("Prescription Order"); // <-- ADDED UI HIDE ON IMPATIENCE
+                 // PlayerUIPopups.Instance?.HidePopup("Prescription Order"); // UI Hide is now handled by PlayerPrescriptionTracker.OnActiveOrderChangedHandler
             }
             // --- END NEW ---
 

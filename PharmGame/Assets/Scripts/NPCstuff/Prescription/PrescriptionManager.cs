@@ -1,5 +1,7 @@
 // --- START OF FILE PrescriptionManager.cs ---
 
+// --- START OF FILE PrescriptionManager.cs ---
+
 using UnityEngine;
 using System.Collections.Generic; // Needed for List and Dictionary, HashSet
 using System; // Needed for System.Serializable and Enum
@@ -29,7 +31,8 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
     /// Now includes reference to DrugRecipeMappingSO for delivery validation.
     /// MODIFIED: Uses PrescriptionGenerator for order creation.
     /// MODIFIED: Provides list of currently used patient names to the generator.
-    /// MODIFIED: Provides a list of currently active orders (unassigned or assigned) for UI display. // <-- Added note
+    /// MODIFIED: Provides a list of currently active orders (unassigned or assigned) for UI display.
+    /// MODIFIED: Added tracking for orders marked as "ready" by the player. // <-- Added note
     /// </summary>
     public class PrescriptionManager : MonoBehaviour
     {
@@ -100,6 +103,13 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
         private Dictionary<string, PrescriptionOrder> assignedTiOrders = new Dictionary<string, PrescriptionOrder>(); // TI ID -> Order
         // For transient, we might track them by Runner instance or GameObject
         private Dictionary<GameObject, PrescriptionOrder> assignedTransientOrders = new Dictionary<GameObject, PrescriptionOrder>(); // Transient GO -> Order
+
+        // --- NEW: Tracking for orders marked as ready ---
+        [Tooltip("Set of patient names for orders that have been marked as ready by the player.")]
+        [SerializeField] // Serialize for debugging/saving
+        private HashSet<string> readyOrders = new HashSet<string>(); // Store patient names
+        // --- END NEW ---
+
 
         // --- Prescription Queue Data ---
         private List<QueueSpot> prescriptionQueueSpots; // List of QueueSpot objects for the prescription queue
@@ -183,7 +193,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
                if (prescriptionGenerator == null)
                {
                    Debug.LogError("PrescriptionManager: PrescriptionGenerator component not found in scene! Cannot generate orders.", this);
-                   // Do NOT disable the manager, other functions might still work, but order generation will fail.
+                   // Do NOT disable, random names and drugs can still be generated.
                }
                // --- END NEW ---
 
@@ -282,6 +292,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
                 unassignedOrders.Clear();
                 assignedTiOrders.Clear();
                 assignedTransientOrders.Clear();
+                readyOrders.Clear(); // <-- Clear ready orders on destroy
                 prescriptionQueueSpots.Clear();
                 currentClaimSpotOccupant = null; // Clear occupant reference
             }
@@ -300,6 +311,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
             unassignedOrders.Clear();
             assignedTiOrders.Clear(); // <-- Clear assigned orders at end of day
             assignedTransientOrders.Clear(); // <-- Clear assigned orders at end of day
+            readyOrders.Clear(); // <-- Clear ready orders at end of day
             // Note: NPCs currently holding orders will have their flags/references cleared
             // when they exit the prescription flow or are deactivated/pooled.
             // Clearing the manager's dictionaries here ensures they aren't tracked across days.
@@ -354,6 +366,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
             allOrdersGeneratedToday.Clear();
             unassignedOrders.Clear();
             // Assigned orders are NOT cleared here, they persist across generation runs within the same day.
+            // Ready orders are NOT cleared here, they persist across generation runs within the same day.
 
             for (int i = 0; i < ordersToGeneratePerDay; i++)
             {
@@ -416,6 +429,9 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
                   usedNames.Add(order.patientName);
              }
 
+             // Add names from ready orders (they are still "active" in the sense they are being tracked)
+             usedNames.UnionWith(readyOrders); // Add all names from the ready set
+
              // Debug.Log($"PrescriptionManager: Currently tracking {usedNames.Count} unique patient names."); // Too noisy
              return usedNames;
         }
@@ -438,6 +454,9 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
 
              // Add all assigned Transient orders (values from the dictionary)
              activeOrders.AddRange(assignedTransientOrders.Values);
+
+             // Note: Ready orders are NOT included in this list, as they are considered fulfilled from the player's task perspective.
+             // The UI should only show orders the player *can* still work on (unassigned or assigned).
 
              // Debug.Log($"PrescriptionManager: Providing {activeOrders.Count} currently active orders."); // Too noisy
              return activeOrders;
@@ -572,24 +591,39 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
                 return false;
             }
 
-            // Check if we have unassigned orders that are NOT for a TI NPC
-            // And check if we are below the maximum assigned transient orders limit
-            PrescriptionOrder? orderToAssign = null;
-            if (assignedTransientOrders.Count < maxAssignedTransientOrders)
+            // Check if we are below the maximum assigned transient orders limit
+            if (assignedTransientOrders.Count >= maxAssignedTransientOrders)
             {
-                // Find the first unassigned order that does NOT match a TI NPC
-                // Use ToList() to avoid modifying the collection while iterating
-                orderToAssign = unassignedOrders.ToList().FirstOrDefault(order => tiNpcManager.GetTiNpcData(order.patientName) == null);
+                 // Debug.Log($"PrescriptionManager: Transient assignment limit ({maxAssignedTransientOrders}) reached ({assignedTransientOrders.Count}). Cannot assign."); // Too noisy
+                 return false; // Limit reached
             }
 
-
-            if (orderToAssign.HasValue)
+            // Find the first unassigned order that does NOT match a TI NPC
+            // Use ToList() to avoid modifying the collection while iterating
+            PrescriptionOrder foundOrder = unassignedOrders.ToList().FirstOrDefault(order =>
             {
-                // Found a suitable order, now check the random chance
+                 // Explicitly check if the order is valid (not the default struct) before checking TI match
+                 // FirstOrDefault might return default(PrescriptionOrder) if list is empty or no match
+                 if (string.IsNullOrEmpty(order.patientName) || order.patientName == "Unknown Patient")
+                 {
+                      return false; // Ignore invalid/blank orders returned by FirstOrDefault when no match is found
+                 }
+                 // Now check if it's a non-TI order
+                 return tiNpcManager.GetTiNpcData(order.patientName) == null;
+            });
+
+
+            // --- MODIFIED CHECK ---
+            // Check if the foundOrder is NOT the default/blank struct.
+            // string.IsNullOrEmpty(foundOrder.patientName) will be true for the default struct.
+            // Also check against the fallback name just in case.
+            if (!string.IsNullOrEmpty(foundOrder.patientName) && foundOrder.patientName != "Unknown Patient")
+            {
+                // Found a suitable, non-blank order that is not for a TI NPC.
+                // Now check the random chance.
                 if (Random.value < transientAssignmentChance)
                 {
                     // Check if the prescription queue is full. If so, we cannot assign.
-                    // This check is based on the vision: "if the prescription queue is currently full, then the prescriptionmanager will not flag any new transient npcs."
                     if (IsPrescriptionQueueFull())
                     {
                         Debug.Log($"PrescriptionManager: Prescription queue is full. Cannot assign transient order to '{runner.gameObject.name}'.");
@@ -598,13 +632,14 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
 
                     // All checks passed, assign the order
                     runner.hasPendingPrescriptionTransient = true;
-                    runner.assignedOrderTransient = orderToAssign.Value; // Assign the struct value
+                    runner.assignedOrderTransient = foundOrder; // Assign the valid struct value
 
                     // Move the order from unassigned to assignedTransientOrders
-                    unassignedOrders.Remove(orderToAssign.Value); // Remove from unassigned
-                    assignedTransientOrders[runner.gameObject] = orderToAssign.Value; // Add to assigned transient
+                    // Use the actual 'foundOrder' struct to remove from the list
+                    unassignedOrders.Remove(foundOrder);
+                    assignedTransientOrders[runner.gameObject] = foundOrder; // Add to assigned transient
 
-                    Debug.Log($"PrescriptionManager: Assigned transient prescription order for '{orderToAssign.Value.patientName}' to NPC '{runner.gameObject.name}'. {unassignedOrders.Count} unassigned orders remaining. {assignedTransientOrders.Count}/{maxAssignedTransientOrders} transient orders assigned.");
+                    Debug.Log($"PrescriptionManager: Assigned transient prescription order for '{foundOrder.patientName}' to NPC '{runner.gameObject.name}'. {unassignedOrders.Count} unassigned orders remaining. {assignedTransientOrders.Count}/{maxAssignedTransientOrders} transient orders assigned.");
 
                     return true; // Successfully assigned
                 }
@@ -617,9 +652,10 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
             }
             else
             {
-                // No suitable unassigned order found or limit reached
-                // Debug.Log($"PrescriptionManager: No suitable unassigned non-TI orders found or transient assignment limit ({maxAssignedTransientOrders}) reached ({assignedTransientOrders.Count})."); // Too noisy
-                return false;
+                // FirstOrDefault returned the default/blank struct because no matching order was found
+                // in the unassignedOrders list that was not for a TI NPC.
+                // Debug.Log($"PrescriptionManager: No suitable unassigned non-TI orders found."); // Too noisy
+                return false; // No order to assign
             }
         }
 
@@ -976,7 +1012,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
 
          /// <summary>
          /// Removes a TI NPC's assigned order from the manager's tracking dictionary.
-         /// Called when the TI NPC successfully completes the prescription flow.
+         /// Called when the TI NPC successfully completes the prescription flow or becomes impatient in WaitingForDelivery.
          /// </summary>
          public void RemoveAssignedTiOrder(string tiId)
          {
@@ -991,7 +1027,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
 
          /// <summary>
          /// Removes a Transient NPC's assigned order from the manager's tracking dictionary.
-         /// Called when the Transient NPC successfully completes the prescription flow.
+         /// Called when the Transient NPC successfully completes the prescription flow or becomes impatient in WaitingForDelivery.
          /// </summary>
          public void RemoveAssignedTransientOrder(GameObject npcObject)
          {
@@ -1003,6 +1039,73 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
                    Debug.LogWarning($"PrescriptionManager: Attempted to remove assigned Transient order for '{npcObject.name}' but it was not found in the tracking dictionary.");
               }
          }
+
+        // --- NEW: Methods for tracking Ready Orders ---
+        /// <summary>
+        /// Marks a prescription order as ready for delivery by the player.
+        /// </summary>
+        /// <param name="order">The order to mark ready.</param>
+        public void MarkOrderReady(PrescriptionOrder order)
+        {
+            if (string.IsNullOrEmpty(order.patientName))
+            {
+                Debug.LogWarning("PrescriptionManager: Attempted to mark order ready with null or empty patient name. Ignoring.", this);
+                return;
+            }
+
+            if (readyOrders.Add(order.patientName)) // Add returns true if the element was added (wasn't already present)
+            {
+                Debug.Log($"PrescriptionManager: Order for '{order.patientName}' marked as ready.", this);
+                // Optional: Publish an event here if other systems need to know an order is ready
+                // EventManager.Publish(new OrderMarkedReadyEvent(order));
+            }
+            else
+            {
+                Debug.LogWarning($"PrescriptionManager: Order for '{order.patientName}' was already marked as ready.", this);
+            }
+        }
+
+        /// <summary>
+        /// Checks if a prescription order for a given patient name has been marked as ready.
+        /// </summary>
+        /// <param name="patientName">The patient name to check.</param>
+        /// <returns>True if the order is marked ready, false otherwise.</returns>
+        public bool IsOrderReady(string patientName)
+        {
+            if (string.IsNullOrEmpty(patientName))
+            {
+                // Debug.LogWarning("PrescriptionManager: IsOrderReady called with null or empty patient name. Returning false."); // Too noisy
+                return false;
+            }
+            return readyOrders.Contains(patientName);
+        }
+
+        /// <summary>
+        /// Unmarks a prescription order for a given patient name as ready.
+        /// Called when the order is successfully delivered or the NPC becomes impatient in the delivery state.
+        /// </summary>
+        /// <param name="patientName">The patient name to unmark.</param>
+        public void UnmarkOrderReady(string patientName)
+        {
+             if (string.IsNullOrEmpty(patientName))
+             {
+                  Debug.LogWarning("PrescriptionManager: Attempted to unmark order ready with null or empty patient name. Ignoring.", this);
+                  return;
+             }
+
+             if (readyOrders.Remove(patientName)) // Remove returns true if the element was found and removed
+             {
+                  Debug.Log($"PrescriptionManager: Order for '{patientName}' unmarked as ready.", this);
+                  // Optional: Publish an event here if other systems need to know an order is no longer ready
+                  // EventManager.Publish(new OrderUnmarkedReadyEvent(patientName));
+             }
+             else
+             {
+                  // This might happen if the order wasn't marked ready in the first place, which is fine.
+                  // Debug.LogWarning($"PrescriptionManager: Attempted to unmark order ready for '{patientName}', but it was not found in the ready list."); // Too noisy
+             }
+        }
+        // --- END NEW ---
 
 
         // --- Simulation Status Methods (Needed by Basic States) ---
