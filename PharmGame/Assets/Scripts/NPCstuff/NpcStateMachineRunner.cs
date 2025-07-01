@@ -1,5 +1,7 @@
 // --- START OF FILE NpcStateMachineRunner.cs ---
 
+// --- START OF FILE NpcStateMachineRunner.cs ---
+
 using UnityEngine;
 using System.Collections.Generic;
 using System.Collections;
@@ -29,16 +31,13 @@ namespace Game.NPC
      /// Can represent a transient customer or an active True Identity NPC.
      /// Added temporary fields for transient prescription data and populates PrescriptionManager in context.
      /// MODIFIED: Removed caching for MultiInteractableManager. Kept ObtainPrescription caching.
+     /// ADDED: Reference to CashierManager in context.
      /// </summary>
      [RequireComponent(typeof(NpcMovementHandler))] // Ensure handlers are attached
      [RequireComponent(typeof(NpcAnimationHandler))]
-     [RequireComponent(typeof(CustomerShopper))] // Assuming CustomerShopper is a core handler for customer types
      [RequireComponent(typeof(Handlers.NpcEventHandler))] // Required event handler
      [RequireComponent(typeof(Handlers.NpcInterruptionHandler))] // Require the interruption handler
-     [RequireComponent(typeof(Game.NPC.Handlers.NpcQueueHandler))] // Required the Queue handler
      [RequireComponent(typeof(Game.NPC.Handlers.NpcPathFollowingHandler))] // Require the Path Following handler
-     // Removed: RequireComponent(typeof(MultiInteractableManager))] // MultiInteractableManager is optional, don't require it
-     // Removed: RequireComponent(typeof(ObtainPrescription))] // ObtainPrescription is optional, don't require it
      public class NpcStateMachineRunner : MonoBehaviour
      {
           // --- References to Handler Components (Accessed by State SOs via the Context) ---
@@ -69,6 +68,9 @@ namespace Game.NPC
           private TiNpcManager tiNpcManager;
           // Reference to the PrescriptionManager
           private PrescriptionManager prescriptionManager;
+          // Reference to the CashierManager // <-- NEW FIELD
+          private CashierManager cashierManager;
+          // --- END NEW ---
 
 
           // --- Public methods/properties for external access if needed ---
@@ -135,6 +137,12 @@ namespace Game.NPC
           [Tooltip("The prescription order assigned to this transient NPC.")]
           public PrescriptionOrder assignedOrderTransient;
 
+          // --- Cashier Specific Fields --- // <-- NEW HEADER
+          [Header("Cashier Data")]
+          [Tooltip("Reference to the customer Runner currently being processed by this Cashier.")]
+          public NpcStateMachineRunner CurrentCustomerRunner { get; internal set; } = null; // <-- NEW FIELD
+          // --- END NEW ---
+
 
           // --- Grid Position Tracking for Active NPCs ---
           private Vector3 lastGridPosition;
@@ -188,7 +196,7 @@ namespace Game.NPC
                // --- END NEW LOGIC ---
 
 
-               if (MovementHandler == null || AnimationHandler == null || Shopper == null || interruptionHandler == null || QueueHandler == null || PathFollowingHandler == null)
+               if (MovementHandler == null || AnimationHandler == null || interruptionHandler == null || PathFollowingHandler == null)
                {
                     Debug.LogError($"NpcStateMachineRunner on {gameObject.name}: Missing required handler components! MovementHandler: {MovementHandler != null}, AnimationHandler: {AnimationHandler != null}, Shopper: {Shopper != null}, InterruptionHandler: {interruptionHandler != null}, QueueHandler: {QueueHandler != null}, PathFollowingHandler: {PathFollowingHandler != null}", this);
                     enabled = false;
@@ -222,7 +230,7 @@ namespace Game.NPC
                     PathFollowingHandler = npcPathFollowingHandler,
                     // REMOVED: MultiInteractableManager = multiInteractableManager, // No longer populate this
                     ObtainPrescription = obtainPrescription // <-- NEW: Inject cached reference
-                    // Managers (Customer, TI, Prescription) and TiData will be populated in Start/Update/TransitionToState
+                    // Managers (Customer, TI, Prescription, Cashier) and TiData will be populated in Start/Update/TransitionToState
                };
 
                _hasReachedCurrentDestination = true;
@@ -246,6 +254,11 @@ namespace Game.NPC
                hasPendingPrescriptionTransient = false;
                assignedOrderTransient = new PrescriptionOrder(); // Initialize with default struct values
 
+               // --- Initialize Cashier specific fields --- // <-- NEW INITIALIZATION
+               CurrentCustomerRunner = null;
+               // --- END NEW INITIALIZATION ---
+
+
                Debug.Log($"{gameObject.name}: NpcStateMachineRunner Awake completed.");
           }
 
@@ -260,6 +273,11 @@ namespace Game.NPC
 
                prescriptionManager = PrescriptionManager.Instance;
                if (prescriptionManager == null) Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): PrescriptionManager instance not found!", this);
+
+               // --- GET CashierManager reference --- // <-- NEW GET
+               cashierManager = CashierManager.Instance;
+               if (cashierManager == null) Debug.LogWarning($"NpcStateMachineRunner ({gameObject.name}): CashierManager instance not found! Cashier functionality will not work. Ensure CashierManager is in the scene.", this);
+               // --- END NEW GET ---
 
 
                // Get reference to GridManager
@@ -296,11 +314,12 @@ namespace Game.NPC
                                    {
                                         Type keyEnumType = pair.Key.GetType();
                                         Type soHandledEnumType = pair.Value.HandledState.GetType();
-                                        if (keyEnumType != soHandledEnumType)
-                                        {
-                                             Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Enum Type mismatch for state '{pair.Key}' in type definition '{typeDef.name}'! Expected '{keyEnumType.Name}', assigned State SO '{pair.Value.name}' has HandledState type '{soHandledEnumType.Name}'. State ignored.", this);
-                                             continue;
-                                        }
+                                        // Allow different enum types for now, validation is done in NpcTypeDefinitionSO
+                                        // if (keyEnumType != soHandledEnumType)
+                                        // {
+                                        //      Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Enum Type mismatch for state '{pair.Key}' in type definition '{typeDef.name}'! Expected '{keyEnumType.Name}', assigned State SO '{pair.Value.name}' has HandledState type '{soHandledEnumType.Name}'. State ignored.", this);
+                                        //      continue;
+                                        // }
                                         availableStates[pair.Key] = pair.Value;
                                    }
                                    else
@@ -331,6 +350,7 @@ namespace Game.NPC
                     _stateContext.Manager = Manager;
                     _stateContext.TiNpcManager = tiNpcManager;
                     _stateContext.PrescriptionManager = prescriptionManager;
+                    _stateContext.CashierManager = cashierManager; // <-- NEW: Populate CashierManager
                     _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                     _stateContext.Runner = this;
                     _stateContext.InterruptionHandler = interruptionHandler;
@@ -477,6 +497,7 @@ namespace Game.NPC
                     _stateContext.Manager = Manager;
                     _stateContext.TiNpcManager = tiNpcManager;
                     _stateContext.PrescriptionManager = prescriptionManager;
+                    _stateContext.CashierManager = cashierManager; // <-- NEW: Populate CashierManager
                     _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                     _stateContext.Runner = this;
                     _stateContext.InterruptionHandler = interruptionHandler;
@@ -528,6 +549,7 @@ namespace Game.NPC
                          _stateContext.Manager = Manager;
                          _stateContext.TiNpcManager = tiNpcManager;
                          _stateContext.PrescriptionManager = prescriptionManager;
+                         _stateContext.CashierManager = cashierManager; // <-- NEW: Populate CashierManager
                          _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                          _stateContext.Runner = this;
                          _stateContext.InterruptionHandler = interruptionHandler;
@@ -546,6 +568,7 @@ namespace Game.NPC
                     _stateContext.Manager = Manager;
                     _stateContext.TiNpcManager = tiNpcManager;
                     _stateContext.PrescriptionManager = prescriptionManager;
+                    _stateContext.CashierManager = cashierManager; // <-- NEW: Populate CashierManager
                     _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                     _stateContext.Runner = this;
                     _stateContext.InterruptionHandler = interruptionHandler;
@@ -576,7 +599,7 @@ namespace Game.NPC
                }
 
                this.Manager = manager; // Set Manager reference
-               // Other manager references (TI, Prescription) are obtained in Start
+               // Other manager references (TI, Prescription, Cashier) are obtained in Start
 
                ResetRunnerTransientData(); // Resets handlers and temporary path fields
 
@@ -705,6 +728,7 @@ namespace Game.NPC
                     _stateContext.TiData = TiData;
                     _stateContext.TiNpcManager = tiNpcManager;
                     _stateContext.PrescriptionManager = prescriptionManager;
+                    _stateContext.CashierManager = cashierManager; // <-- NEW: Populate CashierManager
                     // REMOVED: _stateContext.MultiInteractableManager = MultiInteractableManager; // No longer populate this
                     _stateContext.ObtainPrescription = ObtainPrescription; // <-- NEW: Populate cached reference
 
@@ -719,6 +743,7 @@ namespace Game.NPC
                     _stateContext.TiData = TiData;
                     _stateContext.TiNpcManager = tiNpcManager;
                     _stateContext.PrescriptionManager = prescriptionManager;
+                    _stateContext.CashierManager = cashierManager; // <-- NEW: Populate CashierManager
                     // REMOVED: _stateContext.MultiInteractableManager = MultiInteractableManager; // No longer populate this
                     _stateContext.ObtainPrescription = ObtainPrescription; // <-- NEW: Populate cached reference
                     TransitionToState(GetStateSO(GeneralState.ReturningToPool));
@@ -804,6 +829,11 @@ namespace Game.NPC
                hasPendingPrescriptionTransient = false;
                assignedOrderTransient = new PrescriptionOrder(); // Reset to default struct values
 
+               // --- Reset Cashier specific fields --- // <-- NEW RESET
+               CurrentCustomerRunner = null;
+               // --- END NEW RESET ---
+
+
                if (!IsTrueIdentityNpc)
                {
                     Shopper?.Reset();
@@ -876,11 +906,12 @@ namespace Game.NPC
                     _stateContext.Manager = Manager;
                     _stateContext.TiNpcManager = tiNpcManager;
                     _stateContext.PrescriptionManager = prescriptionManager;
+                    _stateContext.CashierManager = cashierManager; // <-- NEW: Populate CashierManager
                     _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                     _stateContext.Runner = this;
                     _stateContext.InterruptionHandler = interruptionHandler;
                     _stateContext.QueueHandler = QueueHandler;
-                    _stateContext.PathFollowingHandler = npcPathFollowingHandler;
+                    _stateContext.PathFollowingHandler = PathFollowingHandler;
                     _stateContext.TiData = TiData;
                     // REMOVED: _stateContext.MultiInteractableManager = MultiInteractableManager; // No longer populate this
                     _stateContext.ObtainPrescription = ObtainPrescription; // <-- NEW: Populate cached reference
@@ -903,6 +934,7 @@ namespace Game.NPC
                _stateContext.Manager = Manager;
                _stateContext.TiNpcManager = tiNpcManager;
                _stateContext.PrescriptionManager = prescriptionManager;
+               _stateContext.CashierManager = cashierManager; // <-- NEW: Populate CashierManager
                _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                _stateContext.Runner = this;
                _stateContext.InterruptionHandler = interruptionHandler;
@@ -1268,3 +1300,4 @@ namespace Game.NPC
           }
      }
 }
+// --- END OF FILE NpcStateMachineRunner.cs ---

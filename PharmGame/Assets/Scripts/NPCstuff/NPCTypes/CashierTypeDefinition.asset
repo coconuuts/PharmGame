@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fca6f9049d56b964aacd2da2b44efd5d, type: 3}
+  m_Name: CashierTypeDefinition
+  m_EditorClassIdentifier: 
+  baseType: {fileID: 11400000, guid: 7c4f6c2437e7fbe4ba387874f4e23c2b, type: 2}
+  stateCollection:
+    entries:
+    - stateEnumName: CashierGoingHome
+      stateEnumType: Game.NPC.CashierState
+      stateSO: {fileID: 11400000, guid: d85b0edf09b58f548a23b0db776e6586, type: 2}
+    - stateEnumName: CashierMovingToCashSpot
+      stateEnumType: Game.NPC.CashierState
+      stateSO: {fileID: 11400000, guid: 2850bdea93e543e4194d6acea3d6ee4b, type: 2}
+    - stateEnumName: CashierProcessingCheckout
+      stateEnumType: Game.NPC.CashierState
+      stateSO: {fileID: 11400000, guid: 9cfb8164981204d43adc349a9aa34d5b, type: 2}
+    - stateEnumName: CashierWaitingForCustomer
+      stateEnumType: Game.NPC.CashierState
+      stateSO: {fileID: 11400000, guid: 17e52a4cbdd33d843ac5dcf4c76a71f0, type: 2}
+  primaryStartingStateEnumKey: CashierMovingToCashSpot
+  primaryStartingStateEnumType: Game.NPC.CashierState

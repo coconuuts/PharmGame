@@ -1,3 +1,5 @@
+// --- START OF FILE NpcStateContext.cs ---
+
 // --- START OF FILE NpcStateContext.cs --- // Keep original comment for history
 
 using UnityEngine;
@@ -25,6 +27,7 @@ namespace Game.NPC.States // Context is closely related to states
     /// currently being executed by the NpcStateMachineRunner.
     /// Passed to OnEnter, OnUpdate, OnExit methods.
     /// MODIFIED: Removed references to MultiInteractableManager. Kept ObtainPrescription.
+    /// ADDED: Reference to CashierManager.
     /// </summary>
     public class NpcStateContext
     {
@@ -40,10 +43,7 @@ namespace Game.NPC.States // Context is closely related to states
         public NpcPathFollowingHandler PathFollowingHandler;
          public TiNpcData TiData;
 
-        // --- NEW: Cached Interaction Components --- // <-- NEW FIELDS
-        // REMOVED: MultiInteractableManager MultiInteractableManager; // No longer cached here
         public ObtainPrescription ObtainPrescription; // Keep this, as states might call methods like ResetInteraction
-        // --- END NEW ---
 
 
         // --- External References ---
@@ -52,6 +52,10 @@ namespace Game.NPC.States // Context is closely related to states
         public TiNpcManager TiNpcManager;
         // --- Reference to PrescriptionManager ---
         public PrescriptionManager PrescriptionManager;
+        // --- Reference to CashierManager --- // <-- NEW FIELD
+        public CashierManager CashierManager;
+        // --- END NEW ---
+
 
         // Access the cached register via the Runner property
         public CashRegisterInteractable RegisterCached => Runner?.CachedCashRegister;

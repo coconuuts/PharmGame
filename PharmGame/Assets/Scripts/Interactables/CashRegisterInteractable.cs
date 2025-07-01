@@ -2,13 +2,13 @@
 
 using UnityEngine;
 using Systems.Interaction; // Needed for IInteractable and InteractionResponse, and the new InteractionManager
-using Game.NPC;
-using Game.NPC.States;
+using Game.NPC; // Needed for NpcStateMachineRunner, CashierState enum
+using Game.NPC.States; // Needed for NpcStateSO (though not strictly needed in this file)
 using System.Collections.Generic; // Needed for List
 using Systems.Inventory; // Needed for ItemDetails (for item list)
 using System.Linq; // Needed for Sum
 using Systems.Economy;
-using Game.Events;
+using Game.Events; // Needed for EventManager and CustomerReadyForCashierEvent
 using Systems.GameStates; // Needed for PromptEditor
 
 public class CashRegisterInteractable : MonoBehaviour, IInteractable
@@ -27,7 +27,7 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
     [SerializeField] private Collider interactionTriggerCollider; // Assign your trigger collider here
 
     [Tooltip("Should this interactable be enabled by default when registered?")]
-    [SerializeField] private bool enableOnStart = false;
+    [SerializeField] private bool enableOnStart = false; // This field is now less relevant, controlled by Customer/Cashier logic
 
 
     [Header("Prompt Settings")]
@@ -42,6 +42,15 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
     // ---------------------------
 
     public EconomyManager economyManager;
+
+    // --- Flag to control player interaction ---
+    private bool isPlayerInteractionEnabled = false; // Default to false
+    // --- END NEW ---
+
+    // --- NEW: Flag to track if a Cashier is staffing the register ---
+    private bool isStaffedByCashier = false;
+    public bool IsStaffedByCashier => isStaffedByCashier; // Public getter for CustomerManager
+    // --- END NEW ---
 
 
     public string InteractionPrompt => interactionPrompt;
@@ -104,11 +113,15 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
          if(minigameUIRoot != null) minigameUIRoot.SetActive(false);
 
          // --- Ensure the trigger collider is initially deactivated ---
-         // This logic should remain here as it's about the *trigger collider*, not the IInteractable component itself.
+         // The initial state of isPlayerInteractionEnabled will determine if it starts enabled or not.
+         // Let's explicitly set the collider state based on the flag here.
          if (interactionTriggerCollider != null)
          {
-              interactionTriggerCollider.enabled = false; // Collider is off until a customer arrives
-              Debug.Log($"CashRegisterInteractable ({gameObject.name}): Interaction trigger initially disabled.", this);
+              // Collider state is now controlled by SetPlayerInteractionEnabled
+              // It will be set by CustomerArrived or CashierWaitingForCustomerSO.OnEnter
+              // For now, let's ensure it's off by default unless enableOnStart is true
+              SetPlayerInteractionEnabled(enableOnStart); // Use the inspector flag for initial state
+              Debug.Log($"CashRegisterInteractable ({gameObject.name}): Interaction trigger initially set to enabled={enableOnStart}.", this);
          }
         // ---------------------------------------------------------
     }
@@ -126,16 +139,80 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
     // --- END NEW ---
 
 
+    // --- NEW: Method to control player interaction ---
+    /// <summary>
+    /// Enables or disables player interaction with this cash register.
+    /// Also controls the state of the interaction trigger collider.
+    /// </summary>
+    /// <param name="enabled">True to enable player interaction, false to disable.</param>
+    public void SetPlayerInteractionEnabled(bool enabled)
+    {
+        isPlayerInteractionEnabled = enabled;
+        if (interactionTriggerCollider != null)
+        {
+            // The collider should only be enabled if player interaction is enabled AND there's a customer waiting.
+            // This method just sets the flag. The CustomerArrived/Departed methods handle the collider state based on this flag AND customer presence.
+            // Let's simplify: This method controls the flag. CustomerArrived/Departed control the collider based on the flag and customer state.
+            // Reverting to original plan: This method controls the flag AND the collider.
+            // The logic for *when* to call this method lives in CustomerArrived/Departed and Cashier states.
+            interactionTriggerCollider.enabled = enabled; // Directly control collider state
+            Debug.Log($"CashRegisterInteractable ({gameObject.name}): Player interaction enabled set to {enabled}. Collider enabled: {interactionTriggerCollider.enabled}", this);
+        }
+    }
+    // --- END NEW ---
+
+    // --- NEW: Methods to signal Cashier presence ---
+    /// <summary>
+    /// Called by the Cashier NPC when they arrive at the register spot to start their shift.
+    /// </summary>
+    public void SignalCashierArrived()
+    {
+        isStaffedByCashier = true;
+        Debug.Log($"CashRegisterInteractable ({gameObject.name}): Cashier arrived. Register is now staffed.", this);
+        // When Cashier arrives, player interaction is always disabled.
+        SetPlayerInteractionEnabled(false);
+    }
+
+    /// <summary>
+    /// Called by the Cashier NPC when they leave the register spot (e.g., going home, interrupted).
+    /// </summary>
+    public void SignalCashierDeparted()
+    {
+        isStaffedByCashier = false;
+        Debug.Log($"CashRegisterInteractable ({gameObject.name}): Cashier departed. Register is no longer staffed.", this);
+
+        // When Cashier leaves, check if a customer is waiting.
+        // If a customer is waiting, re-enable player interaction so the player can check them out.
+        // If no customer is waiting, player interaction remains off until the next customer arrives.
+        if (currentWaitingCustomerRunner != null)
+        {
+             Debug.Log($"CashRegisterInteractable ({gameObject.name}): Customer '{currentWaitingCustomerRunner.gameObject.name}' is still waiting. Re-enabling player interaction.", this);
+             SetPlayerInteractionEnabled(true); // Allow player to check out the waiting customer
+        }
+        else
+        {
+             Debug.Log($"CashRegisterInteractable ({gameObject.name}): No customer waiting. Player interaction remains disabled.", this);
+             SetPlayerInteractionEnabled(false); // Keep off until next customer arrives
+        }
+    }
+    // --- END NEW ---
+
+
     /// <summary>
     /// Activates the interaction prompt.
     /// </summary>
     public void ActivatePrompt()
     {
-         if (PromptEditor.Instance != null)
+         // Only display prompt if player interaction is enabled
+         if (isPlayerInteractionEnabled && PromptEditor.Instance != null) // <-- Check flag
          {
              PromptEditor.Instance.DisplayPrompt(transform, InteractionPrompt, registerTextPromptOffset, registerTextPromptRotationOffset); // Use default offsets or add fields if needed
          }
-         else Debug.LogWarning($"CashRegisterInteractable ({gameObject.name}): PromptEditor.Instance is null. Cannot display prompt.");
+         else if (PromptEditor.Instance != null) // Hide if prompt was somehow active but interaction is disabled
+         {
+              PromptEditor.Instance.HidePrompt();
+         }
+         // else Debug.LogWarning($"CashRegisterInteractable ({gameObject.name}): PromptEditor.Instance is null. Cannot display prompt."); // Too noisy
     }
 
     /// <summary>
@@ -153,9 +230,18 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
     /// Runs the object's specific interaction logic and returns a response describing the outcome.
     /// Called by the Player Interaction system when the player interacts.
     /// MODIFIED: Creates a StartMinigameResponse including the MinigameType.
+    /// ADDED: Check if player interaction is currently enabled.
     /// </summary>
     public InteractionResponse Interact()
     {
+        // --- NEW: Check if player interaction is enabled ---
+        if (!isPlayerInteractionEnabled)
+        {
+             // Debug.Log($"CashRegisterInteractable ({gameObject.name}): Player interaction is currently disabled.", this); // Too noisy
+             return null; // Cannot interact if disabled
+        }
+        // --- END NEW ---
+
         if (isInteracting)
         {
             Debug.Log($"CashRegisterInteractable ({gameObject.name}): Already interacting with this cash register.");
@@ -166,6 +252,9 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
         if (currentWaitingCustomerRunner == null) // Use the Runner reference
         {
              Debug.Log($"CashRegisterInteractable ({gameObject.name}): No customer waiting at the register. Interaction not starting minigame.");
+             // This case should ideally not happen if isPlayerInteractionEnabled is true,
+             // as CustomerArrived should set isPlayerInteractionEnabled(true) and currentWaitingCustomerRunner.
+             // But defensive check is fine.
              return null;
         }
         // -------------------------------------------------
@@ -180,8 +269,8 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
              // Customer leaves empty-handed? Tell the customer RUNNER to exit.
              // Call OnTransactionCompleted on the Runner
              currentWaitingCustomerRunner.OnTransactionCompleted(0); // Call on the Runner (Fix 1)
-             currentWaitingCustomerRunner = null; // Clear waiting customer Runner reference
-             CustomerDeparted(); // This method is on CashRegisterInteractable, call itself
+             // currentWaitingCustomerRunner = null; // This is cleared in CustomerDeparted, which is called by the customer's Exiting state
+             // CustomerDeparted(); // This method is on CashRegisterInteractable, call itself - No, the customer's Exiting state calls this.
              return null;
         }
 
@@ -233,8 +322,8 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
     /// Called by a state SO (e.g., WaitingAtRegisterStateSO) when a customer reaches the register point.
     /// Signals that a customer is ready to interact.
     /// </summary>
-    /// <param name="customerRunner">The NpcStateMachineRunner component of the arriving customer.</param> // <-- CHANGE PARAMETER TYPE
-    public void CustomerArrived(Game.NPC.NpcStateMachineRunner customerRunner) // <-- CHANGE PARAMETER TYPE
+    /// <param name="customerRunner">The NpcStateMachineRunner component of the arriving customer.</param>
+    public void CustomerArrived(Game.NPC.NpcStateMachineRunner customerRunner)
     {
         if (customerRunner == null)
         {
@@ -243,7 +332,7 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
         }
 
         // Check if there is a customer RUNNER already waiting
-        if (currentWaitingCustomerRunner != null && currentWaitingCustomerRunner != customerRunner) // Use the Runner reference
+        if (currentWaitingCustomerRunner != null && currentWaitingCustomerRunner != customerRunner)
         {
             Debug.LogWarning($"CashRegisterInteractable ({gameObject.name}): Customer '{customerRunner.gameObject.name}' (Runner) arrived, but customer '{currentWaitingCustomerRunner.gameObject.name}' (Runner) is already waiting! Ignoring arrival.", this);
             // This scenario should be handled by the CustomerManager/Queue system.
@@ -252,14 +341,52 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
         }
 
         // Assign the arriving Runner as the current waiting customer Runner
-        currentWaitingCustomerRunner = customerRunner; // Assign the Runner reference
+        currentWaitingCustomerRunner = customerRunner;
         Debug.Log($"CashRegisterInteractable ({gameObject.name}): Customer '{currentWaitingCustomerRunner.gameObject.name}' (Runner) arrived at the register.", this);
 
-        // Activate the interaction trigger collider
-        if (interactionTriggerCollider != null)
+        // --- NEW: Check if a Cashier is present and ready ---
+        // Find the active Cashier Runner, if any.
+        // Assumption: There is only one active Cashier at a time, and they have the "Cashier" tag.
+        NpcStateMachineRunner cashierRunner = null;
+        GameObject cashierGO = GameObject.FindGameObjectWithTag("Cashier"); // Find the Cashier GameObject
+        if (cashierGO != null)
         {
-            interactionTriggerCollider.enabled = true;
-            Debug.Log($"CashRegisterInteractable ({gameObject.name}): Interaction trigger enabled.", this);
+             cashierRunner = cashierGO.GetComponent<NpcStateMachineRunner>();
+             if (cashierRunner != null)
+             {
+                  // Check if the Cashier Runner is currently in the WaitingForCustomer state
+                  if (cashierRunner.GetCurrentState() != null && cashierRunner.GetCurrentState().HandledState.Equals(CashierState.CashierWaitingForCustomer))
+                  {
+                       Debug.Log($"CashRegisterInteractable ({gameObject.name}): Found Cashier '{cashierGO.name}' in CashierWaitingForCustomer state.", this);
+                       // Cashier is present and ready
+                       // isCashierPresentAndReady will be true effectively
+                  } else {
+                      Debug.Log($"CashRegisterInteractable ({gameObject.name}): Found Cashier '{cashierGO.name}' but not in CashierWaitingForCustomer state ({cashierRunner.GetCurrentState()?.HandledState.ToString() ?? "NULL"}). Treating as not ready.", this);
+                       cashierRunner = null; // Treat as not ready if not in correct state
+                  }
+             } else {
+                  Debug.LogWarning($"CashRegisterInteractable ({gameObject.name}): GameObject with tag 'Cashier' found, but missing NpcStateMachineRunner component!", cashierGO);
+             }
+        }
+        // If cashierRunner is still null, no ready cashier was found
+
+
+        if (cashierRunner == null) // If no Cashier is handling it (no runner found or not in correct state)
+        {
+             // Activate the interaction trigger collider for player interaction
+             SetPlayerInteractionEnabled(true); // Use the new method
+             Debug.Log($"CashRegisterInteractable ({gameObject.name}): No Cashier present or ready. Enabling player interaction trigger for player checkout.", this);
+        }
+        else // Cashier IS present and ready
+        {
+             // Player interaction remains disabled.
+             SetPlayerInteractionEnabled(false); // Ensure player interaction is off
+             Debug.Log($"CashRegisterInteractable ({gameObject.name}): Cashier is present and ready. Player interaction trigger remains disabled. Cashier will handle checkout.", this);
+
+             // --- NEW: Signal the Cashier that a customer is ready ---
+             Debug.Log($"CashRegisterInteractable ({gameObject.name}): Publishing CustomerReadyForCashierEvent for Cashier '{cashierRunner.gameObject.name}' and Customer '{customerRunner.gameObject.name}'.", this);
+             EventManager.Publish(new CustomerReadyForCashierEvent(cashierRunner.gameObject, customerRunner.gameObject));
+             // --- END NEW ---
         }
     }
 
@@ -272,14 +399,15 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
         Debug.Log($"CashRegisterInteractable ({gameObject.name}): Customer departed from the register. Publishing CashRegisterFreeEvent.");
 
         // Deactivate the interaction trigger collider
-        if (interactionTriggerCollider != null)
-        {
-            interactionTriggerCollider.enabled = false;
-            Debug.Log($"CashRegisterInteractable ({gameObject.name}): Interaction trigger disabled.", this);
-        }
+        // Note: Player interaction is disabled when a Cashier arrives.
+        // It is enabled when the Cashier leaves (Phase 2.6).
+        // If a customer departs when *no* Cashier is present (player checkout),
+        // this should also disable player interaction again until the next customer arrives.
+        // The SetPlayerInteractionEnabled(false) handles this.
+        SetPlayerInteractionEnabled(false); // Use the new method to disable player interaction
 
         currentWaitingCustomerRunner = null; // Clear the Runner reference
-        isInteracting = false;
+        isInteracting = false; // Should be false anyway after minigame completion or impatience
 
         // Publish CashRegisterFreeEvent (as done in Substep 3)
         EventManager.Publish(new CashRegisterFreeEvent());

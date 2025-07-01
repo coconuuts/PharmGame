@@ -33,6 +33,7 @@ TagManager:
   - BarcodeGame
   - NPC
   - Waypoint
+  - Cashier
   layers:
   - Default
   - TransparentFX

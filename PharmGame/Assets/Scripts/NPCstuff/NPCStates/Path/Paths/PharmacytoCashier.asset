@@ -10,16 +10,17 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4cc3da1aa7a383745880064bc4f48c8d, type: 3}
-  m_Name: PharmacyToPrescription
+  m_Name: PharmacytoCashier
   m_EditorClassIdentifier: 
-  pathID: PharmacyToPrescription
+  pathID: PharmacytoCashier
   waypointIDs:
-  - Pharmacy
-  - P2P
+  - Cashier2
+  - Cashier1
+  - CashierHome
   leadsToDecisionPoint: 0
   decisionPoint: {fileID: 0}
-  nextStateEnumKey: LookToPrescription
-  nextStateEnumType: Game.NPC.CustomerState
+  nextStateEnumKey: CashierMovingToCashSpot
+  nextStateEnumType: Game.NPC.CashierState
   fixedTransitionPathAsset: {fileID: 0}
   fixedTransitionStartIndex: 0
   fixedTransitionFollowReverse: 0

@@ -2,6 +2,8 @@
 
 // --- START OF FILE NPCCoreEvents.cs ---
 
+// --- START OF FILE NPCCoreEvents.cs ---
+
 using UnityEngine; // Required for GameObject
 using Game.NPC;
 using CustomerManagement; // Needed for QueueType
@@ -52,7 +54,7 @@ namespace Game.Events // Keep events in their dedicated namespace
         }
     }
 
-    // --- NEW: Events for Store Entry/Exit ---
+    // --- Store Entry/Exit Events ---
     /// <summary>
     /// Published when an NPC transitions into a state considered "inside the store"
     /// (e.g., Entering state). Used by CustomerManager to track active count.
@@ -80,17 +82,17 @@ namespace Game.Events // Keep events in their dedicated namespace
             NpcObject = npcObject;
         }
     }
-    // --- END NEW ---
 
 
     // --- Cash Register & Transaction Events ---
 
     /// <summary>
-    /// Published by the CashRegisterInteractable when the player starts a transaction with an NPC.
+    /// Published by the CashRegisterInteractable when the player starts a transaction with an NPC,
+    /// OR published by the Cashier NPC when they start processing a customer.
     /// </summary>
     public struct NpcStartedTransactionEvent
     {
-        public GameObject NpcObject; // The GameObject of the NPC starting the transaction.
+        public GameObject NpcObject; // The GameObject of the NPC whose transaction is starting (the customer).
 
         public NpcStartedTransactionEvent(GameObject npcObject)
         {
@@ -99,11 +101,12 @@ namespace Game.Events // Keep events in their dedicated namespace
     }
 
     /// <summary>
-    /// Published by the CashRegisterInteractable (or minigame system) when a transaction is completed.
+    /// Published by the CashRegisterInteractable (or minigame system) when a transaction is completed
+    /// by the player, OR published by the Cashier NPC when they complete processing a customer.
     /// </summary>
     public struct NpcTransactionCompletedEvent
     {
-        public GameObject NpcObject; // The GameObject of the NPC whose transaction completed.
+        public GameObject NpcObject; // The GameObject of the NPC whose transaction completed (the customer).
         public float PaymentReceived; // The amount of money the player received.
 
         public NpcTransactionCompletedEvent(GameObject npcObject, float paymentReceived)
@@ -114,7 +117,8 @@ namespace Game.Events // Keep events in their dedicated namespace
     }
 
     /// <summary>
-    /// Published when the cash register area becomes free (customer departs after transaction/impatience).
+    /// Published when the cash register area becomes free (customer departs after transaction/impatience,
+    /// or Cashier finishes processing a customer).
     /// This event allows the CustomerManager to know it can send the next person from the queue.
     /// </summary>
     public struct CashRegisterFreeEvent
@@ -264,7 +268,7 @@ namespace Game.Events // Keep events in their dedicated namespace
         }
     }
 
-    // --- Interruption Completion Events (NEW) ---
+    // --- Interruption Completion Events ---
     /// <summary>
     /// Published when an NPC's Combat state has ended.
     /// </summary>
@@ -285,17 +289,52 @@ namespace Game.Events // Keep events in their dedicated namespace
         public NpcInteractionEndedEvent(GameObject npcObject) { NpcObject = npcObject; }
     }
 
-     /// <summary>
-     /// Published when an NPC's Emoting state has ended (e.g., animation complete).
-     /// Published by the EmotingStateSO's coroutine.
-     /// </summary>
-     public struct NpcEmoteEndedEvent // Name might change based on emoting system
-     {
-         public GameObject NpcObject; // The NPC whose emote ended.
-         // Optional: Emote ID, etc.
-         public NpcEmoteEndedEvent(GameObject npcObject) { NpcObject = npcObject; }
-     }
+    /// <summary>
+    /// Published when an NPC's Emoting state has ended (e.g., animation complete).
+    /// Published by the EmotingStateSO's coroutine.
+    /// </summary>
+    public struct NpcEmoteEndedEvent // Name might change based on emoting system
+    {
+        public GameObject NpcObject; // The NPC whose emote ended.
+                                     // Optional: Emote ID, etc.
+        public NpcEmoteEndedEvent(GameObject npcObject) { NpcObject = npcObject; }
+    }
 
-     // Could add other completion events for other interrupt states if needed
+    /// <summary>
+    /// Published by the CashRegisterInteractable when a customer arrives
+    /// AND a Cashier NPC is present and ready.
+    /// The Cashier's NpcEventHandler subscribes to this.
+    /// </summary>
+    public struct CustomerReadyForCashierEvent 
+    {
+        public GameObject CashierObject; // The GameObject of the Cashier NPC who should process the customer.
+        public GameObject CustomerObject; // The GameObject of the Customer NPC ready for checkout.
+
+        public CustomerReadyForCashierEvent(GameObject cashierObject, GameObject customerObject)
+        {
+            CashierObject = cashierObject;
+            CustomerObject = customerObject;
+        }
+    }
+    
+    /// <summary>
+    /// Represents a transaction that was completed during inactive TI NPC simulation.
+    /// Added to the recipient customer's TiNpcData.pendingSimulatedEvents list.
+    /// </summary>
+    public struct SimulatedTransactionCompletedEvent 
+    {
+        public string CashierTiId; // The ID of the Cashier TI NPC who completed the transaction.
+        public string CustomerTiId; // The ID of the Customer TI NPC whose transaction was completed.
+        public float PaymentAmount; // The amount of money simulated as received.
+
+        public SimulatedTransactionCompletedEvent(string cashierId, string customerId, float payment)
+        {
+            CashierTiId = cashierId;
+            CustomerTiId = customerId;
+            PaymentAmount = payment;
+        }
+    }
+
+    // Could add other completion events for other interrupt states if needed
 }
 // --- END OF FILE NPCCoreEvents.cs ---

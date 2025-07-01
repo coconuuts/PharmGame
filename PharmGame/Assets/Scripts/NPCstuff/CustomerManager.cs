@@ -1,8 +1,10 @@
 // --- START OF FILE CustomerManager.cs ---
+
+// --- START OF FILE CustomerManager.cs ---
 using UnityEngine;
 using System.Collections.Generic;
 using Utils.Pooling; // Required for PoolingManager
-using Game.NPC;
+using Game.NPC; // Needed for NpcStateMachineRunner, CustomerState enum
 using System.Collections; // Required for Coroutines
 using Systems.Inventory; // Required for Inventory reference
 using Random = UnityEngine.Random; // Specify UnityEngine.Random
@@ -15,6 +17,7 @@ namespace CustomerManagement
     /// <summary>
     /// Manages the spawning, pooling, and overall flow of customer NPCs in the store.
     /// Now also collaborates with TiNpcManager for pooling TI NPCs.
+    /// MODIFIED: Updated register occupancy check and queue release logic to account for Cashier presence.
     /// </summary>
     public class CustomerManager : MonoBehaviour
     {
@@ -30,6 +33,20 @@ namespace CustomerManagement
         [SerializeField] private float minSpawnInterval = 5f;
         [Tooltip("Maximum time between customer spawns.")]
         [SerializeField] private float maxSpawnInterval = 15f;
+
+        // --- Bus Spawning Configuration ---
+        [Header("Bus Spawning")]
+        [Tooltip("The time interval between bus arrivals.")]
+        [SerializeField] private float busArrivalInterval = 60f; // Example: Bus arrives every 60 seconds
+        [Tooltip("The number of transient NPCs that attempt to spawn when a bus arrives.")]
+        [SerializeField] private int npcsPerBus = 3; // Example: 3 NPCs per bus
+        [Tooltip("Optional: Delay before the very first bus arrives.")]
+        [SerializeField] private float initialBusDelay = 10f; // Example: First bus arrives after 10 seconds
+        [Tooltip("The delay between spawning each NPC during a bus burst.")] // NEW
+        [SerializeField] private float delayBetweenBusSpawns = 0.5f; // Example: 0.5 seconds between each NPC in a burst // NEW
+        [Tooltip("Points specifically where bus-spawned customers will enter the store.")] // NEW
+        [SerializeField] private List<Transform> busSpawnPoints; // NEW
+        // --- END NEW ---
 
 
         [Header("Navigation Points")]
@@ -64,6 +81,10 @@ namespace CustomerManagement
         private List<QueueSpot> mainQueueSpots;
         private List<QueueSpot> secondaryQueueSpots;
 
+        // --- NEW: Reference to the CashRegisterInteractable ---
+        private CashRegisterInteractable cashRegister;
+        // --- END NEW ---
+
 
         private void Awake()
         {
@@ -91,7 +112,8 @@ namespace CustomerManagement
 
             // Validate essential references
             if (npcPrefabs == null || npcPrefabs.Count == 0) Debug.LogError("CustomerManager: No NPC prefabs assigned!");
-            if (spawnPoints == null || spawnPoints.Count == 0) Debug.LogWarning("CustomerManager: No spawn points assigned!");
+            if (spawnPoints == null || spawnPoints.Count == 0) Debug.LogWarning("CustomerManager: No general spawn points assigned! Trickle spawning may not work."); // Updated log
+            if (busSpawnPoints == null || busSpawnPoints.Count == 0) Debug.LogWarning("CustomerManager: No bus spawn points assigned! Bus spawning may not work."); // NEW log
             if (BrowseLocations == null || BrowseLocations.Count == 0) Debug.LogError("CustomerManager: No Browse locations assigned!");
             else
             {
@@ -155,8 +177,26 @@ namespace CustomerManagement
 
         private void Start()
         {
-            // Begin spawning customers
-            StartCoroutine(SpawnCustomerCoroutine());
+            // --- Find the CashRegisterInteractable ---
+            GameObject registerGO = GameObject.FindGameObjectWithTag("CashRegister"); // Assumes your register has this tag
+            if (registerGO != null)
+            {
+                 cashRegister = registerGO.GetComponent<CashRegisterInteractable>();
+                 if (cashRegister == null)
+                 {
+                      Debug.LogError($"CustomerManager ({gameObject.name}): Found GameObject with tag 'CashRegister' but it's missing the CashRegisterInteractable component! Register logic will not function.", this);
+                 }
+            }
+            else
+            {
+                 Debug.LogError($"CustomerManager ({gameObject.name}): Could not find GameObject with tag 'CashRegister'! Register logic will not function.", this);
+            }
+            // --- END Find ---
+
+
+            // Begin spawning customers (both trickle and bus)
+            StartCoroutine(SpawnCustomerCoroutine()); // Existing trickle spawn
+            StartCoroutine(BusArrivalCoroutine()); // NEW bus spawn
         }
 
         private void OnEnable() // Subscribe to events when the GameObject is enabled
@@ -215,14 +255,22 @@ namespace CustomerManagement
         /// The condition now relies on whether there is *any* space in the secondary queue,
         /// as the decision to enter the store (and add to activeCustomers) is made later.
         /// </summary>
-        public void SpawnCustomer()
+        /// <param name="isBusSpawn">True if this spawn is part of a bus burst, false for trickle spawn.</param> // NEW PARAM
+        public void SpawnCustomer(bool isBusSpawn) // MODIFIED SIGNATURE
         {
+            // Determine which spawn points to use
+            List<Transform> currentSpawnPoints = isBusSpawn ? busSpawnPoints : spawnPoints;
+
             // Check if there's capacity in the secondary queue to *spawn* the NPC.
             // They will wait here until store capacity allows them to transition to Entering.
-            if (poolingManager == null || npcPrefabs == null || npcPrefabs.Count == 0 || spawnPoints == null || spawnPoints.Count == 0 || secondaryQueueSpots == null || secondaryQueueSpots.Count == 0 || !HasAvailableSecondaryQueueSpot())
+            // NOTE: This check is now also done *before* calling SpawnCustomer in the coroutines,
+            // but keeping it here as a defensive check and for clarity.
+            if (poolingManager == null || npcPrefabs == null || npcPrefabs.Count == 0 || currentSpawnPoints == null || currentSpawnPoints.Count == 0 || secondaryQueueSpots == null || secondaryQueueSpots.Count == 0 || !HasAvailableSecondaryQueueSpot())
             {
-                Debug.Log($"CustomerManager: Spawn conditions not met. Pool Mgr: {poolingManager != null}, Prefabs: {npcPrefabs?.Count}, Spawns: {spawnPoints?.Count}, Secondary Queue Has Space: {HasAvailableSecondaryQueueSpot()}, Secondary Spots: {secondaryQueueSpots?.Count}");
-                return;
+                // This log is useful for debugging why a spawn *attempt* failed due to capacity
+                // It's commented out because the calling coroutines now log this more specifically.
+                // Debug.Log($"CustomerManager: Spawn conditions not met. Pool Mgr: {poolingManager != null}, Prefabs: {npcPrefabs?.Count}, Spawns: {currentSpawnPoints?.Count}, Secondary Queue Has Space: {HasAvailableSecondaryQueueSpot()}, Secondary Spots: {secondaryQueueSpots?.Count}");
+                return; // Do not attempt to spawn if secondary queue is full or no valid spawn points
             }
 
             GameObject npcPrefabToSpawn = npcPrefabs[Random.Range(0, npcPrefabs.Count)];
@@ -245,7 +293,7 @@ namespace CustomerManagement
                     }
                     // --- End Check ---
 
-                    Transform chosenSpawnPoint = spawnPoints[Random.Range(0, spawnPoints.Count)];
+                    Transform chosenSpawnPoint = currentSpawnPoints[Random.Range(0, currentSpawnPoints.Count)]; // Use the determined spawn points list
                     // Warp the NPC to the spawn point - this is done by the Runner's Initialize
                     customerObject.transform.position = chosenSpawnPoint.position;
                     customerObject.transform.rotation = chosenSpawnPoint.rotation;
@@ -255,7 +303,9 @@ namespace CustomerManagement
                     customerRunner.Initialize(this, chosenSpawnPoint.position);
 
 
-                    Debug.Log($"CustomerManager: Spawned customer '{customerObject.name}' (Runner) from pool at {chosenSpawnPoint.position}.");
+                    // This log confirms a successful spawn *from the pool* and initialization.
+                    // The calling coroutine logs will indicate if it was a trickle or bus spawn attempt.
+                    Debug.Log($"CustomerManager: Initialized transient customer '{customerObject.name}' (Runner) from pool at {chosenSpawnPoint.position}.");
 
                     // Once spawned, they immediately try to join the secondary queue (via Initializing -> LookToShop logic)
                 }
@@ -331,7 +381,7 @@ namespace CustomerManagement
                     // The Runner's Deactivate() should have already been called by TransitionToState(ReturningToPool)
                     // Here, we just need to tell the TiNpcManager that this GameObject is ready for pooling.
                     // We need a method on TiNpcManager to receive the GameObject.
-                    tiManager.HandleTiNpcReturnToPool(npcObject); 
+                    tiManager.HandleTiNpcReturnToPool(npcObject);
                 }
                 else
                 {
@@ -358,7 +408,7 @@ namespace CustomerManagement
                 // ensure that spot's currentOccupant reference is cleared.
                 // This is defensive; Runner.Deactivate() should clear its AssignedQueueSpotIndex
                 // and states should publish QueueSpotFreedEvent on exit.
-                if (runner.QueueHandler.AssignedQueueSpotIndex != -1)
+                if (runner.QueueHandler != null && runner.QueueHandler.AssignedQueueSpotIndex != -1)
                 {
                     Debug.LogWarning($"CustomerManager: TI Runner '{npcObject.name}' was pooled but still assigned to queue spot index {runner.QueueHandler.AssignedQueueSpotIndex} in {runner.QueueHandler._currentQueueMoveType} queue. Forcing spot free.", this);
                     List<QueueSpot> targetQueue = (runner.QueueHandler._currentQueueMoveType == QueueType.Main) ? mainQueueSpots : secondaryQueueSpots;
@@ -385,7 +435,7 @@ namespace CustomerManagement
             Debug.Log($"CustomerManager: Handling NpcReturningToPoolEvent for Transient NPC '{npcObject.name}'. Returning to pool.", npcObject);
 
             // Remove from active list (should be removed by NpcExitedStoreEvent, but defensive)
-            // NOTE: This list ONLY contains Transient NPCs 
+            // NOTE: This list ONLY contains Transient NPCs
             if (activeCustomers.Contains(runner))
             {
                 Debug.LogWarning($"CustomerManager: Transient NPC '{npcObject.name}' was still in activeCustomers list! Removing defensively.", this);
@@ -604,7 +654,7 @@ namespace CustomerManagement
                     // Robustness check for valid Runner reference
                     if (runnerToMove == null || !runnerToMove.gameObject.activeInHierarchy || runnerToMove.GetCurrentState() == null || !(runnerToMove.GetCurrentState().HandledState.Equals(CustomerState.Queue) || runnerToMove.GetCurrentState().HandledState.Equals(CustomerState.SecondaryQueue)))
                     {
-                        Debug.LogError($"CustomerManager: Inconsistency detected! Spot {currentSpotIndex} in {type} queue is marked occupied by a Runner ('{runnerToMove?.gameObject.name ?? "NULL Runner"}') that is invalid, inactive, or in wrong state ('{runnerToMove?.GetCurrentState()?.name ?? "NULL State"}'). Forcing spot {currentSpotIndex} free and continuing cascade search.", this);
+                        Debug.LogError($"CustomerManager: Inconsistency detected! Spot {currentSpotIndex} in {type} queue is marked occupied by a Runner ('{runnerToMove?.gameObject.name ?? "NULL Runner"}') that is invalid, inactive, or not in wrong state ('{runnerToMove?.GetCurrentState()?.name ?? "NULL State"}'). Forcing spot {currentSpotIndex} free and continuing cascade search.", this);
                         currentSpotData.currentOccupant = null;
                         continue;
                     }
@@ -678,8 +728,8 @@ namespace CustomerManagement
 
 
         /// <summary>
-        /// Handles the CashRegisterFreeEvent. Signals that the register is available.
-        /// This method attempts to send the customer at Main Queue spot 0 to the register.
+        /// Handles the CashRegisterFreeEvent. Signals that the register is available for the *next customer in the queue*.
+        /// This method attempts to send the customer at Main Queue spot 0 to the register *only if no Cashier is present*.
         /// Also checks if a secondary queue customer can be released based on *store capacity*.
         /// </summary>
         /// <param name="eventArgs">The event arguments (currently empty).</param>
@@ -687,6 +737,20 @@ namespace CustomerManagement
         {
             Debug.Log("CustomerManager: Handling CashRegisterFreeEvent.");
 
+            // --- NEW: Check if the register is staffed by a Cashier ---
+            if (cashRegister != null && cashRegister.IsStaffedByCashier)
+            {
+                 Debug.Log("CustomerManager: CashRegisterFreeEvent received, but the register is staffed by a Cashier. Not sending the next customer from the queue.", this);
+                 // If a Cashier is present, the CashRegisterFreeEvent means a customer finished checkout *with the Cashier*.
+                 // The CashierWaitingForCustomer state handles receiving the next customer via CustomerReadyForCashierEvent.
+                 // We still need to check store capacity and potentially release a secondary queue customer.
+                 CheckStoreCapacityAndReleaseSecondaryCustomer(); // Call the check method
+                 return; // Exit the handler, the Cashier manages the flow now
+            }
+            // --- END NEW ---
+
+
+            // --- Existing Logic (only runs if no Cashier is staffed) ---
             if (mainQueueSpots == null || mainQueueSpots.Count == 0)
             {
                 Debug.LogWarning("CustomerManager: HandleCashRegisterFree called but mainQueueSpots list is null or empty.", this);
@@ -734,6 +798,7 @@ namespace CustomerManagement
                     HandleQueueSpotFreed(new QueueSpotFreedEvent(QueueType.Main, 0)); // Trigger cascade from spot 1
                 }
             }
+            // --- END Existing Logic ---
 
             CheckStoreCapacityAndReleaseSecondaryCustomer(); // Call the check method
         }
@@ -802,8 +867,8 @@ namespace CustomerManagement
 
 
         /// <summary>
-        /// Coroutine to handle timed customer spawning.
-        /// Spawning now depends on whether there's *any* room in the secondary queue.
+        /// Coroutine to handle timed customer spawning (trickle).
+        /// Spawning now depends on whether there is *any* room in the secondary queue.
         /// </summary>
         private IEnumerator SpawnCustomerCoroutine()
         {
@@ -814,16 +879,86 @@ namespace CustomerManagement
                 {
                     float spawnDelay = Random.Range(minSpawnInterval, maxSpawnInterval);
                     yield return new WaitForSeconds(spawnDelay);
-                    SpawnCustomer(); // Attempt to spawn a customer
+                    // SpawnCustomer() already checks HasAvailableSecondaryQueueSpot internally,
+                    // but checking here prevents waiting the full interval if the queue is full.
+                    if (HasAvailableSecondaryQueueSpot()) // Re-check just before spawning
+                    {
+                         Debug.Log($"CustomerManager: Attempting trickle spawn after {spawnDelay}s delay.");
+                         SpawnCustomer(false); // Call SpawnCustomer with isBusSpawn = false // MODIFIED CALL
+                    }
+                    else
+                    {
+                         // This case is unlikely due to the outer if, but defensive
+                         Debug.Log($"CustomerManager: Trickle spawn attempt skipped, secondary queue became full during wait.");
+                    }
                 }
                 else
                 {
                     // If secondary queue is full, wait a short time before checking again.
+                    // This prevents the coroutine from checking every frame when full.
+                    // Added a log here to indicate the pause.
+                    Debug.Log($"CustomerManager: Trickle spawn paused, secondary queue is full ({GetSecondaryQueueCount()}/{secondaryQueueSpots.Count} spots occupied). Waiting for space...");
                     yield return new WaitForSeconds(minSpawnInterval / 2f);
-                    Debug.Log($"CustomerManager: Spawn paused, secondary queue is full. Waiting for space... ({secondaryQueueSpots.Count} spots)");
                 }
             }
         }
+
+        /// <summary>
+        /// Coroutine to handle periodic bus arrivals and burst spawning.
+        /// Attempts to spawn npcsPerBus customers if secondary queue capacity allows.
+        /// </summary>
+        private IEnumerator BusArrivalCoroutine()
+        {
+            // Optional initial delay before the first bus arrives
+            if (initialBusDelay > 0)
+            {
+                Debug.Log($"CustomerManager: Waiting for initial bus arrival delay ({initialBusDelay}s)...");
+                yield return new WaitForSeconds(initialBusDelay);
+            }
+
+            while (true) // Loop indefinitely for subsequent bus arrivals
+            {
+                Debug.Log($"CustomerManager: Bus arrived! Attempting to spawn {npcsPerBus} customers.");
+                int spawnedCount = 0; // Track successful spawns in this burst
+
+                // Attempt to spawn npcsPerBus customers
+                for (int i = 0; i < npcsPerBus; i++)
+                {
+                    // Check capacity *before* each spawn attempt within the burst
+                    if (HasAvailableSecondaryQueueSpot())
+                    {
+                        // Check if bus spawn points are available
+                        if (busSpawnPoints == null || busSpawnPoints.Count == 0)
+                        {
+                             Debug.LogWarning($"CustomerManager: Bus spawn points list is null or empty! Cannot perform bus spawn. Aborting burst.", this);
+                             break; // Abort the burst if no bus spawn points
+                        }
+
+                        SpawnCustomer(true); // Call SpawnCustomer with isBusSpawn = true // MODIFIED CALL
+                        spawnedCount++;
+
+                        // Add the delay between spawns within the burst // NEW
+                        // Only yield if we successfully spawned and there are more attempts planned
+                        if (delayBetweenBusSpawns > 0 && i < npcsPerBus - 1 && HasAvailableSecondaryQueueSpot())
+                        {
+                             yield return new WaitForSeconds(delayBetweenBusSpawns);
+                        }
+                    }
+                    else
+                    {
+                        // Secondary queue is full, stop attempting to spawn more from this burst
+                        Debug.LogWarning($"CustomerManager: Secondary queue became full during bus burst spawn. Stopped spawning after {spawnedCount} customers.");
+                        break; // Exit the for loop
+                    }
+                }
+
+                Debug.Log($"CustomerManager: Bus burst completed. Successfully spawned {spawnedCount} out of {npcsPerBus} attempted customers.");
+
+                // Wait for the next bus arrival interval
+                yield return new WaitForSeconds(busArrivalInterval);
+            }
+        }
+
 
         // --- Public methods for CustomerAI to request navigation/system info ---
 
@@ -907,7 +1042,7 @@ namespace CustomerManagement
                     // Call the public method on the QueueHandler to receive the assignment
                     if (customerRunner.QueueHandler != null)
                     {
-                        customerRunner.QueueHandler.ReceiveQueueAssignment(spotIndex, QueueType.Main); 
+                        customerRunner.QueueHandler.ReceiveQueueAssignment(spotIndex, QueueType.Main);
                     }
                     else
                     {
@@ -956,12 +1091,11 @@ namespace CustomerManagement
 
 
         /// <summary>
-        /// Checks if the register is currently occupied by a customer.
-        /// This check relies on iterating through active customers and checking their state.
+        /// Checks if the register is currently occupied by a customer OR staffed by a Cashier.
         /// </summary>
         public bool IsRegisterOccupied()
         {
-            // --- Only check the activeCustomers list (which now only contains Transient or currently active TI) ---
+            // Check if any active customer is in a register-related state
             foreach (var activeRunner in activeCustomers) // Check only customers currently 'inside' the store AND have an active GameObject
             {
                 if (activeRunner != null && activeRunner.GetCurrentState() != null)
@@ -973,7 +1107,9 @@ namespace CustomerManagement
                     }
                 }
             }
-            return false;
+            // --- END Existing Logic ---
+
+            return false; // Not occupied by a Cashier or a Customer
         }
 
         /// <summary>
@@ -1003,7 +1139,7 @@ namespace CustomerManagement
                     // Call the public method on the QueueHandler to receive the assignment
                     if (customerRunner.QueueHandler != null)
                     {
-                        customerRunner.QueueHandler.ReceiveQueueAssignment(spotIndex, QueueType.Secondary); 
+                        customerRunner.QueueHandler.ReceiveQueueAssignment(spotIndex, QueueType.Secondary);
                     }
                     else
                     {
@@ -1036,6 +1172,21 @@ namespace CustomerManagement
             return count;
         }
 
+        public int GetSecondaryQueueCount()
+        {
+             if (secondaryQueueSpots == null) return 0;
+             int count = 0;
+             foreach (var spotData in secondaryQueueSpots)
+             {
+                 if (spotData.IsOccupied) // Count occupied spots
+                 {
+                     count++;
+                 }
+             }
+             return count;
+        }
+
+
         public bool IsMainQueueFull()
         {
             if (mainQueueSpots == null || mainQueueSpots.Count == 0) return false;
@@ -1043,14 +1194,14 @@ namespace CustomerManagement
             return mainQueueSpots[mainQueueSpots.Count - 1].IsOccupied;
         }
 
-        public bool IsSecondaryQueueFull() 
+        public bool IsSecondaryQueueFull()
         {
             if (secondaryQueueSpots == null || secondaryQueueSpots.Count == 0) return false;
 
             // The secondary queue is considered "full" if the very last spot has an occupant.
             return secondaryQueueSpots[secondaryQueueSpots.Count - 1].IsOccupied;
         }
-        
+
         public bool IsTiNpcInsideStore(TiNpcData tiData)
         {
             if (tiData == null) return false;
@@ -1059,3 +1210,4 @@ namespace CustomerManagement
         }
     }
 }
+// --- END OF FILE CustomerManager.cs ---

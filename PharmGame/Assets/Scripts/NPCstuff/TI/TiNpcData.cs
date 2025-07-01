@@ -1,5 +1,7 @@
 // --- START OF FILE TiNpcData.cs ---
 
+// --- START OF FILE TiNpcData.cs ---
+
 using UnityEngine;
 using System;
 using System.Collections.Generic; // Needed for Dictionary
@@ -10,21 +12,29 @@ using Game.NPC.BasicStates; // Needed for BasicState enum, BasicPathState enum
 using Game.Utilities; // Needed for TimeRange
 using Game.NPC.Decisions; // Needed for DecisionOption
 using System.Linq; // Needed for accessing PathState enum
-using Game.Prescriptions; // Needed for PrescriptionOrder // <-- NEW: Added using directive
+using Game.Prescriptions; // Needed for PrescriptionOrder
+using Game.Events;
 
 namespace Game.NPC.TI // Keep in the TI namespace
 {
     /// <summary>
-    /// Represents the persistent data for a True Identity NPC, independent of their GameObject.
+    /// Represents the persistent data for a True Identity (TI) NPC, independent of their GameObject.
     /// Includes fields needed for off-screen simulation, including path following.
     /// Now includes schedule time ranges, unique decision options, intended day start behavior,
     /// and prescription order data.
+    /// ADDED: Field to store the specific prefab for this NPC.
     /// </summary>
     [System.Serializable]
     public class TiNpcData
     {
         [Tooltip("A unique identifier for this TI NPC.")]
         [SerializeField] private string id; // Unique ID for lookup
+
+        // --- NEW: Prefab Reference --- // <-- ADDED FIELD
+        [Header("Appearance")]
+        [Tooltip("The specific GameObject prefab to use when activating this TI NPC.")]
+        [SerializeField] public GameObject Prefab; // Made public for easy access by TiNpcManager
+        // --- END NEW ---
 
         [Header("Core Persistent Data")]
         [Tooltip("The NPC's designated home position.")]
@@ -80,6 +90,12 @@ namespace Game.NPC.TI // Keep in the TI namespace
         [SerializeField] public bool simulatedFollowReverse; // Public for direct access by simulation logic
         [Tooltip("True if the NPC is currently following a path in simulation.")]
         [SerializeField] public bool isFollowingPathBasic; // Public flag for simulation logic
+        [Tooltip("The ID of the customer TI NPC being processed in simulation (if this is a Cashier).")]
+        [SerializeField] public string simulatedProcessingCustomerTiId;
+        [Tooltip("The total value of the transaction being processed in simulation (if this is a Cashier).")]
+        [SerializeField] public float simulatedTransactionValue;
+        [Tooltip("The remaining time to complete the transaction simulation (if this is a Cashier).")]
+        [SerializeField] public float simulatedProcessingTimeRemaining;
 
         // --- Schedule Runtime Flags ---
         [System.NonSerialized] public bool isEndingDay; // Flag set by ProximityManager when within endDay range
@@ -115,6 +131,11 @@ namespace Game.NPC.TI // Keep in the TI namespace
         [Header("Runtime Data (Not Saved Persistently)")]
         [Tooltip("True if this NPC currently has an active GameObject representation in the scene.")]
         [SerializeField] public bool isActiveGameObject; // Indicates if the data is currently linked to a pooled GameObject
+
+        // Pending Simulated Events ---
+        // Use [System.NonSerialized] because this list is only for runtime processing, not persistent saving.
+        // Events generated in simulation are processed immediately or upon activation, not saved across game sessions.
+        [System.NonSerialized] public List<object> pendingSimulatedEvents;
 
 
         // --- Public Properties ---
@@ -155,57 +176,61 @@ namespace Game.NPC.TI // Keep in the TI namespace
             }
         }
 
-         /// <summary>
-         /// Attempts to determine and parse the intended day start Active state enum value
-         /// based on the 'usePathForDayStart' toggle.
-         /// Returns PathState.FollowPath if usePathForDayStart is true,
-         /// otherwise attempts to parse the stored state key/type.
-         /// Returns null if parsing fails or configuration is invalid.
-         /// </summary>
-         public System.Enum DayStartActiveStateEnum
-         {
-              get
-              {
-                   if (usePathForDayStart)
-                   {
-                        // If using a path, the intended state is PathState.FollowPath
-                        // We need to get the enum value for PathState.FollowPath.
-                        // This requires knowing the type Game.NPC.PathState.
-                        try
+        /// <summary>
+        /// Attempts to determine and parse the intended day start Active state enum value
+        /// based on the 'usePathForDayStart' toggle.
+        /// Returns PathState.FollowPath if usePathForDayStart is true,
+        /// otherwise attempts to parse the stored state key/type.
+        /// Returns null if parsing fails or configuration is invalid.
+        /// </summary>
+        public System.Enum DayStartActiveStateEnum
+        {
+            get
+            {
+                if (usePathForDayStart)
+                {
+                    // If using a path, the intended state is PathState.FollowPath
+                    // We need to get the enum value for PathState.FollowPath.
+                    // This requires knowing the type Game.NPC.PathState.
+                    try
+                    {
+                        Type pathStateType = typeof(Game.NPC.PathState); // Directly get the type
+                        if (pathStateType.IsEnum)
                         {
-                            Type pathStateType = typeof(Game.NPC.PathState); // Directly get the type
-                            if (pathStateType.IsEnum)
-                            {
-                                 // Get the enum value for 'FollowPath'
-                                 return (System.Enum)Enum.Parse(pathStateType, PathState.FollowPath.ToString());
-                            } else {
-                                Debug.LogError($"TiNpcData ({id}): Expected Game.NPC.PathState to be an enum, but it's not! Cannot determine Day Start Active State for path.", NpcGameObject);
-                                return null;
-                            }
+                            // Get the enum value for 'FollowPath'
+                            return (System.Enum)Enum.Parse(pathStateType, PathState.FollowPath.ToString());
                         }
-                        catch (Exception e)
+                        else
                         {
-                             Debug.LogError($"TiNpcData ({id}): Failed to get PathState.FollowPath enum value for Day Start Active State: {e.Message}. Check if PathState.FollowPath exists.", NpcGameObject);
-                             return null;
+                            Debug.LogError($"TiNpcData ({id}): Expected Game.NPC.PathState to be an enum, but it's not! Cannot determine Day Start Active State for path.", NpcGameObject);
+                            return null;
                         }
-                   }
-                   else
-                   {
-                        // If not using a path, parse the stored state key/type
-                        return ParseStateEnum(dayStartActiveStateEnumKey, dayStartActiveStateEnumType);
-                   }
-              }
-         }
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogError($"TiNpcData ({id}): Failed to get PathState.FollowPath enum value for Day Start Active State: {e.Message}. Check if PathState.FollowPath exists.", NpcGameObject);
+                        return null;
+                    }
+                }
+                else
+                {
+                    // If not using a path, parse the stored state key/type
+                    return ParseStateEnum(dayStartActiveStateEnumKey, dayStartActiveStateEnumType);
+                }
+            }
+        }
 
 
         /// <summary>
         /// Constructor for creating a new TiNpcData instance.
+        /// ADDED: Optional prefab parameter.
         /// </summary>
-        public TiNpcData(string id, Vector3 homePosition, Quaternion homeRotation)
+        public TiNpcData(string id, Vector3 homePosition, Quaternion homeRotation, GameObject prefab = null) // <-- ADDED optional prefab parameter
         {
             this.id = id;
             this.homePosition = homePosition;
             this.homeRotation = homeRotation;
+            this.Prefab = prefab; // <-- ASSIGN the new prefab field
 
             // Initialize current state to home location and a default state
             this.currentWorldPosition = homePosition;
@@ -229,10 +254,9 @@ namespace Game.NPC.TI // Keep in the TI namespace
             this.dayStartStartIndex = 0;
             this.dayStartFollowReverse = false;
 
-            // Initialize prescription data fields // <-- NEW INITIALIZATION
+            // Initialize prescription data fields 
             this.pendingPrescription = false;
             this.assignedOrder = new PrescriptionOrder(); // Initialize with default struct values
-            // --- END NEW INITIALIZATION ---
 
 
             // Debug.Log($"DEBUG TiNpcData ({id}): Constructor called (InstanceID: {this.GetHashCode()}). Initializing isActiveGameObject=false, NpcGameObject=null.", NpcGameObject); // Too verbose
@@ -251,6 +275,14 @@ namespace Game.NPC.TI // Keep in the TI namespace
 
             // Initialize schedule runtime flag
             this.isEndingDay = false;
+
+            // Initialize Transaction Simulation Data ---
+            this.simulatedProcessingCustomerTiId = null; // No customer initially
+            this.simulatedTransactionValue = 0f; // No value initially
+            this.simulatedProcessingTimeRemaining = 0f;
+
+            // Initialize Pending Simulated Events List
+            this.pendingSimulatedEvents = new List<object>();
         }
 
         /// <summary>
@@ -270,32 +302,32 @@ namespace Game.NPC.TI // Keep in the TI namespace
             currentStateEnumType = stateEnum.GetType().AssemblyQualifiedName; // Use AssemblyQualifiedName for robust loading
         }
 
-         /// <summary>
-         /// Helper to set the intended day start Active state using a System.Enum.
-         /// Note: This does NOT set the usePathForDayStart toggle or path data.
-         /// </summary>
-         public void SetDayStartActiveState(System.Enum stateEnum)
-         {
-              if (stateEnum == null)
-              {
-                   dayStartActiveStateEnumKey = null;
-                   dayStartActiveStateEnumType = null;
-                   return;
-              }
-              dayStartActiveStateEnumKey = stateEnum.ToString();
-              dayStartActiveStateEnumType = stateEnum.GetType().AssemblyQualifiedName; // Use AssemblyQualifiedName for robust loading
-         }
+        /// <summary>
+        /// Helper to set the intended day start Active state using a System.Enum.
+        /// Note: This does NOT set the usePathForDayStart toggle or path data.
+        /// </summary>
+        public void SetDayStartActiveState(System.Enum stateEnum)
+        {
+            if (stateEnum == null)
+            {
+                dayStartActiveStateEnumKey = null;
+                dayStartActiveStateEnumType = null;
+                return;
+            }
+            dayStartActiveStateEnumKey = stateEnum.ToString();
+            dayStartActiveStateEnumType = stateEnum.GetType().AssemblyQualifiedName; // Use AssemblyQualifiedName for robust loading
+        }
 
-         /// <summary>
-         /// Helper to set the intended day start path data.
-         /// Note: This does NOT set the usePathForDayStart toggle or state key/type.
-         /// </summary>
-         public void SetDayStartPath(string pathID, int startIndex, bool followReverse)
-         {
-              dayStartPathID = pathID;
-              dayStartStartIndex = startIndex;
-              dayStartFollowReverse = followReverse;
-         }
+        /// <summary>
+        /// Helper to set the intended day start path data.
+        /// Note: This does NOT set the usePathForDayStart toggle or state key/type.
+        /// </summary>
+        public void SetDayStartPath(string pathID, int startIndex, bool followReverse)
+        {
+            dayStartPathID = pathID;
+            dayStartStartIndex = startIndex;
+            dayStartFollowReverse = followReverse;
+        }
 
 
         /// <summary>
@@ -319,49 +351,105 @@ namespace Game.NPC.TI // Keep in the TI namespace
             this.NpcGameObject = null;
             this.isActiveGameObject = false;
         }
-         public override int GetHashCode()
-         {
-             // Simple hash code based on ID (assuming ID is unique)
-             return id.GetHashCode();
-         }
-         // Need Equals as well if overriding GetHashCode and using in collections that might check equality
-          public override bool Equals(object obj)
-          {
-              if (obj == null || GetType() != obj.GetType())
-              {
-                  return false;
-              }
+        public override int GetHashCode()
+        {
+            // Simple hash code based on ID (assuming ID is unique)
+            return id.GetHashCode();
+        }
+        // Need Equals as well if overriding GetHashCode and using in collections that might check equality
+        public override bool Equals(object obj)
+        {
+            if (obj == null || GetType() != obj.GetType())
+            {
+                return false;
+            }
 
-              TiNpcData other = (TiNpcData)obj;
-              return id == other.id; // Assuming ID is the unique identifier
-          }
+            TiNpcData other = (TiNpcData)obj;
+            return id == other.id; // Assuming ID is the unique identifier
+        }
 
-         /// <summary>
-         /// Static helper to parse state enum strings into a System.Enum value.
-         /// </summary>
-         /// <param name="enumKey">The string name of the enum value.</param>
-         /// <param name="enumTypeString">The assembly qualified name of the enum type.</param>
-         /// <returns>The parsed System.Enum value, or null if parsing fails.</returns>
-         public static System.Enum ParseStateEnum(string enumKey, string enumTypeString)
-         {
-              if (string.IsNullOrEmpty(enumKey) || string.IsNullOrEmpty(enumTypeString)) return null;
+        /// <summary>
+        /// Static helper to parse state enum strings into a System.Enum value.
+        /// </summary>
+        /// <param name="enumKey">The string name of the enum value.</param>
+        /// <param name="enumTypeString">The assembly qualified name of the enum type.</param>
+        /// <returns>The parsed System.Enum value, or null if parsing fails.</returns>
+        public static System.Enum ParseStateEnum(string enumKey, string enumTypeString)
+        {
+            if (string.IsNullOrEmpty(enumKey) || string.IsNullOrEmpty(enumTypeString)) return null;
 
-              try
-              {
-                   Type enumType = Type.GetType(enumTypeString);
-                   if (enumType == null || !enumType.IsEnum)
-                   {
-                        // Debug.LogError($"TiNpcData: Failed to get Enum Type '{enumTypeString}' for state '{enumKey}'."); // Too noisy
-                        return null;
-                   }
-                   return (System.Enum)Enum.Parse(enumType, enumKey);
-              }
-              catch (Exception e)
-              {
-                   Debug.LogError($"TiNpcData: Failed to parse enum '{enumKey}' of type '{enumTypeString}': {e.Message}");
-                   return null;
-              }
-         }
+            try
+            {
+                Type enumType = Type.GetType(enumTypeString);
+                if (enumType == null || !enumType.IsEnum)
+                {
+                    // Debug.LogError($"TiNpcData: Failed to get Enum Type '{enumTypeString}' for state '{enumKey}'."); // Too noisy
+                    return null;
+                }
+                return (System.Enum)Enum.Parse(enumType, enumKey);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"TiNpcData: Failed to parse enum '{enumKey}' of type '{enumTypeString}': {e.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Adds a simulated event (struct) to the list of events pending processing for this NPC data.
+        /// </summary>
+        /// <param name="simulatedEvent">The event struct to add.</param>
+        public void AddPendingSimulatedEvent(object simulatedEvent)
+        {
+            if (pendingSimulatedEvents == null)
+            {
+                Debug.LogError($"TiNpcData ({id}): pendingSimulatedEvents list is null! Cannot add event {simulatedEvent?.GetType().Name ?? "NULL"}. Initializing list defensively.", NpcGameObject);
+                pendingSimulatedEvents = new List<object>(); // Initialize defensively
+            }
+            pendingSimulatedEvents.Add(simulatedEvent);
+            // Debug.Log($"SIM {id}: Added pending simulated event: {simulatedEvent?.GetType().Name ?? "NULL"}. Total pending: {pendingSimulatedEvents.Count}", NpcGameObject); // Too noisy
+        }
+        
+        /// <summary>
+        /// Processes any simulated events that have been queued for this NPC data.
+        /// Called by the BasicNpcStateManager during simulation ticks or by TiNpcManager upon activation.
+        /// </summary>
+        /// <param name="manager">The BasicNpcStateManager instance.</param>
+        public void ProcessPendingSimulatedEvents(BasicNpcStateManager manager)
+        {
+            if (pendingSimulatedEvents == null || pendingSimulatedEvents.Count == 0)
+            {
+                return; // Nothing to process
+            }
+
+            // Create a temporary list to avoid modifying the list while iterating
+            List<object> eventsToProcess = new List<object>(pendingSimulatedEvents);
+            pendingSimulatedEvents.Clear(); // Clear the original list immediately
+
+            // Debug.Log($"SIM {id}: Processing {eventsToProcess.Count} pending simulated events.", NpcGameObject); // Too noisy
+
+            foreach (var simulatedEvent in eventsToProcess)
+            {
+                // --- Handle SimulatedTransactionCompletedEvent ---
+                if (simulatedEvent is SimulatedTransactionCompletedEvent transactionCompletedEvent)
+                {
+                    Debug.Log($"SIM {id}: Processing SimulatedTransactionCompletedEvent (from Cashier '{transactionCompletedEvent.CashierTiId}', Payment: {transactionCompletedEvent.PaymentAmount}). Transitioning to BasicExitingStore.", NpcGameObject);
+                    // This NPC is the customer who just finished their transaction (in simulation).
+                    // They should now exit the store.
+                    manager.TransitionToBasicState(this, BasicState.BasicExitingStore);
+                    // Note: The payment was already added to the economy by the Cashier's simulation tick.
+                }
+                // --- Add handling for other simulated event types here as needed ---
+                // else if (simulatedEvent is AnotherSimulatedEventType anotherEvent)
+                // {
+                //     // Handle another type of simulated event...
+                // }
+                else
+                {
+                    Debug.LogWarning($"SIM {id}: Encountered unknown simulated event type '{simulatedEvent?.GetType().Name ?? "NULL"}' in pending list. Ignoring.", NpcGameObject);
+                }
+            }
+        }
     }
 
     // --- Serializable Dictionary Wrapper for Unique Decision Options ---
