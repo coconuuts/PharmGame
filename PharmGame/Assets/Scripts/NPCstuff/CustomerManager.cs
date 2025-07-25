@@ -36,8 +36,20 @@ namespace CustomerManagement
 
         // --- Bus Spawning Configuration ---
         [Header("Bus Spawning")]
+        // Changed from private field to private backing field for public property
         [Tooltip("The time interval between bus arrivals.")]
-        [SerializeField] private float busArrivalInterval = 60f; // Example: Bus arrives every 60 seconds
+        [SerializeField] private float _busArrivalInterval = 75f; 
+
+        // Public property to access and modify the bus arrival interval
+        public float BusArrivalInterval
+        {
+            get { return _busArrivalInterval; }
+            set
+            {
+                _busArrivalInterval = value;
+                Debug.Log($"CustomerManager: Bus Arrival Interval updated to {_busArrivalInterval}s.");
+            }
+        }
         [Tooltip("The number of transient NPCs that attempt to spawn when a bus arrives.")]
         [SerializeField] private int npcsPerBus = 3; // Example: 3 NPCs per bus
         [Tooltip("Optional: Delay before the very first bus arrives.")]
@@ -955,7 +967,7 @@ namespace CustomerManagement
                 Debug.Log($"CustomerManager: Bus burst completed. Successfully spawned {spawnedCount} out of {npcsPerBus} attempted customers.");
 
                 // Wait for the next bus arrival interval
-                yield return new WaitForSeconds(busArrivalInterval);
+                yield return new WaitForSeconds(BusArrivalInterval);
             }
         }
 

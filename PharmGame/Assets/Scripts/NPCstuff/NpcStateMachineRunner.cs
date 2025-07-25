@@ -1,7 +1,5 @@
 // --- START OF FILE NpcStateMachineRunner.cs ---
 
-// --- START OF FILE NpcStateMachineRunner.cs ---
-
 using UnityEngine;
 using System.Collections.Generic;
 using System.Collections;
@@ -32,6 +30,7 @@ namespace Game.NPC
      /// Added temporary fields for transient prescription data and populates PrescriptionManager in context.
      /// MODIFIED: Removed caching for MultiInteractableManager. Kept ObtainPrescription caching.
      /// ADDED: Reference to CashierManager in context.
+     /// REFACTORED: Active TI NPC grid position update logic now calls TiNpcSimulationManager.
      /// </summary>
      [RequireComponent(typeof(NpcMovementHandler))] // Ensure handlers are attached
      [RequireComponent(typeof(NpcAnimationHandler))]
@@ -145,10 +144,11 @@ namespace Game.NPC
 
 
           // --- Grid Position Tracking for Active NPCs ---
-          private Vector3 lastGridPosition;
-          private GridManager gridManager; // Need GridManager reference to get cell size
-          private float timeSinceLastGridUpdate = 0f; // Separate timer for grid updates
-          private const float GridUpdateCheckInterval = 0.5f; // Check grid position every 0.5 seconds
+          // private Vector3 lastGridPosition; // MOVED TO TiNpcData
+          // private GridManager gridManager; // MOVED TO TiNpcManager
+          // private float timeSinceLastGridUpdate = 0f; // MOVED TO TiNpcData
+          // private const float GridUpdateCheckInterval = 0.5f; // MOVED TO TiNpcSimulationManager
+
 
           // --- Interpolation Fields for Rigidbody Movement ---
           private Vector3 visualPositionStart;
@@ -280,21 +280,21 @@ namespace Game.NPC
                // --- END NEW GET ---
 
 
-               // Get reference to GridManager
-               gridManager = GridManager.Instance;
-               if (gridManager == null)
-               {
-                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): GridManager instance not found! Cannot track grid position for active NPCs.", this);
-               }
+               // Get reference to GridManager // MOVED TO TiNpcManager
+               // gridManager = GridManager.Instance; // MOVED
+               // if (gridManager == null) // MOVED
+               // { // MOVED
+               //      Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): GridManager instance not found! Cannot track grid position for active NPCs.", this); // MOVED
+               // } // MOVED
 
-               // Initialize lastGridPosition if this is a TI NPC being activated
-               if (IsTrueIdentityNpc && TiData != null && gridManager != null)
-               {
-                   // Use the position loaded from TiData during Activate()
-                   lastGridPosition = transform.position; // Initialize with current position after warp
-               }
+               // Initialize lastGridPosition if this is a TI NPC being activated // MOVED TO TiNpcData.LinkGameObject
+               // if (IsTrueIdentityNpc && TiData != null && gridManager != null) // MOVED
+               // { // MOVED
+               //    // Use the position loaded from TiData during Activate() // MOVED
+               //    lastGridPosition = transform.position; // Initialize with current position after warp // MOVED
+               // } // MOVED
 
-               timeSinceLastGridUpdate = 0f;
+               // timeSinceLastGridUpdate = 0f; // MOVED TO TiNpcData.LinkGameObject
           }
 
 
@@ -379,7 +379,7 @@ namespace Game.NPC
           private void Update()
           {
                // Check grid position update (always called, but timer inside limits frequency)
-               CheckGridPositionUpdate();
+               CheckGridPositionUpdate(); // Call the method
 
                // Animation speed update should happen every frame for visual smoothness
                UpdateAnimationSpeed(); // Call animation update helper
@@ -460,24 +460,18 @@ namespace Game.NPC
           /// <summary>
           /// Helper method to check and notify GridManager of position changes for active TI NPCs.
           /// Runs periodically based on GridUpdateCheckInterval.
+          /// REFACTORED: Delegates the check and notification to TiNpcSimulationManager.
           /// </summary>
           private void CheckGridPositionUpdate()
           {
-               if (IsTrueIdentityNpc && TiData != null && tiNpcManager != null && gridManager != null)
+               // Only perform this check if this is an active TI NPC
+               if (IsTrueIdentityNpc && TiData != null && tiNpcManager != null && tiNpcManager.tiNpcSimulationManager != null)
                {
-                   timeSinceLastGridUpdate += Time.deltaTime;
-                   if (timeSinceLastGridUpdate >= GridUpdateCheckInterval)
-                   {
-                       timeSinceLastGridUpdate -= GridUpdateCheckInterval;
-
-                       // Only notify if the NPC has moved enough to potentially change grid cells
-                       if ((transform.position - lastGridPosition).sqrMagnitude >= (gridManager.cellSize * gridManager.cellSize))
-                       {
-                           tiNpcManager.NotifyActiveNpcPositionChanged(TiData, lastGridPosition, transform.position);
-                           lastGridPosition = transform.position; // Update last tracked position
-                       }
-                   }
+                    // Delegate the check and notification to the simulation orchestrator
+                    // Pass the TiNpcData and the current GameObject position
+                    tiNpcManager.tiNpcSimulationManager.CheckGridPositionUpdate(TiData, transform.position); // Call the method on the orchestrator
                }
+               // else Debug.Log($"DEBUG Runner CheckGridPositionUpdate ({gameObject.name}): Not an active TI NPC or managers are null. Skipping grid update check.", this); // Too noisy
           }
 
 
@@ -677,12 +671,12 @@ namespace Game.NPC
                     {
                          Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Warped to {tiData.CurrentWorldPosition} using MovementHandler from TiData.");
                          transform.rotation = tiData.CurrentWorldRotation;
-                         // --- Initialize lastGridPosition after warp ---
-                         if (gridManager != null)
-                         {
-                              lastGridPosition = transform.position;
-                              // Note: TiNpcManager.ActivateTiNpc should have already updated the grid with this position
-                         }
+                         // --- Initialize lastGridPosition after warp --- // MOVED TO TiNpcData.LinkGameObject
+                         // if (gridManager != null) // MOVED
+                         // { // MOVED
+                         //      lastGridPosition = transform.position; // Initialize with current position after warp // MOVED
+                         //      // Note: TiNpcManager.ActivateTiNpc should have already updated the grid with this position // MOVED
+                         // } // MOVED
                          // After warp, ensure interpolation is off
                          isInterpolatingPosition = false;
                          isInterpolatingRotation = false;
@@ -752,8 +746,8 @@ namespace Game.NPC
                gameObject.SetActive(true);
                enabled = true;
 
-               // Initialize timers here. ProximityManager will set the initial mode via SetUpdateMode
-               timeSinceLastGridUpdate = 0f;
+               // Initialize timers here. ProximityManager will set the initial mode via SetUpdateMode // MOVED TO TiNpcData.LinkGameObject
+               // timeSinceLastGridUpdate = 0f; // MOVED
 
 
                Debug.Log($"NpcStateMachineRunner ({gameObject.name}): TI NPC '{tiData.Id}' Activated.");
@@ -803,8 +797,8 @@ namespace Game.NPC
                CurrentDestinationPosition = null; // Clear the last set destination position
                CachedCashRegister = null;
                _hasReachedCurrentDestination = true;
-               lastGridPosition = Vector3.zero; // Reset grid tracking position
-               timeSinceLastGridUpdate = 0f;
+               // lastGridPosition = Vector3.zero; // MOVED TO TiNpcData
+               // timeSinceLastGridUpdate = 0f; // MOVED TO TiNpcData
                visualPositionStart = transform.position; // Reset to current visual position
                visualPositionEnd = transform.position;
                visualRotationStart = transform.rotation; // Reset to current visual rotation
@@ -1033,7 +1027,7 @@ namespace Game.NPC
 
 
           /// <summary>
-          /// Allows a State SO (via context) to start a coroutine managed by this Runner.
+          /// Allows a State SO (via context) to start a coroutine managed by the Runner.
           /// </summary>
           public Coroutine StartManagedStateCoroutine(IEnumerator routine)
           {
@@ -1048,20 +1042,20 @@ namespace Game.NPC
           }
 
           /// <summary>
-          /// Allows a State SO (via context) to stop a managed coroutine.
-          /// </summary>
-          public void StopManagedStateCoroutine(Coroutine routine)
-          {
+         /// Helper for state SOs to stop a managed coroutine.
+         /// </summary>
+         public void StopManagedStateCoroutine(Coroutine routine)
+         {
                if (routine != null)
                {
-                    StopCoroutine(routine);
+                   StopCoroutine(routine);
                }
                // If the stopped routine was the currently active one, clear the reference
                if (activeStateCoroutine == routine)
                {
-                    activeStateCoroutine = null;
+                   activeStateCoroutine = null;
                }
-          }
+         }
 
           public NpcStateSO GetCurrentState()
           {
@@ -1300,4 +1294,3 @@ namespace Game.NPC
           }
      }
 }
-// --- END OF FILE NpcStateMachineRunner.cs ---

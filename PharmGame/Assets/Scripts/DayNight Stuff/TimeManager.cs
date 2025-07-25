@@ -26,6 +26,16 @@ public class TimeManager : MonoBehaviour {
 
     [SerializeField] TimeSettings timeSettings; // Link your TimeSettings ScriptableObject here
 
+    // --- Day Tracking ---
+    [SerializeField]
+    private int currentDay = 1; // Start at Day 1
+    public int CurrentDay => currentDay; // Public getter for the current day
+
+    // Event for when the day increments
+    public event Action<int> OnDayChanged;
+    // -------------------
+
+
     // Events are delegated to the TimeService instance
     public event Action OnSunrise {
         add => service.OnSunrise += value;
@@ -84,8 +94,13 @@ public class TimeManager : MonoBehaviour {
              Debug.LogWarning("Volume or Volume Profile not assigned/found on TimeManager. Ambient color tinting will not work.");
         }
 
+        // --- Subscribe to OnSunset for Day Tracking ---
+        service.OnSunset += HandleSunset;
+        // ---------------------------------------------
+
+
         // Perform initial update to set lights/sky/UI based on starting time
-        UpdateTimeOfDay();
+        UpdateTimeOfDay(); // This will also trigger events if the initial time is at a boundary
         UpdateLightRotation(); // Use the new method name
         UpdateLightSettings();
         UpdateSkyBlend();
@@ -95,12 +110,29 @@ public class TimeManager : MonoBehaviour {
 
     void Update() {
         // Advance game time
-        UpdateTimeOfDay();
+        service.UpdateTime(Time.deltaTime); // Update time first
         // Update visual elements based on new time
         UpdateLightRotation(); // Rotates both sun and moon
         UpdateLightSettings(); // Adjusts intensity and ambient light
         UpdateSkyBlend(); // Adjusts skybox blend
+
+        // Update UI last
+        if (timeText != null) {
+            // Format the time as hh:mm tt (12-hour with AM/PM)
+            // Using "HH:mm" for 24-hour format as in the original code
+            timeText.text = service.CurrentTime.ToString("h:mm tt") + $" - Day {currentDay}"; // Added Day display
+        }
     }
+
+    // --- Handler for the OnSunset event ---
+    private void HandleSunset()
+    {
+        currentDay++; // Increment the day count
+        Debug.Log($"Day {currentDay} has begun!"); // Log the new day
+        OnDayChanged?.Invoke(currentDay); // Invoke the day changed event
+    }
+    // -------------------------------------
+
 
     // Updates the blend factor for the skybox material
     void UpdateSkyBlend() {
@@ -153,23 +185,29 @@ public class TimeManager : MonoBehaviour {
         moon.transform.rotation = Quaternion.AngleAxis(moonRotation, Vector3.right);
     }
 
-    // Advances the time simulation and updates the time display
+    // Advances the time simulation and updates the time display (UI update moved to Update)
     void UpdateTimeOfDay() {
-        service.UpdateTime(Time.deltaTime);
-        if (timeText != null) {
-            // Format the time as hh:mm tt (12-hour with AM/PM)
-            // Using "HH:mm" for 24-hour format as in the original code
-            timeText.text = service.CurrentTime.ToString("h:mm tt");
-        }
+        // service.UpdateTime(Time.deltaTime); // Time update is now in the main Update loop
+        // UI update moved to Update
     }
 
-    // Optional: Clean up the TimeService when the TimeManager is destroyed
+    // Optional: Clean up the TimeService and unsubscribe when the TimeManager is destroyed
     void OnDestroy() {
         // When the singleton instance is destroyed, clear the static reference
         if (Instance == this)
         {
             Instance = null;
         }
+
+        // --- Unsubscribe from OnSunset ---
+        if (service != null)
+        {
+             service.OnSunset -= HandleSunset;
+        }
+        // --------------------------------
+
+
         // service.Dispose(); // If TimeService had a Dispose method for event cleanup
     }
 }
+// --- END OF FILE TimeManager.cs ---

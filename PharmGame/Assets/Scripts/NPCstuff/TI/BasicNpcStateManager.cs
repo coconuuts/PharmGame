@@ -24,6 +24,12 @@ namespace Game.NPC.BasicStates // Place Basic State Manager in the Basic States 
           [Tooltip("Drag all BasicNpcStateSO assets into this list.")]
           [SerializeField] private List<BasicNpcStateSO> basicStateAssets;
 
+          // --- Public getter for basicStateAssets ---
+          public List<BasicNpcStateSO> GetBasicStateAssets()
+          {
+              return basicStateAssets;
+          }
+
           // --- Internal Dictionary of available basic states ---
           private Dictionary<Enum, BasicNpcStateSO> availableBasicStates;
 
@@ -187,7 +193,7 @@ namespace Game.NPC.BasicStates // Place Basic State Manager in the Basic States 
 
           /// <summary>
           /// Executes one simulation tick for a single inactive TI NPC data instance.
-          /// Called by TiNpcManager.
+          /// Called by TiNpcSimulationManager.
           /// </summary>
           /// <param name="data">The TiNpcData instance to simulate.</param>
           /// <param name="deltaTime">The time elapsed since the last simulation tick for this NPC.</param>
@@ -339,4 +345,3 @@ namespace Game.NPC.BasicStates // Place Basic State Manager in the Basic States 
           }
      }
 }
-// --- END OF FILE BasicNpcStateManager.cs ---

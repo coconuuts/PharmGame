@@ -34,6 +34,7 @@ TagManager:
   - NPC
   - Waypoint
   - Cashier
+  - StorageShelf
   layers:
   - Default
   - TransparentFX

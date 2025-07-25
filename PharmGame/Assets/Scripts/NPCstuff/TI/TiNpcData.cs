@@ -23,6 +23,8 @@ namespace Game.NPC.TI // Keep in the TI namespace
     /// Now includes schedule time ranges, unique decision options, intended day start behavior,
     /// and prescription order data.
     /// ADDED: Field to store the specific prefab for this NPC.
+    /// ADDED: Runtime fields for active grid position tracking.
+    /// ADDED: Flag to control if the NPC is allowed to start their scheduled day.
     /// </summary>
     [System.Serializable]
     public class TiNpcData
@@ -60,6 +62,12 @@ namespace Game.NPC.TI // Keep in the TI namespace
         [SerializeField] public Game.Utilities.TimeRange startDay;
         [Tooltip("The time range during the day when this NPC should begin exiting/returning home.")]
         [SerializeField] public Game.Utilities.TimeRange endDay;
+
+        // --- NEW: Day Start Control Flag --- // <-- ADDED FIELD
+        [Header("Day Start Control")]
+        [Tooltip("If true, this NPC is allowed to start their scheduled day when the time is right. Set to false to keep them at BasicIdleAtHome.")]
+        [SerializeField] public bool canStartDay = true; // Default to true for most NPCs
+        // --- END NEW ---
 
         // --- Decision Point Settings ---
         [Header("Decision Point Settings")]
@@ -136,6 +144,11 @@ namespace Game.NPC.TI // Keep in the TI namespace
         // Use [System.NonSerialized] because this list is only for runtime processing, not persistent saving.
         // Events generated in simulation are processed immediately or upon activation, not saved across game sessions.
         [System.NonSerialized] public List<object> pendingSimulatedEvents;
+
+        // --- NEW: Runtime fields for active grid position tracking ---
+        [System.NonSerialized] public Vector3 lastGridPosition;
+        [System.NonSerialized] public float timeSinceLastGridUpdate;
+        // --- END NEW ---
 
 
         // --- Public Properties ---
@@ -243,6 +256,9 @@ namespace Game.NPC.TI // Keep in the TI namespace
             this.startDay = new Game.Utilities.TimeRange(0, 0, 23, 59); // Default: available all day
             this.endDay = new Game.Utilities.TimeRange(22, 0, 5, 0); // Default: start exiting between 22:00 and 05:00
 
+            // Initialize the new flag (default to true)
+            this.canStartDay = true;
+
             // Initialize unique decision options dictionary wrapper
             this.uniqueDecisionOptions = new SerializableDecisionOptionDictionary(); // <-- Initialize dictionary wrapper
 
@@ -254,7 +270,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
             this.dayStartStartIndex = 0;
             this.dayStartFollowReverse = false;
 
-            // Initialize prescription data fields 
+            // Initialize prescription data fields
             this.pendingPrescription = false;
             this.assignedOrder = new PrescriptionOrder(); // Initialize with default struct values
 
@@ -283,6 +299,11 @@ namespace Game.NPC.TI // Keep in the TI namespace
 
             // Initialize Pending Simulated Events List
             this.pendingSimulatedEvents = new List<object>();
+
+            // --- NEW: Initialize active grid tracking fields ---
+            this.lastGridPosition = Vector3.zero; // Initialize to zero
+            this.timeSinceLastGridUpdate = 0f; // Initialize timer
+            // --- END NEW ---
         }
 
         /// <summary>
@@ -339,6 +360,16 @@ namespace Game.NPC.TI // Keep in the TI namespace
             // Debug.Log($"DEBUG TiNpcData ({id}): Linking GameObject '{go?.name ?? "NULL"}' (InstanceID: {this.GetHashCode()}). Setting NpcGameObject and isActiveGameObject=true.", NpcGameObject); // Too verbose
             this.NpcGameObject = go;
             this.isActiveGameObject = true;
+            // --- NEW: Initialize active grid tracking fields on link ---
+            if (go != null)
+            {
+                 this.lastGridPosition = go.transform.position; // Initialize with current position
+                 this.timeSinceLastGridUpdate = 0f; // Reset timer
+            } else {
+                 this.lastGridPosition = Vector3.zero; // Reset if linking to null (shouldn't happen)
+                 this.timeSinceLastGridUpdate = 0f;
+            }
+            // --- END NEW ---
         }
 
         /// <summary>
@@ -350,6 +381,10 @@ namespace Game.NPC.TI // Keep in the TI namespace
             // Debug.Log($"DEBUG TiNpcData ({id}): Unlinking GameObject '{this.NpcGameObject?.name ?? "NULL"}' (InstanceID: {this.GetHashCode()}). Setting NpcGameObject=null and isActiveGameObject=false.", this.NpcGameObject); // Too verbose
             this.NpcGameObject = null;
             this.isActiveGameObject = false;
+            // --- NEW: Reset active grid tracking fields on unlink ---
+            this.lastGridPosition = Vector3.zero; // Reset
+            this.timeSinceLastGridUpdate = 0f; // Reset
+            // --- END NEW ---
         }
         public override int GetHashCode()
         {
@@ -409,7 +444,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
             pendingSimulatedEvents.Add(simulatedEvent);
             // Debug.Log($"SIM {id}: Added pending simulated event: {simulatedEvent?.GetType().Name ?? "NULL"}. Total pending: {pendingSimulatedEvents.Count}", NpcGameObject); // Too noisy
         }
-        
+
         /// <summary>
         /// Processes any simulated events that have been queued for this NPC data.
         /// Called by the BasicNpcStateManager during simulation ticks or by TiNpcManager upon activation.
@@ -506,4 +541,3 @@ namespace Game.NPC.TI // Keep in the TI namespace
         // }
     }
 }
-// --- END OF FILE TiNpcData.cs ---
