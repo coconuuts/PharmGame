@@ -3,7 +3,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 using System; // Needed for Action
-using System.Linq; // Needed for ToHashSet()
+using System.Linq; // Needed for ToHashSet(), FirstOrDefault
 
 // Make sure this script is in a namespace if you are using them consistently
 // namespace Systems.Upgrades // Example namespace
@@ -141,6 +141,22 @@ using System.Linq; // Needed for ToHashSet()
             return purchasedUpgrades?.Contains(upgrade) ?? false;
         }
 
+        /// <summary>
+        /// NEW: Retrieves an UpgradeDetailsSO by its upgradeName.
+        /// </summary>
+        /// <param name="upgradeName">The name of the upgrade to find.</param>
+        /// <returns>The UpgradeDetailsSO if found, otherwise null.</returns>
+        public UpgradeDetailsSO GetUpgradeDetailsByName(string upgradeName)
+        {
+            if (string.IsNullOrEmpty(upgradeName))
+            {
+                Debug.LogWarning("UpgradeManager: GetUpgradeDetailsByName called with null or empty upgradeName.", this);
+                return null;
+            }
+            // Use LINQ's FirstOrDefault to find the first matching upgrade or null
+            return allAvailableUpgrades.FirstOrDefault(u => u.upgradeName == upgradeName);
+        }
+
 
         // --- Future Placeholder for Loading/Saving ---
         // private UpgradeDetailsSO FindUpgradeDetailsByID(string id)
@@ -175,4 +191,4 @@ using System.Linq; // Needed for ToHashSet()
 
 // } // End namespace (if using one)
 
-// --- END OF FILE UpgradeManager.cs ---
+// --- END OF FILE UpgradeManager.cs ---    

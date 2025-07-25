@@ -24,10 +24,22 @@ namespace Game.NPC.BasicStates // Place Basic States in their own namespace
             // and clearing the target position.
             base.OnEnter(data, manager);
 
-            Debug.Log($"SIM {data.Id}: BasicCashierWaitingForCustomer OnEnter. Will remain frozen until timeout ({data.simulatedStateTimer:F2}s initial).");
+            Debug.Log($"SIM {data.Id}: BasicCashierWaitingForCustomer OnEnter. Will remain frozen until timeout ({data.simulatedStateTimer:F2}s initial).", data.NpcGameObject);
 
             // Ensure simulated target position is null as they are waiting at a fixed spot
             data.simulatedTargetPosition = null;
+
+            // --- NEW: Signal StoreSimulationManager to start simulation ---
+            if (StoreSimulationManager.Instance != null)
+            {
+                StoreSimulationManager.Instance.StartSimulation();
+                Debug.Log($"SIM {data.Id}: Cashier entered BasicWaitingForCustomer. Signalling StoreSimulationManager to start simulation.", data.NpcGameObject);
+            }
+            else
+            {
+                Debug.LogWarning($"SIM {data.Id}: StoreSimulationManager instance not found! Cannot start store simulation.", data.NpcGameObject);
+            }
+            // --- END NEW ---
         }
 
         public override void SimulateTick(TiNpcData data, float deltaTime, BasicNpcStateManager manager)
@@ -43,8 +55,21 @@ namespace Game.NPC.BasicStates // Place Basic States in their own namespace
 
              // No specific cleanup needed for TiNpcData in this state's exit.
              // The base OnExit handles resetting the simulatedStateTimer if using timeout.
-             Debug.Log($"SIM {data.Id}: BasicCashierWaitingForCustomer OnExit.");
+             Debug.Log($"SIM {data.Id}: BasicCashierWaitingForCustomer OnExit.", data.NpcGameObject);
+
+             // --- NEW: Signal StoreSimulationManager to stop simulation ---
+             if (StoreSimulationManager.Instance != null)
+             {
+                 StoreSimulationManager.Instance.StopSimulation();
+                 Debug.Log($"SIM {data.Id}: Cashier exited BasicWaitingForCustomer. Signalling StoreSimulationManager to stop simulation.", data.NpcGameObject);
+             }
+             else
+             {
+                 Debug.LogWarning($"SIM {data.Id}: StoreSimulationManager instance not found! Cannot stop store simulation.", data.NpcGameObject);
+             }
+             // --- END NEW ---
          }
     }
 }
+
 // --- END OF FILE BasicCashierWaitingForCustomerSO.cs ---

@@ -14,10 +14,17 @@ using Game.NPC.TI; // Needed for TiNpcManager (to pass the TI NPC to it), TiNpcD
 
 namespace CustomerManagement
 {
+    // NEW ENUM to identify the source of a pause request
+    public enum StorePauseSource
+    {
+        Proximity,
+        CashierSimulation
+    }
+
     /// <summary>
     /// Manages the spawning, pooling, and overall flow of customer NPCs in the store.
     /// Now also collaborates with TiNpcManager for pooling TI NPCs.
-    /// MODIFIED: Updated register occupancy check and queue release logic to account for Cashier presence.
+    /// MODIFIED: Upgraded pause logic to handle multiple sources (Proximity, Cashier Simulation).
     /// </summary>
     public class CustomerManager : MonoBehaviour
     {
@@ -97,6 +104,15 @@ namespace CustomerManagement
         private CashRegisterInteractable cashRegister;
         // --- END NEW ---
 
+        // --- MODIFIED: Store Simulation Active Flag ---
+        /// <summary>
+        /// Indicates if active NPC spawning should be paused.
+        /// Returns true if any system (e.g., Proximity, CashierSimulation) has requested a pause.
+        /// </summary>
+        public bool IsStoreSimulationActive => pauseRequesters.Count > 0;
+        private HashSet<StorePauseSource> pauseRequesters; // Tracks all systems that have requested a pause.
+        // --- END MODIFIED ---
+
 
         private void Awake()
         {
@@ -112,6 +128,11 @@ namespace CustomerManagement
                 Destroy(gameObject);
                 return;
             }
+
+            // --- Initialize the new collections ---
+            pauseRequesters = new HashSet<StorePauseSource>();
+            tiNpcsInsideStore = new HashSet<TiNpcData>();
+            // --- END ---
 
             // Get reference to the PoolingManager
             poolingManager = PoolingManager.Instance;
@@ -181,8 +202,6 @@ namespace CustomerManagement
                 Debug.Log($"CustomerManager: Initialized secondary queue with {secondaryQueueSpots.Count} spots.");
             }
 
-            // --- Initialize the new collection ---
-            tiNpcsInsideStore = new HashSet<TiNpcData>();
 
             Debug.Log("CustomerManager: Awake completed.");
         }
@@ -270,6 +289,14 @@ namespace CustomerManagement
         /// <param name="isBusSpawn">True if this spawn is part of a bus burst, false for trickle spawn.</param> // NEW PARAM
         public void SpawnCustomer(bool isBusSpawn) // MODIFIED SIGNATURE
         {
+            // --- Check if store spawning is paused ---
+            if (IsStoreSimulationActive)
+            {
+                Debug.Log("CustomerManager: SpawnCustomer skipped. Store activity is paused, preventing active NPC spawning.", this);
+                return; // Do not attempt to spawn if store simulation is active
+            }
+            // --- END ---
+
             // Determine which spawn points to use
             List<Transform> currentSpawnPoints = isBusSpawn ? busSpawnPoints : spawnPoints;
 
@@ -377,7 +404,7 @@ namespace CustomerManagement
                     activeCustomers.Remove(runner);
                 }
                 if (npcObject.GetComponent<PooledObjectInfo>() != null) poolingManager.ReturnPooledObject(npcObject);
-                else Destroy(npcObject); // Fallback destroy if not pooled
+                else Destroy(npcObject); // Fallback
                 return; // Exit handling
             }
 
@@ -687,10 +714,7 @@ namespace CustomerManagement
                     else
                     {
                         Debug.LogError($"CustomerManager: Runner '{runnerToMove.gameObject.name}' is missing its NpcQueueHandler component! Cannot signal move up.", runnerToMove.gameObject);
-                        // This spot is now incorrectly marked as occupied by runnerToMove, and the previous spot might not be freed.
-                        // It's a significant inconsistency. Forcing the spot to free to unblock the queue,
-                        // but the NPC is likely stuck.
-                        nextSpotData.currentOccupant = null; // Unmark the destination spot
+                        // This NPC is likely stuck.
                     }
                 }
                 else // No occupant found for this spot index
@@ -1167,6 +1191,35 @@ namespace CustomerManagement
 
             Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) could not join secondary queue - secondary queue is full.");
             return false;
+        }
+
+        /// <summary>
+        /// Sets the active state of the store simulation in the CustomerManager.
+        /// This is called by the StoreSimulationManager or other systems like a proximity monitor.
+        /// </summary>
+        /// <param name="pause">True to request a pause, false to release the pause request.</param>
+        /// <param name="source">The system making the request.</param>
+        public void SetStoreSimulationActive(bool pause, StorePauseSource source)
+        {
+            bool wasPaused = IsStoreSimulationActive; // Check state before the change
+
+            if (pause)
+            {
+                pauseRequesters.Add(source);
+            }
+            else
+            {
+                pauseRequesters.Remove(source);
+            }
+
+            bool isPaused = IsStoreSimulationActive; // Check state after the change
+
+            // Only log if the overall paused state has changed
+            if (wasPaused != isPaused)
+            {
+                Debug.Log($"CustomerManager: Overall store activity state changed to PAUSED: {isPaused}. Active NPC spawning will be {(isPaused ? "paused" : "resumed")}.", this);
+            }
+            Debug.Log($"CustomerManager: Pause request from '{source}' set to '{pause}'. Total requesters: {pauseRequesters.Count}.", this);
         }
 
 
