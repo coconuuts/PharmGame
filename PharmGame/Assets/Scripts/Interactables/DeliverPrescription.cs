@@ -30,6 +30,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
 
         [Tooltip("Should this interactable be enabled by default when registered? (Usually false for multi-interactable objects like NPCs)")]
         [SerializeField] private bool enableOnStart = false;
+        public bool EnableOnStart => enableOnStart;
 
         [Header("Delivery Payout Settings")] // <-- NEW HEADER
         [Tooltip("The percentage (0-1) of the moneyWorth to pay out for an imperfect delivery.")] // <-- NEW TOOLTIP

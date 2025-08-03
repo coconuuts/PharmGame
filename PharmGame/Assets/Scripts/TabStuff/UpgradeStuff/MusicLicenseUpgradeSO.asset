@@ -10,10 +10,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 9094ec7ae74116344920c5585e5ad613, type: 3}
-  m_Name: HireCashierUpgradeSO
+  m_Name: MusicLicenseUpgradeSO
   m_EditorClassIdentifier: 
-  upgradeName: Hire Cashier
-  upgradeDescription: Hire Cashier
+  upgradeName: Music License
+  upgradeDescription: Music License
   cost: 0
   requiredLevel: 0
-  uniqueID: 207b2063-d9c5-4cd7-b6c2-ce92ba02e0a7
+  uniqueID: d0872a24-b949-448c-af88-ea03a69914e4

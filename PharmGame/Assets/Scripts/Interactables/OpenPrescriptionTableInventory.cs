@@ -14,6 +14,7 @@ public class OpenPrescriptionTableInventory : MonoBehaviour, IInteractable
 
     [Tooltip("Should this interactable be enabled by default when registered?")]
     [SerializeField] private bool enableOnStart = true;
+    public bool EnableOnStart => enableOnStart;
 
     [Header("Prompt Settings")]
     public Vector3 textPromptOffset = Vector3.zero;

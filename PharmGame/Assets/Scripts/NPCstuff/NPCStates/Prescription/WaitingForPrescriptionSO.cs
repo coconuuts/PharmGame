@@ -52,12 +52,17 @@ namespace Game.NPC.States // Place alongside other active states
 
             Debug.Log($"{context.NpcObject.name}: Entering {name}. Waiting for player prescription interaction.", context.NpcObject); // Updated log message
 
-            // Start impatience timer coroutine
-            float impatientDuration = Random.Range(impatientTimeRange.x, impatientTimeRange.y); // Duration is local to OnEnter
+            // Start impatience timer coroutine (MODIFIED for Music License)
+            Vector2 localTimeRange = impatientTimeRange;
+            if (context.UpgradeManager != null && context.UpgradeManager.IsMusicLicensePurchased())
+            {
+                localTimeRange.x *= UpgradeManager.MusicLicensePatienceModifier;
+                localTimeRange.y *= UpgradeManager.MusicLicensePatienceModifier;
+            }
+            float impatientDuration = Random.Range(localTimeRange.x, localTimeRange.y);
             Debug.Log($"{context.NpcObject.name}: Entering {name}. Starting impatience timer for {impatientDuration:F2} seconds.", context.NpcObject);
 
             waitingRoutine = context.StartCoroutine(WaitingRoutine(context, impatientDuration)); // Start the timer coroutine
-            // impatientTimer = 0f; // Timer is managed by the coroutine now
 
 
             // --- Log Prescription Order Data ---
@@ -246,3 +251,4 @@ namespace Game.NPC.States // Place alongside other active states
         }
     }
 }
+// --- END OF FILE WaitingForPrescriptionSO.cs ---

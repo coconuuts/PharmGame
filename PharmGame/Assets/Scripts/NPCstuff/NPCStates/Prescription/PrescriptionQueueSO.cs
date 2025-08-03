@@ -97,8 +97,14 @@ namespace Game.NPC.States // Place alongside other active states
                  // The Runner's TransitionToState will handle stopping movement and resetting Runner flags.
             }
 
-            // --- Start impatience timer coroutine --- // <-- NEW
-            float impatientDuration = Random.Range(impatientTimeRange.x, impatientTimeRange.y); // Duration is local to OnEnter
+            // --- Start impatience timer coroutine (MODIFIED for Music License) ---
+            Vector2 localTimeRange = impatientTimeRange;
+            if (context.UpgradeManager != null && context.UpgradeManager.IsMusicLicensePurchased())
+            {
+                localTimeRange.x *= UpgradeManager.MusicLicensePatienceModifier;
+                localTimeRange.y *= UpgradeManager.MusicLicensePatienceModifier;
+            }
+            float impatientDuration = Random.Range(localTimeRange.x, localTimeRange.y);
             Debug.Log($"{context.NpcObject.name}: Entering {name}. Starting impatience timer for {impatientDuration:F2} seconds.", context.NpcObject);
             waitingRoutine = context.StartCoroutine(WaitingRoutine(context, impatientDuration)); // Start the timer coroutine
             // --- END NEW ---

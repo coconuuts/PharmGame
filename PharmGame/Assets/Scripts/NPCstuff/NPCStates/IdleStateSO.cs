@@ -27,7 +27,7 @@ namespace Game.NPC.States
         [SerializeField] private float maxIdleDuration = 5f;
 
 
-        private float idleTimer;
+        // private float idleTimer;
         private float currentIdleDuration;
         private Coroutine idleRoutine;
 
@@ -48,7 +48,7 @@ namespace Game.NPC.States
             if (maxIdleDuration > 0)
             {
                 currentIdleDuration = Random.Range(minIdleDuration, maxIdleDuration);
-                idleTimer = 0f;
+                // idleTimer = 0f;
                 Debug.Log($"{context.NpcObject.name}: Idling for {currentIdleDuration:F2} seconds.", context.NpcObject);
 
                 idleRoutine = context.StartCoroutine(IdleRoutine(context));
@@ -88,7 +88,7 @@ namespace Game.NPC.States
             base.OnExit(context); // Call base OnExit (logs exit, stops movement/rotation)
             // Example: Stop idle animation (if not blended)
             // context.PlayAnimation("Locomotion"); // Blend back to locomotion base state
-            idleTimer = 0f; // Reset timer
+            // idleTimer = 0f; // Reset timer
         }
 
         // Coroutine method (optional, can be used for timed loops or complex sequences)

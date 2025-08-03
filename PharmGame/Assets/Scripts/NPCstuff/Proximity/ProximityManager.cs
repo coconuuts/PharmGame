@@ -1,7 +1,5 @@
 // --- START OF FILE ProximityManager.cs ---
 
-// --- START OF FILE ProximityManager.cs ---
-
 using UnityEngine;
 using System.Collections.Generic;
 using System.Collections; // Needed for Coroutine
@@ -37,9 +35,6 @@ namespace Game.Proximity
         private TiNpcManager tiNpcManager;
         // Reference to GridManager (will be obtained in Awake/Start)
         private GridManager gridManager;
-        // Reference to ProximityManager (will be obtained in Awake/Start)
-        // private ProximityManager proximityManager; // Removed self-reference, use Instance
-
 
         [Header("Proximity Settings")]
         [Tooltip("The radius around the player for the 'Near' zone (full updates).")]
@@ -72,7 +67,6 @@ namespace Game.Proximity
         [SerializeField] private int moderateBatchSize = 10; // Process 10 Moderate NPCs per tick
 
         private float fixedModerateDeltaTime; // Calculated from moderateUpdateRateHz
-        private float moderateTickTimer; // Timer to track when to perform a moderate tick
         private int moderateTickIndex; // Index for round-robin ticking of moderate NPCs
 
         // Coroutine reference for the proximity check loop
@@ -113,7 +107,6 @@ namespace Game.Proximity
                 moderateUpdateRateHz = 1f;
             }
             fixedModerateDeltaTime = 1.0f / moderateUpdateRateHz;
-            moderateTickTimer = 0f;
             moderateTickIndex = 0;
             if (moderateBatchSize <= 0)
             {
@@ -396,7 +389,6 @@ namespace Game.Proximity
                              if (runner != null)
                              {
                                   Debug.Log($"PROXIMITY {tiData.Id}: Triggering Throttling Change.");
-                                  // REMOVED: runner.SetUpdateMode(currentZone); // Set the new update mode
                                   // This logic will be replaced by adding/removing the runner from lists in ProximityManager
                                   // Add the runner to the appropriate list for this tick's update
                                   if (currentZone == ProximityZone.Near) runnersToAddNear.Add(runner);

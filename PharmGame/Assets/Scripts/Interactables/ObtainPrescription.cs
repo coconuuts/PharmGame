@@ -26,6 +26,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interact
         
         [Tooltip("Should this interactable be enabled by default when registered? (Usually false for multi-interactable objects like NPCs)")]
         [SerializeField] private bool enableOnStart = false;
+        public bool EnableOnStart => enableOnStart;
 
         /// <summary>
         /// Flag indicating if this NPC's prescription order is currently active for the player.

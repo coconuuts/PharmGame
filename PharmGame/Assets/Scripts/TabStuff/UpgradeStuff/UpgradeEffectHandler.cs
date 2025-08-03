@@ -1,5 +1,7 @@
 // --- START OF FILE UpgradeEffectHandler.cs ---
 
+// --- START OF FILE UpgradeEffectHandler.cs ---
+
 using UnityEngine;
 using System; // Needed for Action
 using CustomerManagement; // Needed for CustomerManager
@@ -22,6 +24,7 @@ using Game.Utilities; // Assuming TimeManager might be in a utilities namespace,
 /// ADDED: Field to specify the Cashier TI NPC ID for the "Hire Cashier" upgrade.
 /// ADDED: Logic to set the 'canStartDay' flag for the Cashier when the upgrade is purchased.
 /// ADDED: Logic to delay the "Hire Cashier" effect until the next day.
+/// ADDED: Case for "Music License" passive upgrade.
 /// </summary>
 public class UpgradeEffectHandler : MonoBehaviour
 {
@@ -171,19 +174,7 @@ public class UpgradeEffectHandler : MonoBehaviour
                 effectHandledOrPending = true; // Indicate that an effect was handled immediately
                 break;
 
-            // Add more cases here for other upgrades:
-            // case "Faster Browsing":
-            //     ApplyFasterBrowsingEffect();
-            //     effectHandledOrPending = true;
-            //     break;
-            // case "Cashier Training":
-            //     ApplyCashierTrainingEffect();
-            //     effectHandledOrPending = true;
-            //     break;
-            // etc.
-
-            // --- MODIFIED CASE FOR HIRING CASHIER --- // <-- MODIFIED CASE
-            case "Hire Cashier": // Match the name of the upgrade asset
+            case "Hire Cashier":
                  // We don't apply the effect immediately, just mark it as pending.
                  // The actual effect application happens on the next day start.
                  isHireCashierEffectPending = true;
@@ -191,7 +182,18 @@ public class UpgradeEffectHandler : MonoBehaviour
                  Debug.Log($"UpgradeEffectHandler on {gameObject.name}: Marked 'Hire Cashier' effect as pending for the next day.", this);
                  // The actual ApplyHireCashierEffect() method is NOT called here anymore.
                  break;
-            // --- END MODIFIED CASE ---
+
+            case "Premium Software": 
+                // This is a passive upgrade. Its effect is checked by other systems.
+                // We just need to acknowledge it here so it can be marked as purchased.
+                effectHandledOrPending = true; 
+                break;
+
+            case "Music License": // <-- NEW CASE
+                // This is a passive upgrade. Its effect is checked by other systems (NPC states).
+                // We just need to acknowledge it here so it can be marked as purchased.
+                effectHandledOrPending = true;
+                break;
 
             default:
                 Debug.LogWarning($"UpgradeEffectHandler on {gameObject.name}: Received purchase attempt for unknown upgrade: '{upgradeDetails.upgradeName}'. No effect applied or pending setup.", this);

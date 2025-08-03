@@ -622,8 +622,7 @@ namespace Systems.Inventory
 
             // Calculate totalPrescriptionUnits here, just before starting the craft
             totalPrescriptionUnits = 0; // Reset before calculating
-            patientNameForCraftedItem = null; // <-- RESET PATIENT NAME TAG BEFORE CAPTURING // <-- ADDED
-            bool isPrescriptionCraft = false;
+            patientNameForCraftedItem = null; 
 
             if (playerTracker != null && playerTracker.ActivePrescriptionOrder.HasValue)
             {
@@ -640,10 +639,9 @@ namespace Systems.Inventory
                  else
                  {
                       Debug.Log($"CraftingStation ({gameObject.name}): Matched recipe '{currentMatchedRecipe.recipeName}' is the correct recipe for the active prescription order. Proceeding.", this);
-                      isPrescriptionCraft = true;
                       totalPrescriptionUnits = activeOrder.dosePerDay * activeOrder.lengthOfTreatmentDays; // Calculate units
-                      patientNameForCraftedItem = activeOrder.patientName; // <-- CAPTURE PATIENT NAME // <-- ADDED
-                      Debug.Log($"CraftingStation ({gameObject.name}): Calculated total prescription units for order: {totalPrescriptionUnits}. Captured patient name: '{patientNameForCraftedItem}'.", this); // <-- MODIFIED LOG
+                      patientNameForCraftedItem = activeOrder.patientName; // <-- CAPTURE PATIENT NAME
+                      Debug.Log($"CraftingStation ({gameObject.name}): Calculated total prescription units for order: {totalPrescriptionUnits}. Captured patient name: '{patientNameForCraftedItem}'.", this);
 
                       // Additional check for prescription crafts - ensure primary input has enough health
                       // Find the primary input requirement in the matched recipe
@@ -683,9 +681,8 @@ namespace Systems.Inventory
              {
                  // No active prescription order, allow crafting any matched recipe.
                  Debug.Log($"CraftingStation ({gameObject.name}): No active prescription order. Allowing craft of matched recipe '{currentMatchedRecipe.recipeName}'.", this);
-                 isPrescriptionCraft = false;
                  totalPrescriptionUnits = 0; // Ensure units are 0 for non-prescription crafts
-                 patientNameForCraftedItem = null; // Ensure tag is null for non-prescription crafts // <-- ADDED
+                 patientNameForCraftedItem = null; // Ensure tag is null for non-prescription crafts
              }
 
 

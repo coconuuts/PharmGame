@@ -35,8 +35,14 @@ namespace Game.NPC.States
             // Play waiting/idle animation
             // context.PlayAnimation("WaitingInLine"); // Placeholder animation name
 
-            // Start impatience timer
-            impatientDuration = Random.Range(impatientTimeRange.x, impatientTimeRange.y);
+            // Start impatience timer (MODIFIED for Music License)
+            Vector2 localTimeRange = impatientTimeRange;
+            if (context.UpgradeManager != null && context.UpgradeManager.IsMusicLicensePurchased())
+            {
+                localTimeRange.x *= UpgradeManager.MusicLicensePatienceModifier;
+                localTimeRange.y *= UpgradeManager.MusicLicensePatienceModifier;
+            }
+            impatientDuration = Random.Range(localTimeRange.x, localTimeRange.y);
             impatientTimer = 0f;
             Debug.Log($"{context.NpcObject.name}: Entering {name}. Starting impatience timer for {impatientDuration:F2} seconds at spot {context.AssignedQueueSpotIndex}.", context.NpcObject);
 
@@ -88,3 +94,4 @@ namespace Game.NPC.States
         }
     }
 }
+// --- END OF FILE CustomerWaitingInLineStateSO.cs ---

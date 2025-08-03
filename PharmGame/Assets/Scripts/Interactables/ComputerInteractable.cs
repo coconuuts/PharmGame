@@ -25,6 +25,7 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
 
     [Tooltip("Should this interactable be enabled by default when registered?")]
     [SerializeField] private bool enableOnStart = true; // Keep this field for InteractionManager
+    public bool EnableOnStart => enableOnStart;
 
     [Header("Prompt Settings")]
     public Vector3 computerTextPromptOffset = Vector3.zero;

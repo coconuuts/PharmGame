@@ -13,10 +13,23 @@ namespace Game.NPC.States
         public override System.Enum HandledState => CustomerState.TransactionActive;
         public override void OnEnter(NpcStateContext context)
         {
-            base.OnEnter(context); // Call base OnEnter (logs entry, enables Agent)
+            base.OnEnter(context); // Call base OnEnter (logs entry, but does not stop rotation as that's in OnExit of previous state)
 
             // --- Logic from CustomerTransactionActiveLogic.OnEnter (Migration) ---
-            context.MovementHandler?.StopMoving(); // Use context helper
+            context.MovementHandler?.StopMoving(); // Use context helper to ensure no sliding
+
+            // --- Ensure the NPC completes its rotation towards the register ---
+            if (context.CurrentTargetLocation.HasValue && context.CurrentTargetLocation.Value.browsePoint != null)
+            {
+                Debug.Log($"{context.NpcObject.name}: Ensuring rotation towards register in TransactionActive state.", context.NpcObject);
+                // This will start a new rotation coroutine. If the NPC was already facing the right way,
+                // it will complete almost instantly. If it was interrupted, it will now finish.
+                context.RotateTowardsTarget(context.CurrentTargetLocation.Value.browsePoint.rotation);
+            }
+            else
+            {
+                 Debug.LogWarning($"{context.NpcObject.name}: No valid target location stored for TransactionActive rotation!", context.NpcObject);
+            }
 
             // Note: Animation handler could be used here
             // context.PlayAnimation("Transaction");

@@ -23,6 +23,7 @@ public class LightSwitch : MonoBehaviour, IInteractable
 
     [Tooltip("Should this interactable be enabled by default when registered?")]
     [SerializeField] private bool enableOnStart = true;
+    public bool EnableOnStart => enableOnStart;
 
     private bool isLightOn = false; // Current state
     private Renderer lightbulbRenderer; // Renderer for the lightbulb material change

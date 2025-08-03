@@ -28,6 +28,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interact
 
         [Tooltip("Should this interactable be enabled by default when registered?")]
         [SerializeField] private bool enableOnStart = true;
+        public bool EnableOnStart => enableOnStart;
 
         // Public property to expose the prompt message via the IInteractable interface
         public string InteractionPrompt => interactionPromptMessage; // Updated to use the serialized field

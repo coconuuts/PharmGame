@@ -45,7 +45,7 @@ namespace CustomerManagement
         [Header("Bus Spawning")]
         // Changed from private field to private backing field for public property
         [Tooltip("The time interval between bus arrivals.")]
-        [SerializeField] private float _busArrivalInterval = 75f; 
+        [SerializeField] private float _busArrivalInterval = 75f;
 
         // Public property to access and modify the bus arrival interval
         public float BusArrivalInterval
@@ -212,15 +212,15 @@ namespace CustomerManagement
             GameObject registerGO = GameObject.FindGameObjectWithTag("CashRegister"); // Assumes your register has this tag
             if (registerGO != null)
             {
-                 cashRegister = registerGO.GetComponent<CashRegisterInteractable>();
-                 if (cashRegister == null)
-                 {
-                      Debug.LogError($"CustomerManager ({gameObject.name}): Found GameObject with tag 'CashRegister' but it's missing the CashRegisterInteractable component! Register logic will not function.", this);
-                 }
+                cashRegister = registerGO.GetComponent<CashRegisterInteractable>();
+                if (cashRegister == null)
+                {
+                    Debug.LogError($"CustomerManager ({gameObject.name}): Found GameObject with tag 'CashRegister' but it's missing the CashRegisterInteractable component! Register logic will not function.", this);
+                }
             }
             else
             {
-                 Debug.LogError($"CustomerManager ({gameObject.name}): Could not find GameObject with tag 'CashRegister'! Register logic will not function.", this);
+                Debug.LogError($"CustomerManager ({gameObject.name}): Could not find GameObject with tag 'CashRegister'! Register logic will not function.", this);
             }
             // --- END Find ---
 
@@ -776,12 +776,12 @@ namespace CustomerManagement
             // --- NEW: Check if the register is staffed by a Cashier ---
             if (cashRegister != null && cashRegister.IsStaffedByCashier)
             {
-                 Debug.Log("CustomerManager: CashRegisterFreeEvent received, but the register is staffed by a Cashier. Not sending the next customer from the queue.", this);
-                 // If a Cashier is present, the CashRegisterFreeEvent means a customer finished checkout *with the Cashier*.
-                 // The CashierWaitingForCustomer state handles receiving the next customer via CustomerReadyForCashierEvent.
-                 // We still need to check store capacity and potentially release a secondary queue customer.
-                 CheckStoreCapacityAndReleaseSecondaryCustomer(); // Call the check method
-                 return; // Exit the handler, the Cashier manages the flow now
+                Debug.Log("CustomerManager: CashRegisterFreeEvent received, but the register is staffed by a Cashier. Not sending the next customer from the queue.", this);
+                // If a Cashier is present, the CashRegisterFreeEvent means a customer finished checkout *with the Cashier*.
+                // The CashierWaitingForCustomer state handles receiving the next customer via CustomerReadyForCashierEvent.
+                // We still need to check store capacity and potentially release a secondary queue customer.
+                CheckStoreCapacityAndReleaseSecondaryCustomer(); // Call the check method
+                return; // Exit the handler, the Cashier manages the flow now
             }
             // --- END NEW ---
 
@@ -919,13 +919,13 @@ namespace CustomerManagement
                     // but checking here prevents waiting the full interval if the queue is full.
                     if (HasAvailableSecondaryQueueSpot()) // Re-check just before spawning
                     {
-                         Debug.Log($"CustomerManager: Attempting trickle spawn after {spawnDelay}s delay.");
-                         SpawnCustomer(false); // Call SpawnCustomer with isBusSpawn = false // MODIFIED CALL
+                        Debug.Log($"CustomerManager: Attempting trickle spawn after {spawnDelay}s delay.");
+                        SpawnCustomer(false); // Call SpawnCustomer with isBusSpawn = false // MODIFIED CALL
                     }
                     else
                     {
-                         // This case is unlikely due to the outer if, but defensive
-                         Debug.Log($"CustomerManager: Trickle spawn attempt skipped, secondary queue became full during wait.");
+                        // This case is unlikely due to the outer if, but defensive
+                        Debug.Log($"CustomerManager: Trickle spawn attempt skipped, secondary queue became full during wait.");
                     }
                 }
                 else
@@ -966,8 +966,8 @@ namespace CustomerManagement
                         // Check if bus spawn points are available
                         if (busSpawnPoints == null || busSpawnPoints.Count == 0)
                         {
-                             Debug.LogWarning($"CustomerManager: Bus spawn points list is null or empty! Cannot perform bus spawn. Aborting burst.", this);
-                             break; // Abort the burst if no bus spawn points
+                            Debug.LogWarning($"CustomerManager: Bus spawn points list is null or empty! Cannot perform bus spawn. Aborting burst.", this);
+                            break; // Abort the burst if no bus spawn points
                         }
 
                         SpawnCustomer(true); // Call SpawnCustomer with isBusSpawn = true // MODIFIED CALL
@@ -977,7 +977,7 @@ namespace CustomerManagement
                         // Only yield if we successfully spawned and there are more attempts planned
                         if (delayBetweenBusSpawns > 0 && i < npcsPerBus - 1 && HasAvailableSecondaryQueueSpot())
                         {
-                             yield return new WaitForSeconds(delayBetweenBusSpawns);
+                            yield return new WaitForSeconds(delayBetweenBusSpawns);
                         }
                     }
                     else
@@ -1239,16 +1239,16 @@ namespace CustomerManagement
 
         public int GetSecondaryQueueCount()
         {
-             if (secondaryQueueSpots == null) return 0;
-             int count = 0;
-             foreach (var spotData in secondaryQueueSpots)
-             {
-                 if (spotData.IsOccupied) // Count occupied spots
-                 {
-                     count++;
-                 }
-             }
-             return count;
+            if (secondaryQueueSpots == null) return 0;
+            int count = 0;
+            foreach (var spotData in secondaryQueueSpots)
+            {
+                if (spotData.IsOccupied) // Count occupied spots
+                {
+                    count++;
+                }
+            }
+            return count;
         }
 
 
@@ -1272,6 +1272,16 @@ namespace CustomerManagement
             if (tiData == null) return false;
             // Use the null-conditional operator for safety if tiNpcsInsideStore is null
             return tiNpcsInsideStore?.Contains(tiData) ?? false;
+        }
+        
+        /// <summary>
+        /// Gets the list of currently active transient NpcStateMachineRunners.
+        /// This is intended for other managers to read the state of active customers.
+        /// </summary>
+        /// <returns>A list of active transient NpcStateMachineRunners.</returns>
+        public List<Game.NPC.NpcStateMachineRunner> GetActiveTransientRunners()
+        {
+            return activeCustomers;
         }
     }
 }

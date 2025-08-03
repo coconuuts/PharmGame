@@ -23,7 +23,7 @@ using Systems.Crafting; // Needed for DrugRecipeMappingSO
 using Systems.Inventory; // Needed for ItemDetails
 
 
-namespace Game.Prescriptions // Place the Prescription Manager in its own namespace
+namespace Game.Prescriptions // Place the Prescription Manager in its own namespaces
 {
     /// <summary>
     /// Manages the generation, assignment, and tracking of prescription orders.
@@ -185,33 +185,23 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
                waypointManager = WaypointManager.Instance;
                if (waypointManager == null) Debug.LogError("PrescriptionManager: WaypointManager instance not found!");
 
-               // --- NEW: Get PrescriptionGenerator reference ---
+               // --- Get PrescriptionGenerator reference ---
                if (prescriptionGenerator == null)
                {
-                   prescriptionGenerator = FindObjectOfType<PrescriptionGenerator>();
+                    prescriptionGenerator = PrescriptionGenerator.Instance;
                }
                if (prescriptionGenerator == null)
                {
-                   Debug.LogError("PrescriptionManager: PrescriptionGenerator component not found in scene! Cannot generate orders.", this);
-                   // Do NOT disable, random names and drugs can still be generated.
+                    // The error message is now more specific.
+                    Debug.LogError("PrescriptionManager: PrescriptionGenerator.Instance is null. Make sure a GameObject with the PrescriptionGenerator component exists in the scene.", this);
                }
-               // --- END NEW ---
-
 
                // --- Check Drug Recipe Mapping reference ---
                if (drugRecipeMapping == null)
                {
-                   Debug.LogError("PrescriptionManager: Drug Recipe Mapping SO reference is not assigned! Prescription delivery validation will not work.", this);
+                    Debug.LogError("PrescriptionManager: Drug Recipe Mapping SO reference is not assigned! Prescription delivery validation will not work.", this);
                }
-               // --- END NEW ---
 
-
-               // Subscribe to TimeManager events if available
-               if (timeManager != null)
-               {
-                    timeManager.OnSunset += HandleSunset;
-                    timeManager.OnSunrise += HandleSunrise;
-               }
                Debug.Log("PrescriptionManager: Start completed. Manager references acquired.");
           }
 
@@ -452,7 +442,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
              // Add all assigned TI orders (values from the dictionary)
              activeOrders.AddRange(assignedTiOrders.Values);
 
-             // Add all assigned Transient orders (values from the dictionary)
+             // Add all assigned Transient orders (values from the assigned dictionary)
              activeOrders.AddRange(assignedTransientOrders.Values);
 
              // Note: Ready orders are NOT included in this list, as they are considered fulfilled from the player's task perspective.
@@ -1123,25 +1113,18 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
 
         /// <summary>
         /// Simulates whether the prescription queue is full for inactive NPCs.
+        /// --- MODIFIED: Now correctly includes active transient NPCs in the count. ---
         /// </summary>
         public bool SimulateIsPrescriptionQueueFull()
         {
              // For simulation, we need to count both active NPCs in the queue states
              // AND inactive TI NPCs whose simulation state is BasicWaitForPrescription.
 
-             if (tiNpcManager == null)
+             if (tiNpcManager == null || customerManager == null) // Added customerManager check
              {
-                  Debug.LogError("PrescriptionManager: TiNpcManager is null! Cannot simulate prescription queue fullness.");
+                  Debug.LogError("PrescriptionManager: TiNpcManager or CustomerManager is null! Cannot simulate prescription queue fullness.");
                   return true; // Assume full as a safe fallback
              }
-
-             // Count active NPCs in PrescriptionQueue state
-             int activeQueueCount = 0;
-             // Need access to active Runners. CustomerManager tracks active Transient.
-             // TiNpcManager tracks active TI.
-             // Let's assume CustomerManager has a public list of *all* active Runners (Transient + TI).
-             // Or, iterate through TiNpcManager.GetActiveTiNpcs() and check their state.
-             // Let's iterate active TI and assume CustomerManager.activeCustomers is public for Transient.
 
              // Count active TI NPCs in PrescriptionQueue state
              int activeTiQueueCount = 0;
@@ -1157,15 +1140,18 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
                   }
              }
 
-             // Count active Transient NPCs in PrescriptionQueue state
+             // Count active Transient NPCs in PrescriptionQueue state using the new method
              int activeTransientQueueCount = 0;
-             // Assuming CustomerManager.activeCustomers is accessible (it's private in the provided code)
-             // If not accessible, CustomerManager would need a public method like GetActiveTransientRunners()
-             // For now, let's simplify and just count active TI in queue + inactive in basic wait.
-             // A full active transient count would require modifying CustomerManager.
+             List<NpcStateMachineRunner> transientRunners = customerManager.GetActiveTransientRunners();
+             foreach (var runner in transientRunners)
+             {
+                 if (runner != null && runner.GetCurrentState() != null && runner.GetCurrentState().HandledState.Equals(CustomerState.PrescriptionQueue))
+                 {
+                     activeTransientQueueCount++;
+                 }
+             }
 
-             activeQueueCount = activeTiQueueCount; // Simplified count for now
-
+             int activeQueueCount = activeTiQueueCount + activeTransientQueueCount; // Sum both active counts
 
              // Count inactive TI NPCs in BasicWaitForPrescription state
              int inactiveSimulatedQueueCount = 0;
@@ -1183,7 +1169,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
              // Compare total simulated count to the number of available queue spots
              bool isFull = totalSimulatedQueueCount >= (prescriptionQueueSpots?.Count ?? 0);
 
-             // Debug.Log($"SIM PrescriptionManager: Simulated Queue Status: Active in Queue: {activeQueueCount}, Inactive in BasicWait: {inactiveSimulatedQueueCount}, Total Simulated: {totalSimulatedQueueCount}, Max Spots: {prescriptionQueueSpots?.Count ?? 0}. IsFull: {isFull}"); // Too noisy
+             Debug.Log($"SIM PrescriptionManager: Simulated Queue Status: Active TI: {activeTiQueueCount}, Active Transient: {activeTransientQueueCount}, Inactive Sim: {inactiveSimulatedQueueCount}, Total: {totalSimulatedQueueCount}, Max: {prescriptionQueueSpots?.Count ?? 0}. IsFull: {isFull}"); // More detailed debug log
 
              return isFull;
         }

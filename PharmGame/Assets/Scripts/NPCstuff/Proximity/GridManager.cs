@@ -32,9 +32,9 @@ namespace Game.Spatial
         // let's calculate it dynamically based on position or require the caller to provide the old position.
         // Using old position in UpdateItemPosition is simpler and avoids modifying TiNpcData for grid internal state.
 
-        [Header("Debug Visualization")]
-        [Tooltip("Enable drawing the grid in the Scene view.")]
-        [SerializeField] private bool drawGridGizmos = true;
+        // [Header("Debug Visualization")]
+        // [Tooltip("Enable drawing the grid in the Scene view.")]
+        // [SerializeField] private bool drawGridGizmos = true;
         [Tooltip("Color of the grid lines.")]
         [SerializeField] private Color gridColor = Color.yellow;
 

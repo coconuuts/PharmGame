@@ -18,7 +18,7 @@ using Game.NPC.TI; // Needed for TiNpcData, TiNpcManager
 using Game.Prescriptions; // Needed for PrescriptionManager
 using Systems.Interaction; // Needed for IInteractable, InteractionManager // <-- MODIFIED using directive
 using Game.Interaction; // Needed for ObtainPrescription
-
+// Assuming UpgradeManager is accessible (e.g., global namespace or a 'using' is added)
 
 namespace Game.NPC.States // Context is closely related to states
 {
@@ -28,6 +28,7 @@ namespace Game.NPC.States // Context is closely related to states
     /// Passed to OnEnter, OnUpdate, OnExit methods.
     /// MODIFIED: Removed references to MultiInteractableManager. Kept ObtainPrescription.
     /// ADDED: Reference to CashierManager.
+    /// ADDED: Reference to UpgradeManager.
     /// </summary>
     public class NpcStateContext
     {
@@ -54,6 +55,8 @@ namespace Game.NPC.States // Context is closely related to states
         public PrescriptionManager PrescriptionManager;
         // --- Reference to CashierManager --- // <-- NEW FIELD
         public CashierManager CashierManager;
+        // --- Reference to UpgradeManager --- // <-- NEW FIELD
+        public UpgradeManager UpgradeManager;
         // --- END NEW ---
 
 

@@ -1,3 +1,5 @@
+// --- START OF FILE CustomerWaitingAtRegisterStateSO.cs ---
+
 using UnityEngine;
 using System.Collections;
 using System;
@@ -50,7 +52,14 @@ namespace Game.NPC.States
                 return;
             }
 
-            impatientDuration = Random.Range(impatientTimeRange.x, impatientTimeRange.y);
+            // MODIFIED for Music License
+            Vector2 localTimeRange = impatientTimeRange;
+            if (context.UpgradeManager != null && context.UpgradeManager.IsMusicLicensePurchased())
+            {
+                localTimeRange.x *= UpgradeManager.MusicLicensePatienceModifier;
+                localTimeRange.y *= UpgradeManager.MusicLicensePatienceModifier;
+            }
+            impatientDuration = Random.Range(localTimeRange.x, localTimeRange.y);
             impatientTimer = 0f;
             Debug.Log($"{context.NpcObject.name}: Starting impatience timer for {impatientDuration:F2} seconds.", context.NpcObject);
 
@@ -103,3 +112,4 @@ namespace Game.NPC.States
         }
     }
 }
+// --- END OF FILE CustomerWaitingAtRegisterStateSO.cs ---

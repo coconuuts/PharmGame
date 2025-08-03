@@ -30,10 +30,7 @@ namespace Game.Prescriptions // Place in the Prescription namespace
     /// </summary>
     public class PrescriptionGenerator : MonoBehaviour
     {
-        // --- Singleton Instance (Optional but common for managers) ---
-        // We'll make this a simple component for now as per the plan,
-        // but keep in mind it might become a singleton later if needed elsewhere.
-        // public static PrescriptionGenerator Instance { get; private set; } // Keep commented out if not needed as singleton
+        public static PrescriptionGenerator Instance { get; private set; }
 
 
         [Header("References")]
@@ -113,16 +110,17 @@ namespace Game.Prescriptions // Place in the Prescription namespace
 
         private void Awake()
         {
-            // If making this a singleton:
-            // if (Instance == null)
-            // {
-            //     Instance = this;
-            // }
-            // else
-            // {
-            //     Debug.LogWarning("PrescriptionGenerator: Duplicate instance found. Destroying this one.", this);
-            //     Destroy(gameObject);
-            // }
+            // --- SINGLETON INITIALIZATION LOGIC ---
+            if (Instance == null)
+            {
+                Instance = this;
+            }
+            else if (Instance != this)
+            {
+                Debug.LogWarning("PrescriptionGenerator: Duplicate instance found. Destroying this one.", this);
+                Destroy(gameObject);
+                return;
+            }
 
             Debug.Log("PrescriptionGenerator: Awake completed.");
         }
@@ -140,7 +138,7 @@ namespace Game.Prescriptions // Place in the Prescription namespace
                 // Do NOT disable, random names and drugs can still be generated.
             }
 
-            // --- NEW: Get reference to PrescriptionManager singleton ---
+            // --- Get reference to PrescriptionManager singleton ---
             if (prescriptionManager == null)
             {
                  prescriptionManager = PrescriptionManager.Instance;
@@ -150,7 +148,6 @@ namespace Game.Prescriptions // Place in the Prescription namespace
                 Debug.LogError("PrescriptionGenerator: PrescriptionManager instance not found or not assigned! Cannot ensure unique patient names.", this);
                 // This is a critical dependency for name uniqueness. Generation might produce duplicates.
             }
-            // --- END NEW ---
 
 
             // Populate the random names pool if it's not already populated

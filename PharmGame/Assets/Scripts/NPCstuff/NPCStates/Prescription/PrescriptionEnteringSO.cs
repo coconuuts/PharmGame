@@ -124,54 +124,64 @@ namespace Game.NPC.States // Place alongside other active states
             // Ensure movement is stopped before transitioning (Runner does this before calling OnReachedDestination, but defensive)
             context.MovementHandler?.StopMoving();
 
-            // --- NEW: Check if the order is already marked ready OR is the player's active task ---
+            // --- Get assigned order data (logic unchanged) ---
             PrescriptionOrder assignedOrder;
             bool hasOrder = false;
 
             if (context.Runner != null)
             {
-                 if (context.Runner.IsTrueIdentityNpc && context.TiData != null)
-                 {
-                      assignedOrder = context.TiData.assignedOrder; // Struct copy
-                      hasOrder = context.TiData.pendingPrescription; // Check the flag
-                 }
-                 else if (!context.Runner.IsTrueIdentityNpc)
-                 {
-                      assignedOrder = context.Runner.assignedOrderTransient; // Struct copy
-                      hasOrder = context.Runner.hasPendingPrescriptionTransient; // Check the flag
-                 } else {
-                     // Should not happen if entered this state correctly, but defensive
-                     Debug.LogWarning($"{context.NpcObject.name}: OnReachedDestination: Runner is TI but TiData is null or Runner is null! Cannot access assigned order data.", context.NpcObject);
-                     // Fallback to standard flow or exiting? Let's fallback to standard wait for now.
-                     hasOrder = false; // Treat as no order found for the check below
-                     assignedOrder = new PrescriptionOrder(); // Default struct
-                 }
+                if (context.Runner.IsTrueIdentityNpc && context.TiData != null)
+                {
+                    assignedOrder = context.TiData.assignedOrder; // Struct copy
+                    hasOrder = context.TiData.pendingPrescription; // Check the flag
+                }
+                else if (!context.Runner.IsTrueIdentityNpc)
+                {
+                    assignedOrder = context.Runner.assignedOrderTransient; // Struct copy
+                    hasOrder = context.Runner.hasPendingPrescriptionTransient; // Check the flag
+                } else {
+                    Debug.LogWarning($"{context.NpcObject.name}: OnReachedDestination: Runner is TI but TiData is null or Runner is null! Cannot access assigned order data.", context.NpcObject);
+                    hasOrder = false;
+                    assignedOrder = new PrescriptionOrder();
+                }
             } else {
-                 Debug.LogError($"{context.NpcObject.name}: OnReachedDestination: Runner is null! Cannot access assigned order data.", context.NpcObject);
-                 // Fallback to standard flow or exiting? Let's fallback to standard wait for now.
-                 hasOrder = false; // Treat as no order found for the check below
-                 assignedOrder = new PrescriptionOrder(); // Default struct
+                Debug.LogError($"{context.NpcObject.name}: OnReachedDestination: Runner is null! Cannot access assigned order data.", context.NpcObject);
+                hasOrder = false;
+                assignedOrder = new PrescriptionOrder();
             }
 
-            // Get the PlayerPrescriptionTracker instance
-            // Assuming PlayerPrescriptionTracker is a singleton or findable via FindObjectOfType
-            PlayerPrescriptionTracker playerTracker = FindObjectOfType<PlayerPrescriptionTracker>();
+            // --- REFACTORED: Get the PlayerPrescriptionTracker instance ---
+            // OLD: PlayerPrescriptionTracker playerTracker = FindObjectOfType<PlayerPrescriptionTracker>();
+            // NEW: Use the high-performance singleton instance instead of searching the scene.
+            PlayerPrescriptionTracker playerTracker = PlayerPrescriptionTracker.Instance;
+
+            // The rest of the logic can remain the same. The ?. null-conditional operator
+            // already handles the case where the tracker might not exist in the scene.
             PrescriptionOrder? currentPlayerActiveOrder = playerTracker?.ActivePrescriptionOrder;
 
             // Determine if the order is ready OR is the player's active task
             bool isOrderReadyOrActive = false;
-            if (hasOrder) // Only perform checks if the NPC actually has an assigned order
+            if (hasOrder)
             {
                 bool isMarkedReady = context.PrescriptionManager != null && context.PrescriptionManager.IsOrderReady(assignedOrder.patientName);
-                bool isActiveTask = currentPlayerActiveOrder.HasValue && currentPlayerActiveOrder.Value.Equals(assignedOrder);
+                
+                // Add a check to ensure playerTracker is not null before accessing its properties
+                bool isActiveTask = false;
+                if (playerTracker != null)
+                {
+                    isActiveTask = currentPlayerActiveOrder.HasValue && currentPlayerActiveOrder.Value.Equals(assignedOrder);
+                }
+                else
+                {
+                    Debug.LogWarning("PlayerPrescriptionTracker.Instance is null. Cannot check for player's active task.", context.NpcObject);
+                }
 
                 isOrderReadyOrActive = isMarkedReady || isActiveTask;
 
                 Debug.Log($"{context.NpcObject.name}: Order for '{assignedOrder.patientName}' arrival check: IsMarkedReady={isMarkedReady}, IsActiveTask={isActiveTask}. Result: IsOrderReadyOrActive={isOrderReadyOrActive}.", context.NpcObject);
             } else {
-                 Debug.LogWarning($"{context.NpcObject.name}: Arrived at claim spot but hasNoOrder. Skipping ready/active check.", context.NpcObject);
+                Debug.LogWarning($"{context.NpcObject.name}: Arrived at claim spot but hasNoOrder. Skipping ready/active check.", context.NpcObject);
             }
-
 
             if (isOrderReadyOrActive)
             {
@@ -185,7 +195,6 @@ namespace Game.NPC.States // Place alongside other active states
                 Debug.Log($"{context.NpcObject.name}: Order for '{assignedOrder.patientName}' is NOT ready and NOT active task. Transitioning to WaitingForPrescription.", context.NpcObject);
                 context.TransitionToState(CustomerState.WaitingForPrescription);
             }
-            // --- END NEW ---
         }
 
         public override void OnExit(NpcStateContext context)

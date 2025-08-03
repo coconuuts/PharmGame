@@ -1,5 +1,7 @@
 // --- START OF FILE NpcStateMachineRunner.cs ---
 
+// --- START OF FILE NpcStateMachineRunner.cs ---
+
 using UnityEngine;
 using System.Collections.Generic;
 using System.Collections;
@@ -31,6 +33,7 @@ namespace Game.NPC
      /// MODIFIED: Removed caching for MultiInteractableManager. Kept ObtainPrescription caching.
      /// ADDED: Reference to CashierManager in context.
      /// REFACTORED: Active TI NPC grid position update logic now calls TiNpcSimulationManager.
+     /// ADDED: Reference to UpgradeManager and populates it in the context.
      /// </summary>
      [RequireComponent(typeof(NpcMovementHandler))] // Ensure handlers are attached
      [RequireComponent(typeof(NpcAnimationHandler))]
@@ -69,6 +72,8 @@ namespace Game.NPC
           private PrescriptionManager prescriptionManager;
           // Reference to the CashierManager // <-- NEW FIELD
           private CashierManager cashierManager;
+          // Reference to the UpgradeManager // <-- NEW FIELD
+          private UpgradeManager upgradeManager;
           // --- END NEW ---
 
 
@@ -230,7 +235,7 @@ namespace Game.NPC
                     PathFollowingHandler = npcPathFollowingHandler,
                     // REMOVED: MultiInteractableManager = multiInteractableManager, // No longer populate this
                     ObtainPrescription = obtainPrescription // <-- NEW: Inject cached reference
-                    // Managers (Customer, TI, Prescription, Cashier) and TiData will be populated in Start/Update/TransitionToState
+                    // Managers (Customer, TI, Prescription, Cashier, Upgrade) and TiData will be populated in Start/Update/TransitionToState
                };
 
                _hasReachedCurrentDestination = true;
@@ -277,6 +282,14 @@ namespace Game.NPC
                // --- GET CashierManager reference --- // <-- NEW GET
                cashierManager = CashierManager.Instance;
                if (cashierManager == null) Debug.LogWarning($"NpcStateMachineRunner ({gameObject.name}): CashierManager instance not found! Cashier functionality will not work. Ensure CashierManager is in the scene.", this);
+               // --- END NEW GET ---
+
+               // --- GET UpgradeManager reference --- // <-- NEW GET
+               upgradeManager = UpgradeManager.Instance;
+               if (upgradeManager == null)
+               {
+                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): UpgradeManager instance not found! Upgrade-based effects will not work.", this);
+               }
                // --- END NEW GET ---
 
 
@@ -350,7 +363,8 @@ namespace Game.NPC
                     _stateContext.Manager = Manager;
                     _stateContext.TiNpcManager = tiNpcManager;
                     _stateContext.PrescriptionManager = prescriptionManager;
-                    _stateContext.CashierManager = cashierManager; // <-- NEW: Populate CashierManager
+                    _stateContext.CashierManager = cashierManager;
+                    _stateContext.UpgradeManager = upgradeManager; // <-- NEW: Populate UpgradeManager
                     _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                     _stateContext.Runner = this;
                     _stateContext.InterruptionHandler = interruptionHandler;
@@ -491,7 +505,8 @@ namespace Game.NPC
                     _stateContext.Manager = Manager;
                     _stateContext.TiNpcManager = tiNpcManager;
                     _stateContext.PrescriptionManager = prescriptionManager;
-                    _stateContext.CashierManager = cashierManager; // <-- NEW: Populate CashierManager
+                    _stateContext.CashierManager = cashierManager;
+                    _stateContext.UpgradeManager = upgradeManager; // <-- NEW: Populate UpgradeManager
                     _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                     _stateContext.Runner = this;
                     _stateContext.InterruptionHandler = interruptionHandler;
@@ -543,7 +558,8 @@ namespace Game.NPC
                          _stateContext.Manager = Manager;
                          _stateContext.TiNpcManager = tiNpcManager;
                          _stateContext.PrescriptionManager = prescriptionManager;
-                         _stateContext.CashierManager = cashierManager; // <-- NEW: Populate CashierManager
+                         _stateContext.CashierManager = cashierManager;
+                         _stateContext.UpgradeManager = upgradeManager; // <-- NEW: Populate UpgradeManager
                          _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                          _stateContext.Runner = this;
                          _stateContext.InterruptionHandler = interruptionHandler;
@@ -562,7 +578,8 @@ namespace Game.NPC
                     _stateContext.Manager = Manager;
                     _stateContext.TiNpcManager = tiNpcManager;
                     _stateContext.PrescriptionManager = prescriptionManager;
-                    _stateContext.CashierManager = cashierManager; // <-- NEW: Populate CashierManager
+                    _stateContext.CashierManager = cashierManager;
+                    _stateContext.UpgradeManager = upgradeManager; // <-- NEW: Populate UpgradeManager
                     _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                     _stateContext.Runner = this;
                     _stateContext.InterruptionHandler = interruptionHandler;
@@ -593,7 +610,7 @@ namespace Game.NPC
                }
 
                this.Manager = manager; // Set Manager reference
-               // Other manager references (TI, Prescription, Cashier) are obtained in Start
+               // Other manager references (TI, Prescription, Cashier, Upgrade) are obtained in Start
 
                ResetRunnerTransientData(); // Resets handlers and temporary path fields
 
@@ -718,11 +735,12 @@ namespace Game.NPC
                {
                     Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Transitioning TI NPC '{tiData.Id}' to starting state '{startingState.name}'.");
 
-                    // Populate TiData and TiNpcManager in context BEFORE TransitionToState
+                    // Populate TiData and Managers in context BEFORE TransitionToState
                     _stateContext.TiData = TiData;
                     _stateContext.TiNpcManager = tiNpcManager;
                     _stateContext.PrescriptionManager = prescriptionManager;
-                    _stateContext.CashierManager = cashierManager; // <-- NEW: Populate CashierManager
+                    _stateContext.CashierManager = cashierManager;
+                    _stateContext.UpgradeManager = upgradeManager; // <-- NEW: Populate UpgradeManager
                     // REMOVED: _stateContext.MultiInteractableManager = MultiInteractableManager; // No longer populate this
                     _stateContext.ObtainPrescription = ObtainPrescription; // <-- NEW: Populate cached reference
 
@@ -733,11 +751,12 @@ namespace Game.NPC
                {
                     // This implies GetPrimaryStartingStateSO also failed after override lookup.
                     Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): No valid starting state found after override and primary lookup for TI NPC '{tiData.Id}'. Cannot find any valid starting state. Transitioning to ReturningToPool (for pooling).", this);
-                    // Populate TiData and TiNpcManager in context BEFORE TransitionToState
+                    // Populate TiData and Managers in context BEFORE TransitionToState
                     _stateContext.TiData = TiData;
                     _stateContext.TiNpcManager = tiNpcManager;
                     _stateContext.PrescriptionManager = prescriptionManager;
-                    _stateContext.CashierManager = cashierManager; // <-- NEW: Populate CashierManager
+                    _stateContext.CashierManager = cashierManager;
+                    _stateContext.UpgradeManager = upgradeManager; // <-- NEW: Populate UpgradeManager
                     // REMOVED: _stateContext.MultiInteractableManager = MultiInteractableManager; // No longer populate this
                     _stateContext.ObtainPrescription = ObtainPrescription; // <-- NEW: Populate cached reference
                     TransitionToState(GetStateSO(GeneralState.ReturningToPool));
@@ -900,7 +919,8 @@ namespace Game.NPC
                     _stateContext.Manager = Manager;
                     _stateContext.TiNpcManager = tiNpcManager;
                     _stateContext.PrescriptionManager = prescriptionManager;
-                    _stateContext.CashierManager = cashierManager; // <-- NEW: Populate CashierManager
+                    _stateContext.CashierManager = cashierManager;
+                    _stateContext.UpgradeManager = upgradeManager; // <-- NEW: Populate UpgradeManager
                     _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                     _stateContext.Runner = this;
                     _stateContext.InterruptionHandler = interruptionHandler;
@@ -928,7 +948,8 @@ namespace Game.NPC
                _stateContext.Manager = Manager;
                _stateContext.TiNpcManager = tiNpcManager;
                _stateContext.PrescriptionManager = prescriptionManager;
-               _stateContext.CashierManager = cashierManager; // <-- NEW: Populate CashierManager
+               _stateContext.CashierManager = cashierManager;
+               _stateContext.UpgradeManager = upgradeManager; // <-- NEW: Populate UpgradeManager
                _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                _stateContext.Runner = this;
                _stateContext.InterruptionHandler = interruptionHandler;
@@ -1294,3 +1315,4 @@ namespace Game.NPC
           }
      }
 }
+// --- END OF FILE NpcStateMachineRunner.cs ---

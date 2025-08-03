@@ -1,5 +1,7 @@
 // --- START OF FILE UpgradeManager.cs ---
 
+// --- START OF FILE UpgradeManager.cs ---
+
 using UnityEngine;
 using System.Collections.Generic;
 using System; // Needed for Action
@@ -14,9 +16,15 @@ using System.Linq; // Needed for ToHashSet(), FirstOrDefault
     /// tracking purchased upgrades, and dispatching an event when an upgrade
     /// purchase is attempted via the UI.
     /// MODIFIED: Added tracking and checking for purchased upgrades.
+    /// ADDED: Constant and helper method for the "Music License" upgrade.
     /// </summary>
     public class UpgradeManager : MonoBehaviour
     {
+        // --- Public Configuration ---
+        [Header("Passive Effect Modifiers")]
+        [Tooltip("The multiplier applied to customer impatience timers when the 'Music License' is purchased. E.g., 1.5 means 50% longer wait time.")]
+        public const float MusicLicensePatienceModifier = 1.5f; // Customers will wait 50% longer
+
         // --- Singleton Instance ---
         public static UpgradeManager Instance { get; private set; }
 
@@ -33,6 +41,10 @@ using System.Linq; // Needed for ToHashSet(), FirstOrDefault
         // Stores the UpgradeDetailsSO references directly.
         // NOTE: For persistent saving/loading, you'd likely save/load the uniqueID string instead.
         private HashSet<UpgradeDetailsSO> purchasedUpgrades;
+
+        // --- Cached Upgrade References for Performance ---
+        private UpgradeDetailsSO musicLicenseSO;
+
 
         // --- Events ---
         /// <summary>
@@ -67,6 +79,13 @@ using System.Linq; // Needed for ToHashSet(), FirstOrDefault
                  // purchasedUpgrades = loadedData.purchasedUpgradeIDs.Select(id => FindUpgradeDetailsByID(id)).Where(so => so != null).ToHashSet();
                  // Debug.Log($"UpgradeManager: Loaded {purchasedUpgrades.Count} purchased upgrades.");
                  // --- End Future Load ---
+
+                 // --- Cache specific upgrade SOs for performance ---
+                 musicLicenseSO = GetUpgradeDetailsByName("Music License");
+                 if (musicLicenseSO == null)
+                 {
+                     Debug.LogWarning("UpgradeManager: 'Music License' SO not found in the AllAvailableUpgrades list. The upgrade effect will not work.", this);
+                 }
 
             }
             else
@@ -139,6 +158,16 @@ using System.Linq; // Needed for ToHashSet(), FirstOrDefault
             }
             // Use null-conditional operator for safety if purchasedUpgrades somehow isn't initialized
             return purchasedUpgrades?.Contains(upgrade) ?? false;
+        }
+
+        /// <summary>
+        /// Checks if the 'Music License' upgrade has been purchased using a cached reference.
+        /// </summary>
+        /// <returns>True if the upgrade is owned, false otherwise.</returns>
+        public bool IsMusicLicensePurchased()
+        {
+            if (musicLicenseSO == null) return false;
+            return IsUpgradePurchased(musicLicenseSO);
         }
 
         /// <summary>

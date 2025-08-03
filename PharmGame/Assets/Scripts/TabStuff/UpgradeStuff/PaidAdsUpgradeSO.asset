@@ -10,10 +10,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 9094ec7ae74116344920c5585e5ad613, type: 3}
-  m_Name: UpgradeDetailsTest
+  m_Name: PaidAdsUpgradeSO
   m_EditorClassIdentifier: 
   upgradeName: Paid Advertisements
-  upgradeDescription: This is a description of the upgrade.
+  upgradeDescription: Paid Advertisements
   cost: 10
   requiredLevel: 0
   uniqueID: f59fa2a9-f7a5-4359-85db-3bff2fe64ed6

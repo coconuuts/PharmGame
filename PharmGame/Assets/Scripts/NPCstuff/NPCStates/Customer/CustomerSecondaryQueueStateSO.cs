@@ -27,10 +27,16 @@ namespace Game.NPC.States
         {
             base.OnEnter(context); // Call base OnEnter (logs entry, enables Agent)
 
-            // --- Impatience Timer Setup (Migration) ---
-            impatientDuration = Random.Range(impatientTimeRange.x, impatientTimeRange.y); // Use SO field
+            // --- Impatience Timer Setup (Migration & MODIFIED for Music License) ---
+            Vector2 localTimeRange = impatientTimeRange;
+            if (context.UpgradeManager != null && context.UpgradeManager.IsMusicLicensePurchased())
+            {
+                localTimeRange.x *= UpgradeManager.MusicLicensePatienceModifier;
+                localTimeRange.y *= UpgradeManager.MusicLicensePatienceModifier;
+            }
+            impatientDuration = Random.Range(localTimeRange.x, localTimeRange.y);
             impatientTimer = 0f;
-            // Use context properties now
+            
             Debug.Log($"{context.NpcObject.name}: Entering {name}. Starting impatience timer for {impatientDuration:F2} seconds at spot {context.AssignedQueueSpotIndex} in {context.CurrentQueueMoveType} queue.", context.NpcObject);
 
             // Note: Play waiting animation

@@ -27,7 +27,8 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
     [SerializeField] private Collider interactionTriggerCollider; // Assign your trigger collider here
 
     [Tooltip("Should this interactable be enabled by default when registered?")]
-    [SerializeField] private bool enableOnStart = false; // This field is now less relevant, controlled by Customer/Cashier logic
+    [SerializeField] private bool enableOnStart = false; 
+    public bool EnableOnStart => enableOnStart;
 
 
     [Header("Prompt Settings")]

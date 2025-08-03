@@ -39,17 +39,23 @@ public class PlayerUIPopups : MonoBehaviour
     [Tooltip("List of all configurable UI popups.")]
     [SerializeField] private List<UIPopupConfig> popups = new List<UIPopupConfig>();
 
-    private static PlayerUIPopups instance; // Singleton instance
+    // --- REFACTORED SINGLETON ---
+    // This public static property provides access to the singleton instance.
+    // The 'private set' ensures that only this class can assign the instance.
+    // This is much faster and safer than using FindObjectOfType.
+    public static PlayerUIPopups Instance { get; private set; }
 
     private void Awake()
     {
-        // Singleton pattern
-        if (instance == null)
+        // --- SINGLETON INITIALIZATION ---
+        // This is the core of the robust singleton pattern.
+        // It guarantees 'Instance' is set here and only here.
+        if (Instance == null)
         {
-            instance = this;
+            Instance = this;
             // Optional: DontDestroyOnLoad(gameObject); // Uncomment if you need this object across scenes
         }
-        else if (instance != this)
+        else if (Instance != this)
         {
             Debug.LogWarning("Multiple PlayerUIPopups instances found. Destroying duplicate.", gameObject);
             Destroy(gameObject); // Destroy duplicate
@@ -73,23 +79,8 @@ public class PlayerUIPopups : MonoBehaviour
         }
     }
 
-    // Public static property to access the singleton instance
-    public static PlayerUIPopups Instance
-    {
-        get
-        {
-            if (instance == null)
-            {
-                // Try to find an existing instance if it's null (might happen if accessed before Awake)
-                instance = FindObjectOfType<PlayerUIPopups>();
-                if (instance == null)
-                {
-                    Debug.LogError("PlayerUIPopups Instance is null and none was found in the scene. Make sure there is a PlayerUIPopups GameObject.");
-                }
-            }
-            return instance;
-        }
-    }
+    // The old 'Instance' property with FindObjectOfType has been completely removed.
+    // The new property above handles everything.
 
     /// <summary>
     /// Finds a popup configuration by its unique name.
