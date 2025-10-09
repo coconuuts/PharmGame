@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d9c72e01113f4e84cb78436fbc4ee80d, type: 3}
+  m_Name: coughOTC
+  m_EditorClassIdentifier: 
+  Name: Cough
+  maxStack: 20
+  Id:
+    Part1: 1854761654
+    Part2: 1250925119
+    Part3: 1882595473
+    Part4: 1865827432
+  Icon: {fileID: -382705441, guid: a29ee311d49731c4791e673f09b45b92, type: 3}
+  Description: 
+  prefab3D: {fileID: 3314440046390966434, guid: 53d32ad0b2036bc4991977271081ef59, type: 3}
+  shelfArrangement: 0
+  itemLabel: 1
+  price: 5
+  maxHealth: 1
+  usageLogic: 3
+  defaultVariableHealthLoss: 1
+  usageEventsPerHealthLoss: 1
+  healthLossPerEventThreshold: 1
+  magazineSize: 0
+  reloadTime: 0
+  allowedUsageTriggers: 
+  primaryUsageTrigger: 0

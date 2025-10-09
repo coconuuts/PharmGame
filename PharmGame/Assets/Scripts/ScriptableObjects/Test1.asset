@@ -27,7 +27,7 @@ MonoBehaviour:
   price: 5
   maxHealth: 100
   usageLogic: 0
-  defaultVariableHealthLoss: 5
+  defaultVariableHealthLoss: 6
   usageEventsPerHealthLoss: 3
   healthLossPerEventThreshold: 5
   magazineSize: 5

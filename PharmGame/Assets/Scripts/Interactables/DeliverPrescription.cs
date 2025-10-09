@@ -199,13 +199,9 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
                 // No need to check player inventory or transfer the item here.
                 // Payout is the full amount. isDeliveredItemPerfectMatch is true.
 
-                // --- NEW: Unmark the order as ready in the PrescriptionManager ---
+                // --- Unmark the order as ready in the PrescriptionManager ---
                 prescriptionManager.UnmarkOrderReady(npcAssignedOrder.patientName);
                 Debug.Log($"DeliverPrescription ({gameObject.name}): Unmarked order for '{npcAssignedOrder.patientName}' as ready.", this);
-                // --- END NEW ---
-
-                PlayerUIPopups.Instance?.ShowPopup("Delivery Complete", $"Order for {npcAssignedOrder.patientName} delivered!"); // Provide feedback
-
             }
             else // <--- Scenario: Order was NOT pre-marked ready (standard delivery flow) ---
             {
@@ -351,16 +347,11 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
                     }
 
                     // --- Apply penalty and set feedback based on perfect match ---
-                    if (isDeliveredItemPerfectMatch)
-                    {
-                        Debug.Log($"Perfect delivery to {npcAssignedOrder.patientName}. Payout: ${payout:F2}");
-                        PlayerUIPopups.Instance?.ShowPopup("Delivery Complete", $"Order for {npcAssignedOrder.patientName} delivered!"); // Provide feedback
-                    }
-                    else
+                    if (!isDeliveredItemPerfectMatch)
                     {
                         // Apply penalty
                         payout *= imperfectDeliveryPayoutMultiplier;
-                        PlayerUIPopups.Instance?.ShowPopup("Delivery Complete", $"Prescription not accurate! Payout reduced."); // Provide feedback
+                        PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", $"Prescription not accurate! Payout reduced."); // Provide feedback
                         Debug.Log($"Imperfect delivery to {npcAssignedOrder.patientName}. Payout: ${payout:F2} (Reduced).");
                     }
                 }

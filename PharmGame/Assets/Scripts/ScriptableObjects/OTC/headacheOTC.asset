@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d9c72e01113f4e84cb78436fbc4ee80d, type: 3}
+  m_Name: headacheOTC
+  m_EditorClassIdentifier: 
+  Name: Headache
+  maxStack: 20
+  Id:
+    Part1: 781154612
+    Part2: 1302641108
+    Part3: 3476506271
+    Part4: 1000851056
+  Icon: {fileID: -1448844151, guid: a31c5d640872c9d4195fa6879d496f0d, type: 3}
+  Description: 
+  prefab3D: {fileID: 2990664251602016784, guid: 67bcc22d10b395540b550970eca71572, type: 3}
+  shelfArrangement: 0
+  itemLabel: 1
+  price: 5
+  maxHealth: 1
+  usageLogic: 3
+  defaultVariableHealthLoss: 1
+  usageEventsPerHealthLoss: 1
+  healthLossPerEventThreshold: 1
+  magazineSize: 0
+  reloadTime: 0
+  allowedUsageTriggers: 
+  primaryUsageTrigger: 0

@@ -17,3 +17,11 @@ MonoBehaviour:
     prefab3D: {fileID: 5829944590135129764, guid: 18b8e46e780aa064e876b6d593d1a4ad, type: 3}
   - itemDetails: {fileID: 11400000, guid: 9607fa79f6d13da4288857b89316ab1c, type: 2}
     prefab3D: {fileID: 5873640265792693031, guid: d3a99bf08e077074b9ff2b0ada0e8995, type: 3}
+  - itemDetails: {fileID: 11400000, guid: 983207705f2b6774f83f87e97cfd2896, type: 2}
+    prefab3D: {fileID: 8956207752713151628, guid: dbeb02ca7e4aba24f8a4ea07a82d48a9, type: 3}
+  - itemDetails: {fileID: 11400000, guid: ad703abeffc74eb47a3d284c516d516c, type: 2}
+    prefab3D: {fileID: 2990664251602016784, guid: 67bcc22d10b395540b550970eca71572, type: 3}
+  - itemDetails: {fileID: 11400000, guid: 177e018398168ab4a894dcc6e65d2fa2, type: 2}
+    prefab3D: {fileID: 7483337772949908439, guid: 8cbf69deab65f1d42b4f6af442cb016b, type: 3}
+  - itemDetails: {fileID: 11400000, guid: d98f574e28bc7f64ba374355565c8a1a, type: 2}
+    prefab3D: {fileID: 3314440046390966434, guid: 53d32ad0b2036bc4991977271081ef59, type: 3}

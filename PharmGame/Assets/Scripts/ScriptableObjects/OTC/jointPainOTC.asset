@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d9c72e01113f4e84cb78436fbc4ee80d, type: 3}
+  m_Name: jointPainOTC
+  m_EditorClassIdentifier: 
+  Name: Joint
+  maxStack: 20
+  Id:
+    Part1: 4102906625
+    Part2: 1091926960
+    Part3: 2567983534
+    Part4: 784655295
+  Icon: {fileID: -2019751194, guid: 80e9d605bd3c7964fabb2f1ffa1588e3, type: 3}
+  Description: 
+  prefab3D: {fileID: 7483337772949908439, guid: 8cbf69deab65f1d42b4f6af442cb016b, type: 3}
+  shelfArrangement: 0
+  itemLabel: 1
+  price: 5
+  maxHealth: 1
+  usageLogic: 3
+  defaultVariableHealthLoss: 1
+  usageEventsPerHealthLoss: 1
+  healthLossPerEventThreshold: 1
+  magazineSize: 0
+  reloadTime: 0
+  allowedUsageTriggers: 
+  primaryUsageTrigger: 0
