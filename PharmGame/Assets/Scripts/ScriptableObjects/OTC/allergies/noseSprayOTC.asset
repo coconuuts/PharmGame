@@ -1,0 +1,37 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d9c72e01113f4e84cb78436fbc4ee80d, type: 3}
+  m_Name: noseSprayOTC
+  m_EditorClassIdentifier: 
+  Name: Stuffy Nose Spray
+  maxStack: 20
+  Id:
+    Part1: 1645328182
+    Part2: 1193447398
+    Part3: 970169779
+    Part4: 2841278137
+  Icon: {fileID: -640109696, guid: aae4fdbba9f5e9f47a6d0ac9728ed1e6, type: 3}
+  Description: 
+  prefab3D: {fileID: 8004673920979631823, guid: 3d8f67f5de170ac4a8ebc50990e2f31b, type: 3}
+  shelfArrangement: 0
+  itemLabel: 1
+  itemTier: 2
+  price: 10
+  maxHealth: 1
+  usageLogic: 3
+  defaultVariableHealthLoss: 1
+  usageEventsPerHealthLoss: 1
+  healthLossPerEventThreshold: 1
+  magazineSize: 0
+  reloadTime: 0
+  allowedUsageTriggers: 00000000
+  primaryUsageTrigger: 0

@@ -10,21 +10,22 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: d9c72e01113f4e84cb78436fbc4ee80d, type: 3}
-  m_Name: coughOTC
+  m_Name: dustBusterOTC
   m_EditorClassIdentifier: 
-  Name: Cough
+  Name: Dust Clearing Caps
   maxStack: 20
   Id:
-    Part1: 1854761654
-    Part2: 1250925119
-    Part3: 1882595473
-    Part4: 1865827432
-  Icon: {fileID: -382705441, guid: a29ee311d49731c4791e673f09b45b92, type: 3}
+    Part1: 1294462287
+    Part2: 1269803880
+    Part3: 2975639208
+    Part4: 1296640271
+  Icon: {fileID: -1335748590, guid: 322d35da5812c214e8ee62e11c844e71, type: 3}
   Description: 
-  prefab3D: {fileID: 3314440046390966434, guid: 53d32ad0b2036bc4991977271081ef59, type: 3}
+  prefab3D: {fileID: 4295625393361316739, guid: 0803a5c303bcdec428566c0a0c4a0642, type: 3}
   shelfArrangement: 0
   itemLabel: 1
-  price: 5
+  itemTier: 2
+  price: 10
   maxHealth: 1
   usageLogic: 3
   defaultVariableHealthLoss: 1
@@ -32,5 +33,5 @@ MonoBehaviour:
   healthLossPerEventThreshold: 1
   magazineSize: 0
   reloadTime: 0
-  allowedUsageTriggers: 
+  allowedUsageTriggers: 00000000
   primaryUsageTrigger: 0

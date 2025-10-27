@@ -1,0 +1,37 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d9c72e01113f4e84cb78436fbc4ee80d, type: 3}
+  m_Name: acneBusterOTC
+  m_EditorClassIdentifier: 
+  Name: Acne Buster
+  maxStack: 20
+  Id:
+    Part1: 2488065615
+    Part2: 1143748569
+    Part3: 3904542139
+    Part4: 3381263976
+  Icon: {fileID: 579059872, guid: 3d479f505bde9f14a9e0b94c8d90177f, type: 3}
+  Description: 
+  prefab3D: {fileID: 8812141316349715181, guid: 38043a85b8e263341a90048944743165, type: 3}
+  shelfArrangement: 0
+  itemLabel: 1
+  itemTier: 3
+  price: 10
+  maxHealth: 1
+  usageLogic: 3
+  defaultVariableHealthLoss: 1
+  usageEventsPerHealthLoss: 1
+  healthLossPerEventThreshold: 1
+  magazineSize: 0
+  reloadTime: 0
+  allowedUsageTriggers: 00000000
+  primaryUsageTrigger: 0

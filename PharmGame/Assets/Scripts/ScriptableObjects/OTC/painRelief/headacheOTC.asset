@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d9c72e01113f4e84cb78436fbc4ee80d, type: 3}
   m_Name: headacheOTC
   m_EditorClassIdentifier: 
-  Name: Headache
+  Name: Headache Relief
   maxStack: 20
   Id:
     Part1: 781154612
@@ -24,7 +24,8 @@ MonoBehaviour:
   prefab3D: {fileID: 2990664251602016784, guid: 67bcc22d10b395540b550970eca71572, type: 3}
   shelfArrangement: 0
   itemLabel: 1
-  price: 5
+  itemTier: 1
+  price: 10
   maxHealth: 1
   usageLogic: 3
   defaultVariableHealthLoss: 1

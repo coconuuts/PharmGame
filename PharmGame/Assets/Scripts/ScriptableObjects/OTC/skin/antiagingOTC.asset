@@ -1,0 +1,37 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d9c72e01113f4e84cb78436fbc4ee80d, type: 3}
+  m_Name: antiagingOTC
+  m_EditorClassIdentifier: 
+  Name: Antiaging Serum
+  maxStack: 20
+  Id:
+    Part1: 2696127543
+    Part2: 1155028230
+    Part3: 197308801
+    Part4: 484947603
+  Icon: {fileID: -78613136, guid: 7e739f5f11859c74a905120125e87820, type: 3}
+  Description: 
+  prefab3D: {fileID: 423694086744306341, guid: ac49b5f67b8a239439ef1e1cc72c1379, type: 3}
+  shelfArrangement: 0
+  itemLabel: 1
+  itemTier: 3
+  price: 10
+  maxHealth: 1
+  usageLogic: 3
+  defaultVariableHealthLoss: 1
+  usageEventsPerHealthLoss: 1
+  healthLossPerEventThreshold: 1
+  magazineSize: 0
+  reloadTime: 0
+  allowedUsageTriggers: 00000000
+  primaryUsageTrigger: 0

@@ -2086,6 +2086,9 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 1818646fb3ab69d47b0182235aeb9521, type: 2}
   - {fileID: 11400000, guid: e8d12fe0b4e7b9744a5f2b1ddf084b37, type: 2}
   - {fileID: 11400000, guid: 637888bc61293dd43a9e9eaffb9bc025, type: 2}
+  - {fileID: 11400000, guid: 158b48301badce24dab1464d79758d83, type: 2}
+  - {fileID: 11400000, guid: c746a310dd1c00e4ea201137a2102a6f, type: 2}
+  - {fileID: 11400000, guid: a77b510afd865ca408a5421f65328169, type: 2}
 --- !u!114 &99645961
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -16352,8 +16355,8 @@ MonoBehaviour:
   npcPrefabs:
   - {fileID: 4394407753789290286, guid: 488534cc76898354d8320c55d1770728, type: 3}
   maxCustomersInStore: 7
-  minSpawnInterval: 10
-  maxSpawnInterval: 15
+  minSpawnInterval: 28
+  maxSpawnInterval: 30
   _busArrivalInterval: 75
   npcsPerBus: 3
   initialBusDelay: 60
@@ -32543,6 +32546,31 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b78519075dcef054d84e068dd9d647ea, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!114 &1579874860
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1579874844}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 45e16d17fb7e4a5439ae8b25cf1d3cc3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  <Id>k__BackingField:
+    Part1: 2112927545
+    Part2: 1231501270
+    Part3: 708794782
+    Part4: 1078506315
+  data:
+    <Id>k__BackingField:
+      Part1: 0
+      Part2: 0
+      Part3: 0
+      Part4: 0
+    position: {x: 0, y: 0, z: 0}
+    rotation: {x: 0, y: 0, z: 0, w: 0}
 --- !u!1 &1580117456
 GameObject:
   m_ObjectHideFlags: 0
@@ -46333,7 +46361,10 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 2757687715121981787, guid: 8202459e60c16e64a96afbd191a02aa8, type: 3}
       insertIndex: -1
       addedObject: {fileID: 262888877}
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 5090654061441059079, guid: 8202459e60c16e64a96afbd191a02aa8, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1579874860}
   m_SourcePrefab: {fileID: 100100000, guid: 8202459e60c16e64a96afbd191a02aa8, type: 3}
 --- !u!33 &4045481823221808124
 MeshFilter:
@@ -49693,6 +49724,29 @@ MonoBehaviour:
   - {fileID: 11400000, guid: ad703abeffc74eb47a3d284c516d516c, type: 2}
   - {fileID: 11400000, guid: 177e018398168ab4a894dcc6e65d2fa2, type: 2}
   - {fileID: 11400000, guid: d98f574e28bc7f64ba374355565c8a1a, type: 2}
+  - {fileID: 11400000, guid: d84351c01038baf4fbbd278e900b6f98, type: 2}
+  - {fileID: 11400000, guid: b848cb1c5b097e947ac672f4caa13d61, type: 2}
+  - {fileID: 11400000, guid: 1ab82ec3767d82644a4863f2a251e4c4, type: 2}
+  - {fileID: 11400000, guid: c79c63e1e623039478cf04c6c882e0dd, type: 2}
+  - {fileID: 11400000, guid: 24b0d44f6545b7147b12b10a2935c18f, type: 2}
+  - {fileID: 11400000, guid: ac7d63447984e6148885087893ab296c, type: 2}
+  - {fileID: 11400000, guid: a6431570ee99cf949b25d8f1ea0f6721, type: 2}
+  - {fileID: 11400000, guid: 92f0aa8d20849ee44a5369a98fd342b1, type: 2}
+  - {fileID: 11400000, guid: bfb9410e346bc674fb8971c20486dea9, type: 2}
+  - {fileID: 11400000, guid: 84c36edf9c025fe45923a8f9592a4504, type: 2}
+  - {fileID: 11400000, guid: f432289c9887710499a06d9f676cd96b, type: 2}
+  - {fileID: 11400000, guid: fb7d973bad193214a89c714c7661c05d, type: 2}
+  - {fileID: 11400000, guid: a1695a25b29560943a1ea319f640629c, type: 2}
+  - {fileID: 11400000, guid: 826f08c256989d14280b46ef5db8c30a, type: 2}
+  - {fileID: 11400000, guid: 259004b23273d494bb7292d9459df543, type: 2}
+  - {fileID: 11400000, guid: 25c8472470616634ebb23b9c2e9e2f53, type: 2}
+  - {fileID: 11400000, guid: f558d12e260caaf4888c5c297d99bb26, type: 2}
+  - {fileID: 11400000, guid: 8d6a548e68b44704ab00adf19936c350, type: 2}
+  - {fileID: 11400000, guid: 490933921520b0f438594f7f45776323, type: 2}
+  - {fileID: 11400000, guid: 8977f13dd2340934fbcbe7b31faa5c0a, type: 2}
+  - {fileID: 11400000, guid: 7abdf1944037074498816628c0a9bc00, type: 2}
+  - {fileID: 11400000, guid: 7071d21af74a4c74f917a6a89a828e15, type: 2}
+  - {fileID: 11400000, guid: 100cb63e7d3ee94449dc9fa510c7b3c7, type: 2}
   targetDeliveryInventory: {fileID: 1897385762}
 --- !u!65 &9186214372775757103
 BoxCollider:

@@ -1,3 +1,5 @@
+// --- START OF FILE TabManager.cs ---
+
 using UnityEngine;
 using System.Collections.Generic; // Required for List and Dictionary
 using Systems.UI; 
@@ -78,6 +80,13 @@ public class TabManager : MonoBehaviour
 
     private void OnEnable()
     {
+        // REMOVED: Initial panel activation from OnEnable.
+        // This logic is now moved to Start() to ensure all Awake() calls have completed.
+        Debug.Log($"TabManager on {gameObject.name}: OnEnable called. Initial panel activation will occur in Start().", this);
+    }
+
+    private void Start() // NEW: Added Start method for initial panel activation
+    {
         // When the Tabbed UI is enabled, switch to the default tab
         // Ensure defaultTabIndex is within bounds
         int initialTabIndex = Mathf.Clamp(defaultTabIndex, 0, tabs.Count - 1);
@@ -88,6 +97,7 @@ public class TabManager : MonoBehaviour
         {
             // Use the public method to ensure proper state management
             SwitchToPanel(tabs[initialTabIndex].contentPanel);
+            Debug.Log($"TabManager on {gameObject.name}: Initial panel activated from Start() for tab index {initialTabIndex}.", this);
         }
         else
         {
@@ -95,6 +105,7 @@ public class TabManager : MonoBehaviour
             Debug.LogWarning($"TabManager on {gameObject.name}: Cannot switch to default tab, no tabs configured.", this);
         }
     }
+
 
     /// <summary>
     /// Called by a TabButtonHandler to request switching to a specific content panel.
@@ -205,3 +216,4 @@ public class TabManager : MonoBehaviour
     //     return currentActivePanel;
     // }
 }
+// --- END OF FILE TabManager.cs ---

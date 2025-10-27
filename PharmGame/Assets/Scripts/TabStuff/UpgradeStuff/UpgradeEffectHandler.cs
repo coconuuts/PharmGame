@@ -1,7 +1,5 @@
 // --- START OF FILE UpgradeEffectHandler.cs ---
 
-// --- START OF FILE UpgradeEffectHandler.cs ---
-
 using UnityEngine;
 using System; // Needed for Action
 using CustomerManagement; // Needed for CustomerManager
@@ -193,6 +191,17 @@ public class UpgradeEffectHandler : MonoBehaviour
                 // This is a passive upgrade. Its effect is checked by other systems (NPC states).
                 // We just need to acknowledge it here so it can be marked as purchased.
                 effectHandledOrPending = true;
+                break;
+
+            // NEW: Cases for OTC Tier unlocks
+            case "OTC License 1": // <-- ADDED CASE
+            case "OTC License 2": // <-- ADDED CASE
+            case "OTC License 3": // <-- ADDED CASE
+                // These upgrades primarily affect the shop UI (ComputerInteractable).
+                // No immediate game-world effect is directly applied here,
+                // but we mark them as handled so they can be marked as purchased.
+                effectHandledOrPending = true;
+                Debug.Log($"UpgradeEffectHandler on {gameObject.name}: Acknowledged '{upgradeDetails.upgradeName}' purchase. Shop UI will update.", this);
                 break;
 
             default:

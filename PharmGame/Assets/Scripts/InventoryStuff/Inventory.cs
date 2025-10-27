@@ -2,6 +2,7 @@ using UnityEngine;
 using Systems.Inventory;
 using System.Collections.Generic;
 using System;
+using Systems.Persistence;
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -25,8 +26,9 @@ namespace Systems.Inventory
         public List<ItemLabel> AllowedLabels => allowedLabels;
         public bool AllowAllIfListEmpty => allowAllIfListEmpty;
 
+        // ISaveable and IBind implementation for the ID ---
+        public SerializableGuid Id { get { return id; } set { id = value; } } 
 
-        public SerializableGuid Id => id;
         public Combiner Combiner => combiner;
         public ObservableArray<Item> InventoryState => combiner?.InventoryState; // Access through Combiner
 
@@ -363,10 +365,87 @@ namespace Systems.Inventory
             return Combiner.SetHealthOnInstance(itemInstance.Id, healthToSet);
         }
 
-        // --- END NEW Wrapper Methods ---
+        /// <summary>
+        /// Binds the loaded InventoryData to this Inventory component.
+        /// (Implementation of IBind<InventoryData> interface)
+        /// </summary>
+        /// <param name="data">The loaded InventoryData to apply.</param>
+        public void Bind(InventoryData data)
+        {
+            if (data == null)
+            {
+                Debug.LogWarning($"Inventory ({gameObject.name}, ID: {Id}): Attempted to bind null InventoryData. Initializing to empty/default state.", this);
+                // Optionally clear inventory or reset to default if no data is provided.
+                if (combiner?.InventoryState != null)
+                {
+                    combiner.InventoryState.Clear();
+                }
+                // Reset filtering to defaults if data is null (or keep design-time defaults)
+                allowedLabels.Clear(); // Clear existing labels
+                allowAllIfListEmpty = true; // Default
+                return;
+            }
 
+            Debug.Log($"Inventory ({gameObject.name}, ID: {Id}): Binding data for Inventory ID: {data.Id}.");
 
-        // TODO: Add methods here later for initial item population triggered by game events
-        // e.g., public void AddInitialItem(Item item, int targetSlotIndex = -1) { ... }
+            // --- Apply Filtering Rules ---
+            allowedLabels = new List<ItemLabel>(data.allowedLabels); // Copy the list
+            allowAllIfListEmpty = data.allowAllIfListEmpty;
+
+            // --- Populate InventoryState with loaded items ---
+            if (combiner?.InventoryState == null)
+            {
+                Debug.LogError($"Inventory ({gameObject.name}, ID: {Id}): Cannot bind items, Combiner or InventoryState is null.", this);
+                return;
+            }
+
+            combiner.InventoryState.Clear(); // Clear any existing items first (e.g., from NewGame/Start)
+
+            if (data.items != null)
+            {
+                // Iterate through the loaded ItemData and convert back to runtime Item instances
+                for (int i = 0; i < data.items.Count; i++)
+                {
+                    ItemData itemData = data.items[i];
+                    if (itemData != null)
+                    {
+                        ItemDetails details = ItemDatabase.GetDetailsById(itemData.ItemDetailsId);
+                        if (details != null)
+                        {
+                            // Create the runtime Item instance
+                            Item loadedItem = new Item(details, itemData.quantity); 
+                            loadedItem.Id = itemData.Id; // Preserve the instance ID
+                            loadedItem.health = itemData.health;
+                            loadedItem.usageEventsSinceLastLoss = itemData.usageEventsSinceLastLoss;
+                            loadedItem.currentMagazineHealth = itemData.currentMagazineHealth;
+                            loadedItem.totalReserveHealth = itemData.totalReserveHealth;
+                            loadedItem.isReloading = itemData.isReloading;
+                            loadedItem.reloadStartTime = itemData.reloadStartTime;
+                            loadedItem.patientNameTag = itemData.patientNameTag;
+
+                            // Place the item at its original index.
+                            // Ensure index is within the physical slots range.
+                            if (i >= 0 && i < combiner.PhysicalSlotCount)
+                            {
+                                combiner.InventoryState.SetItemAtIndex(loadedItem, i);
+                                Debug.Log($"Inventory ({gameObject.name}, ID: {Id}): Loaded item '{loadedItem.details.Name}' (Instance ID: {loadedItem.Id}) into slot {i}.");
+                            }
+                            else
+                            {
+                                Debug.LogWarning($"Inventory ({gameObject.name}, ID: {Id}): Loaded item '{loadedItem.details.Name}' (Instance ID: {loadedItem.Id}) had an out-of-bounds index {i}. Attempting to add it to any available physical slot.", this);
+                                // If the original index is invalid (e.g., beyond physical slots), try to add it.
+                                // Note: This might change its slot index if the inventory was resized.
+                                if (loadedItem.details.maxStack > 1) { combiner.AddStackableItems(loadedItem); }
+                                else { combiner.AddSingleInstance(loadedItem); }
+                            }
+                        }
+                        else
+                        {
+                            Debug.LogError($"Inventory ({gameObject.name}, ID: {Id}): Could not find ItemDetails for ID: {itemData.ItemDetailsId} when binding item at index {i}. Item will be skipped.", this);
+                        }
+                    }
+                }
+            }
+        }
     }
 }

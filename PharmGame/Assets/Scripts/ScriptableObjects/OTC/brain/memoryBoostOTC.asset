@@ -1,0 +1,37 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d9c72e01113f4e84cb78436fbc4ee80d, type: 3}
+  m_Name: memoryBoostOTC
+  m_EditorClassIdentifier: 
+  Name: Memory Boost Caps
+  maxStack: 20
+  Id:
+    Part1: 2421396781
+    Part2: 1129765979
+    Part3: 3065727887
+    Part4: 1437360958
+  Icon: {fileID: -1124734066, guid: 136e5be24c1707b479275d52b38537ab, type: 3}
+  Description: 
+  prefab3D: {fileID: 911840783524882919, guid: 31e1ff13b48888242bbe46a86d599f50, type: 3}
+  shelfArrangement: 0
+  itemLabel: 1
+  itemTier: 3
+  price: 10
+  maxHealth: 1
+  usageLogic: 3
+  defaultVariableHealthLoss: 1
+  usageEventsPerHealthLoss: 1
+  healthLossPerEventThreshold: 1
+  magazineSize: 0
+  reloadTime: 0
+  allowedUsageTriggers: 00000000
+  primaryUsageTrigger: 0

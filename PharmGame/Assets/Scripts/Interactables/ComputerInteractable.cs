@@ -1,3 +1,5 @@
+// --- START OF FILE ComputerInteractable.cs ---
+
 using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
@@ -43,22 +45,16 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
 
     // NEW: Reference to the prefab for shop buttons
     [Tooltip("Prefab for a single shop item button. It should contain a Button and an Image component (for the icon).")]
-    [SerializeField] private GameObject shopButtonPrefab; // <--- ADDED FIELD
-
-    // REMOVED: private Button item1Button; // No longer needed
-    // REMOVED: private Button item2Button; // No longer needed
+    [SerializeField] private GameObject shopButtonPrefab;
 
     private TextMeshProUGUI shoppingCartText;
     private Button buyButton;
 
     // --- Item Details and Delivery Inventory ---
     [Header("Inventory Integration")]
-    // REMOVED: [SerializeField] private ItemDetails item1Details; // Replaced by list
-    // REMOVED: [SerializeField] private ItemDetails item2Details; // Replaced by list
-
     // NEW: List of all purchasable ItemDetails
     [Tooltip("List of all ItemDetails ScriptableObjects available for purchase in this shop.")]
-    [SerializeField] private List<ItemDetails> purchasableItems = new List<ItemDetails>(); // <--- ADDED FIELD
+    [SerializeField] private List<ItemDetails> purchasableItems = new List<ItemDetails>();
 
     [Tooltip("The Inventory component where purchased items will be added (e.g., a delivery truck inventory).")]
     [SerializeField] private Inventory targetDeliveryInventory;
@@ -67,7 +63,16 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
     private Dictionary<ItemDetails, int> shoppingCart = new Dictionary<ItemDetails, int>();
 
     // NEW: List to keep track of dynamically created buttons for cleanup
-    private List<Button> createdShopButtons = new List<Button>(); // <--- ADDED FIELD
+    private List<Button> createdShopButtons = new List<Button>();
+
+    // NEW: Cached UpgradeDetailsSO references for tier unlocks
+    // These will now be populated in OnEnable
+    private UpgradeDetailsSO _unlockTier1UpgradeSO;
+    private UpgradeDetailsSO _unlockTier2UpgradeSO;
+    private UpgradeDetailsSO _unlockTier3UpgradeSO;
+
+    // NEW: Cached UpgradeManager instance reference
+    private UpgradeManager _upgradeManager; 
 
     private void Awake()
     {
@@ -79,6 +84,57 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
          {
              Debug.LogError($"ComputerInteractable on {gameObject.name}: InteractionManager.Instance is null in Awake! Cannot register.", this);
          }
+    }
+
+    private void OnEnable() // MODIFIED: Moved upgrade manager fetching and event subscription here
+    {
+        _upgradeManager = UpgradeManager.Instance;
+        if (_upgradeManager == null)
+        {
+            Debug.LogError($"ComputerInteractable on {gameObject.name}: UpgradeManager.Instance is null in OnEnable! Cannot subscribe to upgrade events or manage shop tiers.", this);
+            // Consider disabling component if this is a critical dependency
+            // enabled = false; 
+            return;
+        }
+
+        // --- MODIFIED: Fetch tier upgrade SOs here, now that _upgradeManager is guaranteed to be available ---
+        // IMPORTANT: Ensure these names EXACTLY match the 'upgradeName' field in your UpgradeDetailsSO assets.
+        _unlockTier1UpgradeSO = _upgradeManager.GetUpgradeDetailsByName("OTC License 1"); 
+        if (_unlockTier1UpgradeSO == null)
+        {
+            Debug.LogWarning($"ComputerInteractable on {gameObject.name}: 'OTC License 1' UpgradeDetailsSO not found in UpgradeManager. Check asset name and UpgradeManager's AllAvailableUpgrades list.", this);
+        }
+
+        _unlockTier2UpgradeSO = _upgradeManager.GetUpgradeDetailsByName("OTC License 2");
+        if (_unlockTier2UpgradeSO == null)
+        {
+            Debug.LogWarning($"ComputerInteractable on {gameObject.name}: 'OTC License 2' UpgradeDetailsSO not found in UpgradeManager. Check asset name and UpgradeManager's AllAvailableUpgrades list.", this);
+        }
+
+        _unlockTier3UpgradeSO = _upgradeManager.GetUpgradeDetailsByName("OTC License 3");
+        if (_unlockTier3UpgradeSO == null)
+        {
+            Debug.LogWarning($"ComputerInteractable on {gameObject.name}: 'OTC License 3' UpgradeDetailsSO not found in UpgradeManager. Check asset name and UpgradeManager's AllAvailableUpgrades list.", this);
+        }
+        // --- END MODIFIED ---
+
+        // NEW: Subscribe to UpgradeManager's purchased event globally, as long as this component is enabled
+        _upgradeManager.OnUpgradePurchasedSuccessfully += HandleUpgradeUnlocked;
+        Debug.Log($"ComputerInteractable: Subscribed to UpgradeManager.OnUpgradePurchasedSuccessfully in OnEnable.");
+    }
+
+    private void OnDisable() // MODIFIED: Moved event unsubscription here
+    {
+        if (_upgradeManager != null)
+        {
+            _upgradeManager.OnUpgradePurchasedSuccessfully -= HandleUpgradeUnlocked;
+            Debug.Log($"ComputerInteractable: Unsubscribed from UpgradeManager.OnUpgradePurchasedSuccessfully in OnDisable.");
+        }
+        // Clear cached references upon disable for clean state management
+        _unlockTier1UpgradeSO = null;
+        _unlockTier2UpgradeSO = null;
+        _unlockTier3UpgradeSO = null;
+        _upgradeManager = null;
     }
 
     public void ActivatePrompt()
@@ -147,6 +203,14 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
             return;
         }
 
+        // --- Validation for _upgradeManager (already fetched in OnEnable) ---
+        if (_upgradeManager == null)
+        {
+            Debug.LogError($"ComputerInteractable on {gameObject.name}: UpgradeManager.Instance is null in OnPanelActivated! (Should have been caught in OnEnable). Shop tiers will not function correctly.", this);
+            return; 
+        }
+        // --- END Validation ---
+
         // --- Find UI elements dynamically within the shopContentPanel ---
         Transform shopButtonsParent = shopContentPanel.transform.Find("ShopItemsScrollArea/Viewport/ShopButtons");
         if (shopButtonsParent == null)
@@ -178,6 +242,15 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
                 continue;
             }
 
+            // --- MODIFIED: Check if unlocked BEFORE instantiating the button ---
+            bool isUnlocked = IsItemTierUnlocked(details);
+            if (!isUnlocked)
+            {
+                Debug.Log($"ComputerInteractable: Item '{details.Name}' (Tier {details.itemTier}) is locked. Hiding from shop list.");
+                continue; // Skip creating the button for this locked item
+            }
+            // --- END MODIFIED ---
+
             GameObject buttonGO = Instantiate(shopButtonPrefab, shopButtonsParent);
             buttonGO.name = $"ShopItemButton_{details.Name}"; // Give it a descriptive name
             Button button = buttonGO.GetComponent<Button>();
@@ -190,18 +263,17 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
                 continue;
             }
 
-            // Set the icon
+            // Set the icon - this logic is now only for UNLOCKED items
             if (buttonImage != null)
             {
                 if (details.Icon != null)
                 {
                     buttonImage.sprite = details.Icon;
-                    buttonImage.color = Color.white; // Ensure it's not tinted
-                    buttonImage.preserveAspect = true; // Keep aspect ratio
+                    buttonImage.color = Color.white; // Always white for unlocked items
+                    buttonImage.preserveAspect = true;
                 }
                 else
                 {
-                    // If icon is null, set a default or make it transparent
                     buttonImage.sprite = null;
                     buttonImage.color = new Color(1, 1, 1, 0); // Transparent
                     Debug.LogWarning($"ComputerInteractable: ItemDetails '{details.Name}' has no Icon assigned. Button will be transparent or use default.", details);
@@ -212,12 +284,15 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
                 Debug.LogWarning($"ComputerInteractable: Shop button prefab '{shopButtonPrefab.name}' is missing an Image component! Item icon for '{details.Name}' will not display.", shopButtonPrefab);
             }
 
-            // Ensure no text is displayed on the button itself
+            // Text will always be active and empty (or whatever is desired for unlocked items)
             TextMeshProUGUI buttonText = buttonGO.GetComponentInChildren<TextMeshProUGUI>();
             if (buttonText != null)
             {
-                buttonText.text = "";
+                buttonText.text = ""; // Keep it empty, visual icon is enough
+                buttonText.gameObject.SetActive(true); // Always active for visible (unlocked) buttons
             }
+
+            button.interactable = true; // Always interactable for displayed (unlocked) buttons
 
             // --- IMPORTANT: Closure Bug Fix ---
             // Capture the current 'details' into a local variable for the lambda expression
@@ -238,7 +313,7 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
         {
              Debug.LogWarning("ComputerInteractable: Buy Button not found under shopContentPanel.");
         }
-
+        
         // Update the UI display when the panel becomes active
         UpdateShoppingCartUI();
     }
@@ -270,14 +345,15 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
             Debug.Log("ComputerInteractable: Unsubscribed Buy Button listeners.");
         }
 
-        // --- Clear dynamic references ---
+        // --- Clear dynamic references (but NOT cached managers/upgrades, as OnDisable handles that) ---
         shoppingCartText = null;
         buyButton = null;
+        // --- END MODIFIED ---
     }
 
     private void OnDestroy()
     {
-        // Ensure listeners are removed if the object is destroyed while the panel is active
+        // Ensure listeners are removed if the object is destroyed while the panel is destroyed
         OnPanelDeactivated(); // Call the deactivation logic for final cleanup
 
         if (Systems.Interaction.InteractionManager.Instance != null)
@@ -312,6 +388,59 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
         isInteracting = true;
 
         return response;
+    }
+
+    /// <summary>
+    /// Checks if a given ItemDetails' tier is currently unlocked based on purchased upgrades.
+    /// </summary>
+    /// <param name="item">The ItemDetails to check.</param>
+    /// <returns>True if the item's tier is unlocked, false otherwise.</returns>
+    private bool IsItemTierUnlocked(ItemDetails item)
+    {
+        if (item == null) return false;
+
+        // Ensure UpgradeManager is available before checking for purchased upgrades
+        if (_upgradeManager == null) 
+        {
+            Debug.LogWarning($"ComputerInteractable: _upgradeManager reference is null when checking unlock status for {item.Name}. Assuming locked.", this);
+            return false;
+        }
+
+        UpgradeDetailsSO upgradeToCheck = null;
+        string upgradeNameDebug = "N/A"; // For logging purposes
+
+        if (item.itemTier == ItemTier.Tier1)
+        {
+            upgradeToCheck = _unlockTier1UpgradeSO;
+            upgradeNameDebug = "OTC License 1"; // Use the correct debug name
+        }
+        else if (item.itemTier == ItemTier.Tier2)
+        {
+            upgradeToCheck = _unlockTier2UpgradeSO;
+            upgradeNameDebug = "OTC License 2"; // Use the correct debug name
+        }
+        else if (item.itemTier == ItemTier.Tier3)
+        {
+            upgradeToCheck = _unlockTier3UpgradeSO;
+            upgradeNameDebug = "OTC License 3"; // Use the correct debug name
+        }
+        else
+        {
+            // For any other unexpected tiers or 'None' tier, assume locked
+            Debug.Log($"ComputerInteractable: Item {item.Name} has unhandled tier {item.itemTier}. Assuming locked.");
+            return false;
+        }
+
+        if (upgradeToCheck == null)
+        {
+            Debug.LogWarning($"ComputerInteractable: UpgradeDetailsSO for '{upgradeNameDebug}' (Tier {item.itemTier}) is null in ComputerInteractable cache. Item {item.Name} will be locked. This suggests a problem fetching the upgrade by name in OnEnable.", this);
+            return false;
+        }
+
+        bool isPurchased = _upgradeManager.IsUpgradePurchased(upgradeToCheck);
+        Debug.Log($"ComputerInteractable: Checking unlock status for item '{item.Name}' (Tier {item.itemTier}). Required upgrade: '{upgradeNameDebug}' (ID: {upgradeToCheck.uniqueID}). Is purchased: {isPurchased}.");
+
+        return isPurchased;
     }
 
     /// <summary>
@@ -387,7 +516,7 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
         if (targetDeliveryInventory.Combiner == null)
          {
              Debug.LogError("ComputerInteractable: Target Delivery Inventory is missing its Combiner component! Cannot deliver items.", this);
-             PlayerUIPopups.Instance?.ShowPopup("PCannot Transfer", "Delivery inventory misconfigured!");
+             PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Delivery inventory misconfigured!");
              return;
          }
 
@@ -401,6 +530,7 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
 
         List<Item> itemsToDeliver = new List<Item>();
 
+        // We iterate over a copy of the shoppingCart to safely modify the original if needed
         foreach (KeyValuePair<ItemDetails, int> itemEntry in new Dictionary<ItemDetails, int>(shoppingCart))
         {
             ItemDetails details = itemEntry.Key;
@@ -411,6 +541,17 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
                  Debug.LogWarning("ComputerInteractable: Skipping purchase of item with null ItemDetails in cart.");
                  continue;
             }
+            
+            // This check is already in AddItemToCart, but having it here provides a second layer of defense.
+            if (!IsItemTierUnlocked(details))
+            {
+                Debug.LogWarning($"ComputerInteractable: Attempted to purchase locked item '{details.Name}' (Tier {details.itemTier}) found in cart. Skipping this item from purchase and removing from cart.");
+                PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", $"Cannot purchase locked item: {details.Name}!");
+                // Remove the locked item from the cart to prevent it from showing up again if the purchase fails
+                shoppingCart.Remove(details);
+                continue; // Skip this item from the purchase process
+            }
+
 
             Debug.Log($"ComputerInteractable: Preparing to purchase {totalQuantityToCreate}x {details.Name} (Max Stack: {details.maxStack}).");
 
@@ -443,6 +584,15 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
             }
         }
 
+        if (itemsToDeliver.Count == 0)
+        {
+            Debug.Log("ComputerInteractable: No valid (unlocked) items left in cart after filtering for purchase.");
+            PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "No unlocked items left in cart to purchase!");
+            // shoppingCart.Clear(); // Already done above if items were removed
+            UpdateShoppingCartUI();
+            return;
+        }
+
         Debug.Log($"ComputerInteractable: Delivering {itemsToDeliver.Count} item instances to inventory.");
 
         bool anyFailedToAdd = false;
@@ -465,12 +615,12 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
          if (!anyFailedToAdd)
          {
              Debug.Log("ComputerInteractable: All purchased item instances successfully delivered.");
-             PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Your order has been placed!");
+             PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Your order has been placed!"); // Changed text for success
          }
          else
          {
              Debug.LogWarning("ComputerInteractable: Some purchased item instances could not be delivered.", this);
-             PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Some items could not be delivered! Inventory might be full.");
+             PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Some items could not be delivered! Inventory might be full."); // Changed text for partial success
          }
 
         shoppingCart.Clear();
@@ -479,9 +629,46 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
         Debug.Log("ComputerInteractable: Purchase process completed.");
     }
 
+    /// <summary>
+    /// Handles the event when an upgrade is successfully purchased.
+    /// If it's a tier-unlocking upgrade, it refreshes the shop UI.
+    /// </summary>
+    /// <param name="unlockedUpgrade">The UpgradeDetailsSO that was just purchased.</param>
+    private void HandleUpgradeUnlocked(UpgradeDetailsSO unlockedUpgrade)
+    {
+        if (unlockedUpgrade == null)
+        {
+            Debug.LogWarning("ComputerInteractable: Received null unlockedUpgrade in HandleUpgradeUnlocked.", this);
+            return;
+        }
+
+        // Check if the purchased upgrade is one of our tier-unlocking upgrades
+        if (unlockedUpgrade == _unlockTier1UpgradeSO || unlockedUpgrade == _unlockTier2UpgradeSO || unlockedUpgrade == _unlockTier3UpgradeSO)
+        {
+            Debug.Log($"ComputerInteractable: Tier unlock upgrade '{unlockedUpgrade.upgradeName}' purchased. Re-populating shop list to reflect new availability.");
+
+            // Clear existing buttons (returns them to pool)
+            // Note: This relies on the current implementation of OnPanelActivated to re-create buttons.
+            // If using a more persistent UI, a granular update would be needed.
+            // For now, this full refresh is simpler and effective.
+            
+            // First, clear the shopping cart to prevent trying to purchase items from a now-unlocked tier that might have been added while locked
+            shoppingCart.Clear();
+            UpdateShoppingCartUI(); // Update UI to show empty cart
+
+            // Re-populate the list, which will now enable the newly unlocked tier's buttons
+            // This is equivalent to calling OnPanelDeactivated() then OnPanelActivated()
+            OnPanelActivated(); 
+            
+            PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", $"New {unlockedUpgrade.upgradeName} items are now available!");
+        }
+    }
+
+
     public void ResetInteraction()
     {
         isInteracting = false;
         Debug.Log($"ComputerInteractable ({gameObject.name}): ResetInteraction called. isInteracting is now false.", this);
     }
 }
+// --- END OF FILE ComputerInteractable.cs ---

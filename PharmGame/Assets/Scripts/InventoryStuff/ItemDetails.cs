@@ -1,3 +1,5 @@
+// --- START OF FILE ItemDetails.cs ---
+
 using System;
 using UnityEngine;
 using UnityEditor;
@@ -25,6 +27,22 @@ namespace Systems.Inventory
 
         /// <summary> This item is a gun and uses magazine/reserve ammo logic (requires magazineSize > 0). </summary>
         GunLogic 
+    }
+
+    /// <summary>
+    /// Defines the tier of an item, influencing its availability based on upgrades.
+    /// </summary>
+    public enum ItemTier
+    {
+        /// <summary> Default tier, or unclassified. </summary>
+        None = 0,
+        /// <summary> First tier of items, typically available from the start. </summary>
+        Tier1 = 1,
+        /// <summary> Second tier of items, unlocked via an upgrade. </summary>
+        Tier2 = 2,
+        /// <summary> Third tier of items, unlocked via an upgrade. </summary>
+        Tier3 = 3
+        // Add more tiers as needed
     }
 
 
@@ -57,6 +75,10 @@ namespace Systems.Inventory
         [Header("Item Classification")] 
         [Tooltip("The primary classification or label for this item.")]
         public ItemLabel itemLabel = ItemLabel.None; // Use the enum field
+
+        // NEW: Item Tier field
+        [Tooltip("The tier this item belongs to. Higher tiers may require upgrades to unlock.")]
+        public ItemTier itemTier = ItemTier.Tier1; // Default to Tier1
 
         [Tooltip("The price of this item when sold to a customer.")]
         public float price = 5.0f;
@@ -192,3 +214,4 @@ namespace Systems.Inventory
          // public bool IsSameType(ItemDetails otherDetails) { return this == otherDetails; }
     }
 }
+// --- END OF FILE ItemDetails.cs ---

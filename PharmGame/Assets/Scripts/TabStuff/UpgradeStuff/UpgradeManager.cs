@@ -2,6 +2,8 @@
 
 // --- START OF FILE UpgradeManager.cs ---
 
+// --- START OF FILE UpgradeManager.cs ---
+
 using UnityEngine;
 using System.Collections.Generic;
 using System; // Needed for Action
@@ -67,8 +69,8 @@ using System.Linq; // Needed for ToHashSet(), FirstOrDefault
             {
                 Instance = this;
                 // Optional: Keep this object alive across scene changes if needed
-                // DontDestroyOnLoad(gameObject);
-                Debug.Log("UpgradeManager: Singleton instance created.", this);
+                DontDestroyOnLoad(gameObject); // UNCOMMENTED THIS LINE
+                Debug.Log($"UpgradeManager: Singleton instance created on GameObject '{gameObject.name}'.", this);
 
                 // Initialize the purchased upgrades set
                 purchasedUpgrades = new HashSet<UpgradeDetailsSO>();
@@ -77,7 +79,7 @@ using System.Linq; // Needed for ToHashSet(), FirstOrDefault
                  // Example (placeholder):
                  // LoadGameData();
                  // purchasedUpgrades = loadedData.purchasedUpgradeIDs.Select(id => FindUpgradeDetailsByID(id)).Where(so => so != null).ToHashSet();
-                 // Debug.Log($"UpgradeManager: Loaded {purchasedUpgrades.Count} purchased upgrades.");
+                 // Debug.Log($"UpgradeManager: Loaded {purchasableItems.Count} purchased upgrades."); // Corrected a typo here, should be purchasedUpgrades.Count
                  // --- End Future Load ---
 
                  // --- Cache specific upgrade SOs for performance ---
@@ -91,7 +93,7 @@ using System.Linq; // Needed for ToHashSet(), FirstOrDefault
             else
             {
                 // If an instance already exists, destroy this duplicate
-                Debug.LogWarning("UpgradeManager: Duplicate instance found. Destroying this one.", this);
+                Debug.LogWarning($"UpgradeManager: Duplicate instance found on GameObject '{gameObject.name}'. Destroying it. Existing instance is on GameObject '{Instance.gameObject.name}'.", this);
                 Destroy(gameObject);
             }
         }
@@ -220,4 +222,4 @@ using System.Linq; // Needed for ToHashSet(), FirstOrDefault
 
 // } // End namespace (if using one)
 
-// --- END OF FILE UpgradeManager.cs ---    
+// --- END OF FILE UpgradeManager.cs ---

@@ -1,0 +1,37 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d9c72e01113f4e84cb78436fbc4ee80d, type: 3}
+  m_Name: sleepJugOTC
+  m_EditorClassIdentifier: 
+  Name: Sleep Jug
+  maxStack: 20
+  Id:
+    Part1: 2417565421
+    Part2: 1102010825
+    Part3: 2864754879
+    Part4: 3673597381
+  Icon: {fileID: 1604957362, guid: c8d3e75128cf97b438f26f3b327b17fe, type: 3}
+  Description: 
+  prefab3D: {fileID: 7342363075612333980, guid: 08a8710a8aaa899458ab85f866b65fb6, type: 3}
+  shelfArrangement: 0
+  itemLabel: 1
+  itemTier: 2
+  price: 10
+  maxHealth: 1
+  usageLogic: 3
+  defaultVariableHealthLoss: 1
+  usageEventsPerHealthLoss: 1
+  healthLossPerEventThreshold: 1
+  magazineSize: 0
+  reloadTime: 0
+  allowedUsageTriggers: 00000000
+  primaryUsageTrigger: 0
