@@ -10,7 +10,7 @@ using UnityEditor;
 
 namespace Systems.Inventory
 {
-    public class Inventory : MonoBehaviour
+    public class Inventory : MonoBehaviour, IBind<InventoryData>, ISavableComponent
     {
         [SerializeField] private SerializableGuid id = SerializableGuid.Empty;
         [SerializeField] private Combiner combiner;
@@ -177,6 +177,37 @@ namespace Systems.Inventory
 
              // Ensure unsubscribe from ObservableArray events if Visualizer is destroyed separately
              // Visualizer's OnDestroy handles its own unsubscription, which is cleaner.
+        }
+
+        /// <summary>
+        /// Generates the InventoryData structure from the current runtime state of this Inventory component.
+        /// This replaces the logic previously in SaveLoadSystem.CreateInventoryDataFromComponent.
+        /// </summary>
+        public ISaveable CreateSaveData() 
+        {
+            // Check dependencies before proceeding
+            if (combiner == null || flexibleGridLayout == null || visualizer == null)
+            {
+                Debug.LogError($"Inventory ({gameObject.name}, ID: {Id}): Cannot create save data, required components are missing.", this);
+                return new InventoryData { Id = this.Id }; // Return minimal data
+            }
+
+            InventoryData invData = new InventoryData {
+                Id = this.Id,
+                allowedLabels = new List<ItemLabel>(this.AllowedLabels), // Copy the list
+                allowAllIfListEmpty = this.AllowAllIfListEmpty,
+                items = new List<ItemData>()
+            };
+
+            if (combiner.InventoryState != null) {
+                // Only save items from physical slots, not the ghost slot.
+                for (int i = 0; i < combiner.PhysicalSlotCount; i++) {
+                    Item item = combiner.InventoryState[i];
+
+                    invData.items.Add(ItemDataConverter.ToItemData(item)); 
+                }
+            }
+            return invData;
         }
 
         /// <summary>

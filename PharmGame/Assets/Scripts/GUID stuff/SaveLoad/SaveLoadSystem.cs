@@ -17,6 +17,15 @@ namespace Systems.Persistence {
     public interface ISaveable  {
         SerializableGuid Id { get; set; }
     }
+
+    public interface ISavableComponent 
+    {
+    SerializableGuid Id { get; } 
+    
+    // This method returns the raw data structure needed for serialization.
+    // It encapsulates all the logic previously inside CreateInventoryDataFromComponent.
+    ISaveable CreateSaveData(); 
+    }
     
     public interface IBind<TData> where TData : ISaveable {
         SerializableGuid Id { get; set; }
@@ -93,45 +102,6 @@ namespace Systems.Persistence {
             // Bind<WorldObject, WorldObjectData>(gameData.worldObjects);
         }
         
-        // Helper to convert an Item instance to ItemData for saving
-        private ItemData ConvertItemToItemData(Item item) {
-            if (item == null || item.details == null) return null;
-
-            return new ItemData {
-                Id = item.Id,
-                ItemDetailsId = item.details.Id,
-                quantity = item.quantity,
-                health = item.health,
-                usageEventsSinceLastLoss = item.usageEventsSinceLastLoss,
-                currentMagazineHealth = item.currentMagazineHealth,
-                totalReserveHealth = item.totalReserveHealth,
-                isReloading = item.isReloading,
-                reloadStartTime = item.reloadStartTime,
-                patientNameTag = item.patientNameTag
-            };
-        }
-
-        // Helper to create InventoryData from an Inventory component for saving
-        private InventoryData CreateInventoryDataFromComponent(Systems.Inventory.Inventory invComponent) 
-        {
-            InventoryData invData = new InventoryData {
-                Id = invComponent.Id,
-                allowedLabels = new List<ItemLabel>(invComponent.AllowedLabels), // Copy the list
-                allowAllIfListEmpty = invComponent.AllowAllIfListEmpty,
-                items = new List<ItemData>()
-            };
-
-            if (invComponent.InventoryState != null) {
-                // Only save items from physical slots, not the ghost slot.
-                // The ghost slot (Length - 1) is transient and should not be persisted.
-                for (int i = 0; i < invComponent.Combiner.PhysicalSlotCount; i++) {
-                    Item item = invComponent.InventoryState[i];
-                    invData.items.Add(ConvertItemToItemData(item));
-                }
-            }
-            return invData;
-        }
-        
         void Bind<T, TData>(TData data) where T : MonoBehaviour, IBind<TData> where TData : ISaveable, new() {
             var entity = FindObjectsByType<T>(FindObjectsSortMode.None).FirstOrDefault();
             if (entity != null) {
@@ -167,17 +137,36 @@ namespace Systems.Persistence {
             SceneManager.LoadScene(gameData.CurrentLevelName);
         }
         
-        public void SaveGame() {
+        public void SaveGame() 
+        {
             Debug.Log($"SaveLoadSystem: Saving game '{gameData.Name}'.");
             
-            // Rebuild the inventory list from current scene state
-            gameData.inventories.Clear(); // Clear existing saved data
+            // 1. Clear data containers that rely on scene state
+            gameData.inventories.Clear(); 
+            
+            // 2. Find ALL active MonoBehaviours in the scene
+            var allSceneMonoBehaviours = FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None);
+            
+            // 3. Filter this list down to only those implementing ISavableComponent
+            var savableComponents = allSceneMonoBehaviours
+                .Where(mb => mb is ISavableComponent)
+                .Cast<ISavableComponent>()
+                .ToList();
 
-            // Find all active Inventory components in the scene and convert their state to InventoryData
-            var inventoriesInScene = FindObjectsByType<Systems.Inventory.Inventory>(FindObjectsSortMode.None);
-            foreach (var invComponent in inventoriesInScene) {
-                gameData.inventories.Add(CreateInventoryDataFromComponent(invComponent));
+            foreach (var component in savableComponents) {
+                ISaveable data = component.CreateSaveData();
+                
+                // 4. Route the generated data structure to the correct list in GameData
+                if (data is InventoryData invData) {
+                    gameData.inventories.Add(invData);
+                }
+                // TODO: Add routing for other custom save data types here (e.g., WorldObjectData)
             }
+            
+            // Handle components that map directly to GameData fields ---
+            // Player data could still be handled separately if it's a single instance.
+            Bind<PlayerEntity, PlayerData>(gameData.playerData); 
+
             dataService.Save(gameData);
             Debug.Log($"SaveLoadSystem: Game '{gameData.Name}' saved successfully.");
         }

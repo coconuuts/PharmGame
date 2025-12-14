@@ -120,7 +120,7 @@ namespace CustomerManagement
             if (Instance == null)
             {
                 Instance = this;
-                // Optional: DontDestroyOnLoad(gameObject); // If the manager should persist
+                DontDestroyOnLoad(gameObject); 
             }
             else
             {
