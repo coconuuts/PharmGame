@@ -599,6 +599,8 @@ MonoBehaviour:
   fitType: 1
   fitX: 1
   fitY: 1
+  fixedColumnsCount: 1
+  fixedRowsCount: 1
 --- !u!222 &1812293836203845376
 CanvasRenderer:
   m_ObjectHideFlags: 0
@@ -620,7 +622,6 @@ GameObject:
   - component: {fileID: 6391365617852918273}
   - component: {fileID: 7248971482496348654}
   - component: {fileID: 6048709940883205830}
-  - component: {fileID: 7948363086062190}
   - component: {fileID: 4229601656912620462}
   - component: {fileID: 5491041511187438547}
   - component: {fileID: -4475983429364288108}
@@ -633,6 +634,7 @@ GameObject:
   - component: {fileID: -1778349930730536278}
   - component: {fileID: -8843586099993494372}
   - component: {fileID: 8460423928884640609}
+  - component: {fileID: 3444539583687071509}
   m_Layer: 7
   m_Name: NPC 2
   m_TagString: Cashier
@@ -757,28 +759,6 @@ NavMeshAgent:
   m_BaseOffset: 0
   m_WalkableMask: 4294967295
   m_ObstacleAvoidanceType: 1
---- !u!114 &7948363086062190
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 4394407753789290286}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e36b0eb22a1b3b742ac11c25946037d0, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  id:
-    Part1: 1184670642
-    Part2: 1334410511
-    Part3: 2181978020
-    Part4: 1598800716
-  combiner: {fileID: 4229601656912620462}
-  flexibleGridLayout: {fileID: 6088612258569326636}
-  visualizer: {fileID: 5491041511187438547}
-  allowedLabels: 
-  allowAllIfListEmpty: 1
 --- !u!114 &4229601656912620462
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -824,7 +804,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   interactionPromptMessage: Open Inventory (E)
   inventoryUIRoot: {fileID: 3952946726980145951}
-  inventoryComponent: {fileID: 7948363086062190}
+  inventoryComponent: {fileID: 0}
   enableOnStart: 1
 --- !u!114 &1457525958296894251
 MonoBehaviour:
@@ -992,6 +972,28 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 0.6, y: 2.013233, z: 0.49619246}
   m_Center: {x: 0, y: 1.0074824, z: 0.056357086}
+--- !u!114 &3444539583687071509
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4394407753789290286}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e36b0eb22a1b3b742ac11c25946037d0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  id:
+    Part1: 407210517
+    Part2: 1227832182
+    Part3: 800353431
+    Part4: 4029404866
+  combiner: {fileID: 4229601656912620462}
+  flexibleGridLayout: {fileID: 6088612258569326636}
+  visualizer: {fileID: 5491041511187438547}
+  allowedLabels: 
+  allowAllIfListEmpty: 1
 --- !u!1 &4855562079567102611
 GameObject:
   m_ObjectHideFlags: 0

@@ -496,8 +496,8 @@ namespace Game.NPC
           /// <param name="deltaTime">The time slice for this tick.</param>
           public void ThrottledTick(float deltaTime)
           {
-               // This method now contains the core state and movement logic
-               // that was previously in the Update method.
+               // If the game is paused, don't process movement logic
+               if (deltaTime <= 0) return; 
 
                if (currentState != null)
                {
