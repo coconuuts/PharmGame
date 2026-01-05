@@ -32,11 +32,10 @@ namespace Game.NPC.TI // Keep in the TI namespace
         [Tooltip("A unique identifier for this TI NPC.")]
         [SerializeField] private string id; // Unique ID for lookup
 
-        // --- NEW: Prefab Reference --- // <-- ADDED FIELD
+        // --- Prefab Reference
         [Header("Appearance")]
         [Tooltip("The specific GameObject prefab to use when activating this TI NPC.")]
         [SerializeField] public GameObject Prefab; // Made public for easy access by TiNpcManager
-        // --- END NEW ---
 
         [Header("Core Persistent Data")]
         [Tooltip("The NPC's designated home position.")]
@@ -141,8 +140,7 @@ namespace Game.NPC.TI // Keep in the TI namespace
         [SerializeField] public bool isActiveGameObject; // Indicates if the data is currently linked to a pooled GameObject
 
         // Pending Simulated Events ---
-        // Use [System.NonSerialized] because this list is only for runtime processing, not persistent saving.
-        // Events generated in simulation are processed immediately or upon activation, not saved across game sessions.
+        // Runtime simulation events should not persist across save/load.
         [System.NonSerialized] public List<object> pendingSimulatedEvents;
 
         // --- NEW: Runtime fields for active grid position tracking ---

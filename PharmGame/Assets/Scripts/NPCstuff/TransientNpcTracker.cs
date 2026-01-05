@@ -7,6 +7,7 @@ using Game.NPC; // Needed for NpcStateMachineRunner
 using Systems.Inventory; // Needed for SerializableGuid
 using System.Linq; // Needed for LINQ (ToDictionary)
 using Game.Prescriptions;
+using Utils.Pooling;
 
 namespace CustomerManagement.Tracking // Assuming this namespace structure
 {
@@ -38,6 +39,7 @@ namespace CustomerManagement.Tracking // Assuming this namespace structure
     {
         [Tooltip("The unique identifier for this NPC.")]
         public SerializableGuid Guid;
+        public string PrefabID;
 
         [Header("World & Time Data")]
         public Vector3 WorldPosition;
@@ -60,9 +62,11 @@ namespace CustomerManagement.Tracking // Assuming this namespace structure
         public PrescriptionOrder AssignedOrder;
 
         // Constructor for easier creation during snapshotting
-        public TransientNpcSnapshotData(SerializableGuid guid)
+        public TransientNpcSnapshotData(SerializableGuid guid, string prefabID = "")
         {
             Guid = guid;
+            PrefabID = prefabID;
+            
             // Set safe defaults
             CurrentQueueType = QueueType.Main; 
             AssignedQueueSpotIndex = -1;
@@ -90,6 +94,10 @@ namespace CustomerManagement.Tracking // Assuming this namespace structure
         [Header("Tracking Status")]
         [Tooltip("The total number of transient NPCs currently being tracked.")]
         [SerializeField] private int activeTrackedCount = 0;
+        [Header("References")]
+        [SerializeField] private PoolingManager poolingManager;
+        [Tooltip("List of prefabs that can be restored. The PrefabID in the save file must match the Prefab Name here.")]
+        [SerializeField] private List<GameObject> transientNpcPrefabs;
 
         // --- Internal State ---
         private Dictionary<SerializableGuid, NpcStateMachineRunner> activeTransientRunners;
@@ -109,6 +117,8 @@ namespace CustomerManagement.Tracking // Assuming this namespace structure
                 Destroy(gameObject);
                 return;
             }
+
+            if (poolingManager == null) poolingManager = PoolingManager.Instance;
 
             // Initialize dictionary
             activeTransientRunners = new Dictionary<SerializableGuid, NpcStateMachineRunner>();
@@ -206,47 +216,87 @@ namespace CustomerManagement.Tracking // Assuming this namespace structure
         }
 
         /// <summary>
-        /// Gathers the current state of all tracked transient NPCs and updates the snapshot data. 
-        /// Commented out right now to prevent compilation errors. NpcStateMachineRunner needs addition of GatherSnapshotData() method first. 
+        /// Iterates all active runners and generates a save-ready list of snapshots.
         /// </summary>
-     //    public void TakeSnapshot()
-     //    {
-     //         Debug.Log($"TransientNpcTracker: Initiating snapshot of {activeTransientRunners.Count} tracked NPCs.");
+        public List<TransientNpcSnapshotData> TakeSnapshot()
+        {
+             Debug.Log($"TransientNpcTracker: Taking snapshot of {activeTransientRunners.Count} active NPCs.");
              
-     //         foreach (var kvp in activeTransientRunners)
-     //         {
-     //              SerializableGuid guid = kvp.Key;
-     //              NpcStateMachineRunner runner = kvp.Value;
+             // Clear old internal data
+             snapshotData.Clear();
 
-     //              if (runner == null || !runner.isActiveAndEnabled)
-     //              {
-     //                   Debug.LogWarning($"TransientNpcTracker: Runner for GUID {guid.ToHexString()} is null or inactive. Cannot gather snapshot data. Skipping.", this);
-     //                   continue;
-     //              }
+             foreach (var kvp in activeTransientRunners)
+             {
+                  var runner = kvp.Value;
+                  if (runner != null && runner.isActiveAndEnabled)
+                  {
+                       // Call the new method on Runner
+                       var snapshot = runner.GatherSnapshotData();
+                       if (snapshot != null)
+                       {
+                            snapshotData[kvp.Key] = snapshot;
+                       }
+                  }
+             }
+             
+             return snapshotData.Values.ToList();
+        }
 
-     //              // 1. Gather data from the runner
-     //              TransientNpcSnapshotData snapshot = runner.GatherSnapshotData();
+        /// <summary>
+        /// Spawns NPCs based on loaded snapshots.
+        /// </summary>
+        public void RestoreSnapshots(List<TransientNpcSnapshotData> loadedSnapshots)
+        {
+             // 1. Cleanup: Despawn any currently active transients (important if reloading scene without full scene reload)
+             // We work on a copy of the list because StopTracking modifies the dictionary
+             var runnersToKill = activeTransientRunners.Values.ToList();
+             foreach(var runner in runnersToKill)
+             {
+                 // Return to pool using your existing method or PoolingManager directly
+                 if(runner) runner.gameObject.SetActive(false); // Simple disable, pooling manager handles the rest usually
+             }
+             activeTransientRunners.Clear();
+             snapshotData.Clear();
+
+             if (loadedSnapshots == null) return;
+
+             Debug.Log($"TransientNpcTracker: Restoring {loadedSnapshots.Count} NPCs...");
+
+             // 2. Rehydration Loop
+             foreach (var snapshot in loadedSnapshots)
+             {
+                  // A. Find Prefab
+                  GameObject prefabToSpawn = transientNpcPrefabs.FirstOrDefault(p => p.name == snapshot.PrefabID);
                   
-     //              if (snapshot == null)
-     //              {
-     //                   Debug.LogWarning($"TransientNpcTracker: GatherSnapshotData returned null for runner {runner.gameObject.name}. Skipping update for this GUID.", runner.gameObject);
-     //                   continue;
-     //              }
+                  if (prefabToSpawn == null)
+                  {
+                       Debug.LogWarning($"TransientNpcTracker: Could not find prefab with name '{snapshot.PrefabID}' for snapshot {snapshot.Guid.ToHexString()}. Skipping.");
+                       continue;
+                  }
 
-     //              // 2. Update the internal storage dictionary
-     //              if (snapshotData.ContainsKey(guid))
-     //              {
-     //                   snapshotData[guid] = snapshot;
-     //              } else {
-     //                   // This should not happen if StartTracking worked correctly, but handle defensively
-     //                   snapshotData.Add(guid, snapshot);
-     //                   Debug.LogWarning($"TransientNpcTracker: GUID {guid.ToHexString()} found in active runners but not in snapshot data. Adding new entry.", runner.gameObject);
-     //              }
-     //              Debug.Log($"TransientNpcTracker: Snapshot taken for {runner.gameObject.name} (State: {snapshot.StateEnumKey}).");
-     //         }
-     //         activeTrackedCount = activeTransientRunners.Count; // Update count based on active runners
-     //         Debug.Log($"TransientNpcTracker: Snapshot process complete. {snapshotData.Count} entries updated.");
-     //    }
+                  // B. Spawn
+                  GameObject npcObj = poolingManager.GetPooledObject(prefabToSpawn);
+                  if (npcObj == null) continue;
+
+                  // C. Setup
+                  var runner = npcObj.GetComponent<Game.NPC.NpcStateMachineRunner>();
+                  if (runner != null)
+                  {
+                       // Inject persistence info back into runner so it tracks correctly next save
+                       runner.PrefabID = snapshot.PrefabID; 
+                       
+                       // Ensure the Guid on the savable component matches the saved one
+                       var savable = npcObj.GetComponent<Game.NPC.TI.TiNpcSavableComponent>(); // Reusing the component, or specific Transient one
+                       if (savable != null) savable.SetInstanceGuid(snapshot.Guid);
+
+                       // Track it BEFORE restoring state (so tracking dict is valid)
+                       StartTracking(snapshot.Guid, runner);
+
+                       // D. Restore State
+                       runner.RestoreFromSnapshot(snapshot, CustomerManagement.CustomerManager.Instance);
+                  }
+             }
+        }
 
         /// <summary>
         /// Retrieves the compiled snapshot data for all tracked transient NPCs.

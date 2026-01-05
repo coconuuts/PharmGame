@@ -840,7 +840,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   interactionPromptMessage: Open Inventory (E)
   inventoryUIRoot: {fileID: 3952946726980145951}
-  inventoryComponent: {fileID: 0}
+  inventoryComponent: {fileID: -2245660967918091068}
   enableOnStart: 1
 --- !u!114 &1457525958296894251
 MonoBehaviour:

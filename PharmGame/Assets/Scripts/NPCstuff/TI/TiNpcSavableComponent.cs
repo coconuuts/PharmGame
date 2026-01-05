@@ -1,9 +1,7 @@
-// --- START OF FILE TiNpcSavableComponent.cs ---
-
 using UnityEngine;
 using System;
 using Systems.Persistence;
-using Systems.Inventory; // Needed for SerializableGuid
+using Systems.Inventory; // Needed for SerializableGuid if referenced
 using Game.NPC.TI;
 using Game.NPC;
 
@@ -11,8 +9,8 @@ namespace Game.NPC.TI
 {
     /// <summary>
     /// Component attached to an active True Identity NPC GameObject.
-    /// It allows the generic SaveLoadSystem to register this object's state
-    /// by providing a SerializableGuid, which maps back to its core TiNpcData.
+    /// It allows the generic SaveLoadSystem to trigger a "Flush" of this object's state
+    /// into its core TiNpcData record before the game is saved.
     /// </summary>
     [RequireComponent(typeof(NpcStateMachineRunner))]
     public class TiNpcSavableComponent : MonoBehaviour, ISavableComponent
@@ -38,21 +36,11 @@ namespace Game.NPC.TI
                 enabled = false;
                 return;
             }
-            
-            // For TI NPCs, the GUID should be set during activation or initialization
-            if (instanceGuid.Equals(SerializableGuid.Empty))
-            {
-                 Debug.LogWarning($"TiNpcSavableComponent on {gameObject.name}: Instance GUID is empty. This might be okay if the object is only tracked via TiNpcData, but requires manual setup or assignment during activation.", this);
-            }
         }
 
         void Start()
         {
              tiNpcManager = TiNpcManager.Instance;
-             if (tiNpcManager == null)
-             {
-                  Debug.LogError($"TiNpcSavableComponent on {gameObject.name}: TiNpcManager not found!", this);
-             }
         }
 
         /// <summary>
@@ -72,77 +60,62 @@ namespace Game.NPC.TI
         }
         
         /// <summary>
-        /// Implements ISavableComponent: Creates the data structure needed for saving this specific component's state.
-        /// For TI NPCs, this primarily saves the *instance GUID* so the system knows which TiNpcData to update upon load.
+        /// Implements ISavableComponent.
+        /// PHASE 2 UPDATE: This method now "flushes" the active state to the central TiNpcData 
+        /// and returns NULL to indicate no separate save artifact is needed.
         /// </summary>
         public ISaveable CreateSaveData()
         {
-             // If this component is active, the authoritative state is saved in TiNpcData.
-             // We just need to ensure the runner's GUID is saved, which is already handled by the Runner's transient snapshot mechanism (if applicable) or rely on the fact that TI NPCs are saved via TiNpcManager's central dump.
-             
-             // Since TI NPCs are saved centrally via TiNpcManager (Phase 4.1 adjustment), 
-             // this component's primary role upon saving is to ensure its GUID is known if necessary, 
-             // or to save its *Active State* if the generic SaveLoadSystem is scanning everything.
+             // 1. Ensure Manager linkage
+             if (tiNpcManager == null) tiNpcManager = TiNpcManager.Instance;
+             if (tiNpcManager == null) return null;
 
-             // Given the plan is to save TI data centrally, this component might only need to be found to confirm existence, 
-             // or to save the *Active* state if the TI NPC is active.
-
-             // For now, we will only save the GUID if it's not empty, allowing the SaveLoadSystem to find *something* associated with this object.
-             // Since the primary saving mechanism is the TiNpcManager, we return a minimal structure.
-             
-             // NOTE: For maximum compatibility with the GUID-based saving structure, 
-             // we create a simple container structure that holds the necessary link data.
-             
-             if (string.IsNullOrEmpty(tiNpcDataStringId) || instanceGuid.Equals(SerializableGuid.Empty))
+             // 2. Validate ID
+             if (string.IsNullOrEmpty(tiNpcDataStringId))
              {
-                  Debug.LogWarning($"TiNpcSavableComponent on {gameObject.name} has incomplete link data (String ID: {tiNpcDataStringId}, GUID: {instanceGuid}). Returning null save data.", this);
+                  Debug.LogWarning($"TiNpcSavableComponent on {gameObject.name}: Missing TiNpcDataStringId. Cannot flush state.", this);
                   return null;
              }
 
-             // We will use a custom container structure that encapsulates the TI link ID, 
-             // but since the interface expects ISaveable (which usually returns InventoryData or PlayerData), 
-             // we must adapt or create a new route.
-             
-             // To adhere strictly to the provided SaveLoadSystem structure where it expects to route to known lists (inventories, player data), 
-             // we must assume that the *Active State* information needs to be stored somewhere that SaveLoadSystem recognizes.
-             
-             // Let's create a placeholder data class for the Active State of a TI NPC, assuming we need to save it here if the object is active.
-             // This will require adding a route in SaveLoadSystem.SaveGame().
-             
-             return new TiNpcActiveStateData
+             // 3. Retrieve the Master Data Record
+             TiNpcData data = tiNpcManager.GetTiNpcData(tiNpcDataStringId);
+             if (data == null)
              {
-                 Id = instanceGuid,
-                 TiNpcStringId = tiNpcDataStringId,
-                 ActiveStateEnumKey = runner.GetCurrentState()?.HandledState.ToString(),
-                 ActiveStateEnumType = runner.GetCurrentState()?.HandledState.GetType().AssemblyQualifiedName
-             };
+                  Debug.LogError($"TiNpcSavableComponent on {gameObject.name}: Could not find TiNpcData for ID '{tiNpcDataStringId}'. Saving failed for this NPC.", this);
+                  return null;
+             }
+
+             // 4. FLUSH STATE: Update the Master Record with current Active values
+             data.CurrentWorldPosition = transform.position;
+             data.CurrentWorldRotation = transform.rotation;
+             
+             // Save the current Active State Enum
+             if (runner != null)
+             {
+                 var currentState = runner.GetCurrentState();
+                 if (currentState != null)
+                 {
+                     data.SetCurrentState(currentState.HandledState);
+                     // Debug.Log($"TiNpcSavableComponent: Flushed state '{currentState.HandledState}' for '{data.Id}' to data.");
+                 }
+             }
+
+             // 5. Return NULL
+             // We return null because the data is now safely inside 'data', which resides in the 'TiNpcManager.allTiNpcs' list.
+             // The SaveLoadSystem will grab that ENTIRE list via the TiNpcPersistenceBridge.
+             // We do NOT want to add a duplicate partial record to the generic save list.
+             return null; 
         }
         
         /// <summary>
-        /// Binds saved data back to the component. (Needed for ISavableComponent interface).
+        /// Binds saved data back to the component.
+        /// For TI NPCs, this is largely handled by the Activation logic in TiNpcManager,
+        /// but we implement it to satisfy the interface.
         /// </summary>
         public void Bind(ISaveable data)
         {
-             if (data is TiNpcActiveStateData tiData)
-             {
-                  // This is used when loading the scene. We update the local component state
-                  // but the heavy lifting of loading the position/state into TiNpcData happens later.
-                  this.instanceGuid = tiData.Id;
-                  this.tiNpcDataStringId = tiData.TiNpcStringId;
-                  Debug.Log($"TiNpcSavableComponent ({gameObject.name}) bound. Restored GUID {instanceGuid.ToHexString()} linked to TI ID {tiNpcDataStringId}. Active State info ignored here (handled by TiNpcManager on activation).");
-             }
-             // Other data types are irrelevant to this component.
+             // No operation needed here for Phase 2 architecture.
+             // The Manager handles re-activation and state restoration.
         }
     }
-    
-    // --- NEW: Custom Data Structure for TI Active State ---
-    [Serializable]
-    public class TiNpcActiveStateData : ISaveable {
-        public SerializableGuid Id { get; set; }
-        public string TiNpcStringId;
-        public string ActiveStateEnumKey;
-        public string ActiveStateEnumType;
-    }
 }
-
-// --- END OF FILE TiNpcSavableComponent.cs ---

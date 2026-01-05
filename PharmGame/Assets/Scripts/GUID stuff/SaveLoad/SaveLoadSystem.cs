@@ -5,6 +5,9 @@ using Systems.Inventory;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using Systems.SaveLoad;
+using Game.NPC.TI; 
+using Game.NPC;    
+using CustomerManagement.Tracking; 
 
 namespace Systems.Persistence {
     [Serializable] public class GameData { 
@@ -12,6 +15,8 @@ namespace Systems.Persistence {
         public string CurrentLevelName;
         public PlayerData playerData;
         public List<InventoryData> inventories;
+        public List<TiNpcData> tiNpcDataList;
+        public List<TransientNpcSnapshotData> transientNpcSnapshots;
     }
         
     public interface ISaveable  {
@@ -20,11 +25,9 @@ namespace Systems.Persistence {
 
     public interface ISavableComponent 
     {
-    SerializableGuid Id { get; } 
-    
-    // This method returns the raw data structure needed for serialization.
-    // It encapsulates all the logic previously inside CreateInventoryDataFromComponent.
-    ISaveable CreateSaveData(); 
+        SerializableGuid Id { get; } 
+        ISaveable CreateSaveData(); 
+        void Bind(ISaveable data);
     }
     
     public interface IBind<TData> where TData : ISaveable {
@@ -41,16 +44,13 @@ namespace Systems.Persistence {
             base.Awake();
             dataService = new FileDataService(new JsonSerializer());
 
-            // Ensure gameData and its inventories list are initialized
-            if (gameData == null) {
-                gameData = new GameData();
-            }
-            if (gameData.inventories == null) {
-                gameData.inventories = new List<InventoryData>();
-            }
+            if (gameData == null) gameData = new GameData();
+            if (gameData.inventories == null) gameData.inventories = new List<InventoryData>();
+            if (gameData.tiNpcDataList == null) gameData.tiNpcDataList = new List<TiNpcData>();
+            if (gameData.transientNpcSnapshots == null) gameData.transientNpcSnapshots = new List<TransientNpcSnapshotData>();
         }
         
-        void Start() => NewGame(); // Could change to LoadGame("LastSave") to auto-load
+        void Start() => NewGame(); 
 
         void OnEnable() => SceneManager.sceneLoaded += OnSceneLoaded;
         void OnDisable() => SceneManager.sceneLoaded -= OnSceneLoaded;
@@ -59,60 +59,73 @@ namespace Systems.Persistence {
         {
             if (scene.name == "Menu") return;
 
-            Debug.Log($"SaveLoadSystem: Scene '{scene.name}' loaded. Attempting to bind data.");
+            Debug.Log($"SaveLoadSystem: Scene '{scene.name}' loaded. Binding data...");
 
+            // 1. Bind Player
             Bind<PlayerEntity, PlayerData>(gameData.playerData);
 
-            // Find all Inventory components in the newly loaded scene
+            // 2. Bind Generic Inventories
+            // FIX: Use FindObjectsByType with SortMode.None
             var inventoriesInScene = FindObjectsByType<Systems.Inventory.Inventory>(FindObjectsSortMode.None);
-            Debug.Log($"SaveLoadSystem: Found {inventoriesInScene.Length} Inventory components in scene.");
-
-            // Ensure gameData.inventories is initialized (e.g., if loading a corrupted save or a new game)
-            if (gameData.inventories == null)
-            {
-                gameData.inventories = new List<InventoryData>();
-            }
+            
+            if (gameData.inventories == null) gameData.inventories = new List<InventoryData>();
 
             foreach (var invComponent in inventoriesInScene)
             {
-                // Find corresponding InventoryData from loaded gameData
                 InventoryData invData = gameData.inventories.FirstOrDefault(d => d.Id == invComponent.Id);
-
                 if (invData == null)
                 {
-                    Debug.LogWarning($"SaveLoadSystem: No saved data found for Inventory '{invComponent.gameObject.name}' (ID: {invComponent.Id}). Initializing with empty/default data for it. (This is normal for new components or if it wasn't saved before).", invComponent.gameObject);
-                    // If no data found, create a *new* empty InventoryData for this component for the *next* save.
-                    // The Bind method will then initialize with empty data.
                     invData = new InventoryData
                     {
                         Id = invComponent.Id,
-                        allowedLabels = new List<ItemLabel>(invComponent.AllowedLabels), // Use current defaults
+                        allowedLabels = new List<ItemLabel>(invComponent.AllowedLabels),
                         allowAllIfListEmpty = invComponent.AllowAllIfListEmpty,
                     };
-                    gameData.inventories.Add(invData); // Add to the list to be managed for next save
+                    gameData.inventories.Add(invData);
                 }
-
-                // Bind the data to the component
                 invComponent.Bind(invData);
             }
 
-            // TODO: Add binding for other savable components (e.g., player, world objects)
-            // Example:
-            // Bind<PlayerCharacter, PlayerData>(gameData.playerData);
-            // Bind<WorldObject, WorldObjectData>(gameData.worldObjects);
+            // --- PHASE 4: NPC RESTORATION ---
+            
+            // 3. Restore TI NPCs
+            if (TiNpcPersistenceBridge.Instance != null)
+            {
+                TiNpcPersistenceBridge.Instance.LoadAllTiNpcData(gameData.tiNpcDataList);
+            }
+            else
+            {
+                // FIX: Use FindFirstObjectByType
+                var bridge = FindFirstObjectByType<TiNpcPersistenceBridge>();
+                if (bridge != null) bridge.LoadAllTiNpcData(gameData.tiNpcDataList);
+            }
+
+            // 4. Restore Transient NPCs
+            if (TransientNpcPersistenceBridge.Instance != null)
+            {
+                TransientNpcPersistenceBridge.Instance.LoadSnapshots(gameData.transientNpcSnapshots);
+            }
+            else
+            {
+                // FIX: Use FindFirstObjectByType
+                var bridge = FindFirstObjectByType<TransientNpcPersistenceBridge>();
+                if (bridge != null) bridge.LoadSnapshots(gameData.transientNpcSnapshots);
+            }
+            
+            Debug.Log("SaveLoadSystem: Data binding complete.");
         }
         
         void Bind<T, TData>(TData data) where T : MonoBehaviour, IBind<TData> where TData : ISaveable, new() {
-            var entity = FindObjectsByType<T>(FindObjectsSortMode.None).FirstOrDefault();
+            // FIX: Use FindFirstObjectByType (more efficient than getting all and taking first)
+            var entity = FindFirstObjectByType<T>();
             if (entity != null) {
-                if (data == null) {
-                    data = new TData { Id = entity.Id };
-                }
+                if (data == null) data = new TData { Id = entity.Id };
                 entity.Bind(data);
             }
         }
 
         void Bind<T, TData>(List<TData> datas) where T: MonoBehaviour, IBind<TData> where TData : ISaveable, new() {
+            // FIX: Use FindObjectsByType with SortMode.None
             var entities = FindObjectsByType<T>(FindObjectsSortMode.None);
 
             foreach(var entity in entities) {
@@ -126,28 +139,33 @@ namespace Systems.Persistence {
         }
 
         public void NewGame() {
-            Debug.Log("SaveLoadSystem: Starting New Game.");
+            Debug.Log("SaveLoadSystem: New Game.");
             gameData = new GameData {
                 Name = "Game",
                 CurrentLevelName = "SampleScene",
                 playerData = new PlayerData(),
-                inventories = new List<InventoryData>() // Initialize for a new game
+                inventories = new List<InventoryData>(),
+                tiNpcDataList = new List<TiNpcData>(),
+                transientNpcSnapshots = new List<TransientNpcSnapshotData>()
             };
-            // The scene will be loaded, and OnSceneLoaded will then initialize/bind inventories.
             SceneManager.LoadScene(gameData.CurrentLevelName);
         }
         
         public void SaveGame() 
         {
-            Debug.Log($"SaveLoadSystem: Saving game '{gameData.Name}'.");
+            Debug.Log($"SaveLoadSystem: Saving game '{gameData.Name}'...");
             
-            // 1. Clear data containers that rely on scene state
+            // 1. Clear generic lists
             gameData.inventories.Clear(); 
             
-            // 2. Find ALL active MonoBehaviours in the scene
+            // 2. Clear NPC lists to prevent duplication
+            gameData.tiNpcDataList.Clear();
+            gameData.transientNpcSnapshots.Clear();
+            
+            // 3. Find and Iterate Savable Components
+            // FIX: Use FindObjectsByType with SortMode.None
             var allSceneMonoBehaviours = FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None);
             
-            // 3. Filter this list down to only those implementing ISavableComponent
             var savableComponents = allSceneMonoBehaviours
                 .Where(mb => mb is ISavableComponent)
                 .Cast<ISavableComponent>()
@@ -156,41 +174,66 @@ namespace Systems.Persistence {
             foreach (var component in savableComponents) {
                 ISaveable data = component.CreateSaveData();
                 
-                // 4. Route the generated data structure to the correct list in GameData
-                if (data is InventoryData invData) {
-                    gameData.inventories.Add(invData);
+                if (data != null)
+                {
+                    if (data is InventoryData invData) {
+                        gameData.inventories.Add(invData);
+                    }
+                    // Add other types here
                 }
-                // TODO: Add routing for other custom save data types here (e.g., WorldObjectData)
             }
             
-            // Handle components that map directly to GameData fields ---
-            // Player data could still be handled separately if it's a single instance.
+            // 4. Bind Singletons
             Bind<PlayerEntity, PlayerData>(gameData.playerData); 
 
+            // --- PHASE 4: NPC SAVING ---
+
+            // 5. Gather TI Data (All Active Flushed + Inactive Simulated)
+            if (TiNpcPersistenceBridge.Instance != null)
+            {
+                gameData.tiNpcDataList = TiNpcPersistenceBridge.Instance.GetAllTiNpcData();
+                Debug.Log($"SaveLoadSystem: Saved {gameData.tiNpcDataList.Count} TI NPCs.");
+            }
+            else
+            {
+                 // FIX: Use FindFirstObjectByType
+                 var bridge = FindFirstObjectByType<TiNpcPersistenceBridge>();
+                 if (bridge != null) gameData.tiNpcDataList = bridge.GetAllTiNpcData();
+            }
+
+            // 6. Gather Transient Snapshots
+            if (TransientNpcPersistenceBridge.Instance != null)
+            {
+                gameData.transientNpcSnapshots = TransientNpcPersistenceBridge.Instance.GetSnapshots();
+                Debug.Log($"SaveLoadSystem: Saved {gameData.transientNpcSnapshots.Count} Transient Snapshots.");
+            }
+            else
+            {
+                 // FIX: Use FindFirstObjectByType
+                 var bridge = FindFirstObjectByType<TransientNpcPersistenceBridge>();
+                 if (bridge != null) gameData.transientNpcSnapshots = bridge.GetSnapshots();
+            }
+
+            // 7. Write to Disk
             dataService.Save(gameData);
-            Debug.Log($"SaveLoadSystem: Game '{gameData.Name}' saved successfully.");
+            Debug.Log("SaveLoadSystem: Save Complete.");
         }
 
         public void LoadGame(string gameName) {
-            Debug.Log($"SaveLoadSystem: Loading game '{gameName}'.");
+            Debug.Log($"SaveLoadSystem: Loading '{gameName}'...");
             gameData = dataService.Load(gameName);
 
-            if (String.IsNullOrWhiteSpace(gameData.CurrentLevelName)) {
-                gameData.CurrentLevelName = "SampleScene";
-            }
+            if (String.IsNullOrWhiteSpace(gameData.CurrentLevelName)) gameData.CurrentLevelName = "SampleScene";
+            if (gameData.inventories == null) gameData.inventories = new List<InventoryData>();
             
-            // Ensure inventories list is initialized, even if empty in save file
-            if (gameData.inventories == null) {
-                gameData.inventories = new List<InventoryData>();
-            }
+            // Ensure lists exist
+            if (gameData.tiNpcDataList == null) gameData.tiNpcDataList = new List<TiNpcData>();
+            if (gameData.transientNpcSnapshots == null) gameData.transientNpcSnapshots = new List<TransientNpcSnapshotData>();
 
-            // The scene will be loaded, and OnSceneLoaded will handle binding the loaded data.
             SceneManager.LoadScene(gameData.CurrentLevelName);
-            Debug.Log($"SaveLoadSystem: Game '{gameName}' loaded. Scene '{gameData.CurrentLevelName}' is loading.");
         }
         
         public void ReloadGame() => LoadGame(gameData.Name);
-
         public void DeleteGame(string gameName) => dataService.Delete(gameName);
     }
 }

@@ -20,6 +20,8 @@ using Game.Navigation; // Needed for PathSO (although not directly used here, go
 using Game.Prescriptions; // Needed for PrescriptionOrder, PrescriptionManager
 using Systems.Interaction; // Needed for IInteractable, InteractionManager // <-- MODIFIED using directive
 using Game.Interaction; // Needed for ObtainPrescription
+using CustomerManagement.Tracking;
+using Systems.Persistence;
 
 
 namespace Game.NPC
@@ -57,25 +59,18 @@ namespace Game.NPC
           private NpcPathFollowingHandler npcPathFollowingHandler;
           public NpcPathFollowingHandler PathFollowingHandler { get { return npcPathFollowingHandler; } private set { npcPathFollowingHandler = value; } }
 
-          // --- NEW: Cached Interaction Components --- // <-- NEW FIELDS
-          // REMOVED: private MultiInteractableManager multiInteractableManager; // No longer cached here
-          // REMOVED: public MultiInteractableManager MultiInteractableManager { get { return multiInteractableManager; } private set { multiInteractableManager = value; } }
-
-          private ObtainPrescription obtainPrescription; // Keep this
-          public ObtainPrescription ObtainPrescription { get { return obtainPrescription; } private set { obtainPrescription = value; } } // Keep this
-          // --- END NEW ---
+          private ObtainPrescription obtainPrescription;
+          public ObtainPrescription ObtainPrescription { get { return obtainPrescription; } private set { obtainPrescription = value; } }
 
 
           // Reference to the TiNpcManager
           private TiNpcManager tiNpcManager;
           // Reference to the PrescriptionManager
           private PrescriptionManager prescriptionManager;
-          // Reference to the CashierManager // <-- NEW FIELD
+          // Reference to the CashierManager 
           private CashierManager cashierManager;
-          // Reference to the UpgradeManager // <-- NEW FIELD
+          // Reference to the UpgradeManager 
           private UpgradeManager upgradeManager;
-          // --- END NEW ---
-
 
           // --- Public methods/properties for external access if needed ---
           public NpcStateSO CurrentStateSO => currentState;
@@ -145,14 +140,10 @@ namespace Game.NPC
           [Header("Cashier Data")]
           [Tooltip("Reference to the customer Runner currently being processed by this Cashier.")]
           public NpcStateMachineRunner CurrentCustomerRunner { get; internal set; } = null; // <-- NEW FIELD
-          // --- END NEW ---
-
-
-          // --- Grid Position Tracking for Active NPCs ---
-          // private Vector3 lastGridPosition; // MOVED TO TiNpcData
-          // private GridManager gridManager; // MOVED TO TiNpcManager
-          // private float timeSinceLastGridUpdate = 0f; // MOVED TO TiNpcData
-          // private const float GridUpdateCheckInterval = 0.5f; // MOVED TO TiNpcSimulationManager
+          
+          [Header("Persistence")]
+          [Tooltip("The ID of the prefab used to spawn this NPC. Critical for restoring the correct visual.")]
+          public string PrefabID;
 
 
           // --- Interpolation Fields for Rigidbody Movement ---
@@ -804,7 +795,103 @@ namespace Game.NPC
 
                Debug.Log($"NpcStateMachineRunner ({gameObject.name}): TI NPC '{TiData.Id}' Deactivated."); // Corrected log message
           }
+          
+          /// <summary>
+          /// Gathers current state into a serializable snapshot.
+          /// Called by TransientNpcTracker during the Save process.
+          /// </summary>
+          public TransientNpcSnapshotData GatherSnapshotData()
+          {
+               // 1. Create Snapshot with Identity Info
+               // Use the GUID from the SavableComponent if present, or generate one if missing (shouldn't happen for tracked NPCs)
+               var savable = GetComponent<ISavableComponent>();
+               var guid = savable != null ? savable.Id : Systems.Inventory.SerializableGuid.Empty;
+               
+               var snapshot = new TransientNpcSnapshotData(guid, PrefabID);
 
+               // 2. Capture World State
+               snapshot.WorldPosition = transform.position;
+               snapshot.WorldRotation = transform.rotation;
+
+               // 3. Capture Active State
+               if (currentState != null)
+               {
+                    snapshot.StateEnumKey = currentState.HandledState.ToString();
+                    snapshot.StateEnumType = currentState.HandledState.GetType().AssemblyQualifiedName;
+               }
+
+               // 4. Capture Inventory (Corrected)
+               var inventory = GetComponent<Systems.Inventory.Inventory>();
+               if (inventory != null)
+               {
+                    // Generate the data object using the existing logic in Inventory
+                    var invData = inventory.CreateSaveData() as Systems.Persistence.InventoryData;
+                    
+                    if (invData != null && invData.items != null)
+                    {
+                         foreach (var itemData in invData.items)
+                         {
+                         if (itemData.quantity > 0)
+                         {
+                              // We convert the GUID to string for the snapshot
+                              // Ensure SerializableTransientItemSnapshot constructor matches this
+                              snapshot.InventoryContents.Add(new SerializableTransientItemSnapshot(itemData.ItemDetailsId.ToString(), itemData.quantity));
+                         }
+                         }
+                    }
+               }
+               
+               // 5. Capture Queue/Prescription Data (If applicable)
+               // You might need to query your specific Handler scripts here.
+               // Example:
+               // var queueHandler = GetComponent<NpcQueueHandler>();
+               // if (queueHandler) { ... set snapshot.CurrentQueueType ... }
+
+               return snapshot;
+          }
+
+          /// <summary>
+          /// Restores state from a snapshot.
+          /// Called by TransientNpcTracker immediately after spawning this NPC during Load.
+          /// </summary>
+          public void RestoreFromSnapshot(TransientNpcSnapshotData snapshot, CustomerManagement.CustomerManager customerManager)
+          {
+               if (snapshot == null) return;
+
+               // 1. Restore Position
+               transform.position = snapshot.WorldPosition;
+               transform.rotation = snapshot.WorldRotation;
+               
+               // 2. Restore Inventory
+               var inventory = GetComponent<Systems.Inventory.Inventory>();
+               if (inventory != null)
+               {
+                    // Create a temporary data structure or use inventory methods to add items
+                    // This depends on your Inventory implementation. 
+                    // For now, we assume we can initialize it or add items.
+                    // inventory.Clear(); 
+                    // foreach (var item in snapshot.InventoryContents) inventory.AddItem(item.ItemDetailsID, item.Quantity);
+               }
+
+               // 3. Restore State
+               // This is the tricky part. We need to transition to the state *without* triggering "OnEnter" logic 
+               // that might restart a path or interaction from scratch.
+               // For Phase 3, we will simply Activate into that state.
+               
+               System.Enum restoredStateEnum = TiNpcData.ParseStateEnum(snapshot.StateEnumKey, snapshot.StateEnumType);
+               
+               if (restoredStateEnum != null)
+               {
+                    // We reuse the Activate logic but provide the specific state
+                    // Note: You might need to pass specific data (like the preserved prescription) to the context here.
+                    Activate(null, customerManager, restoredStateEnum);
+               }
+               else
+               {
+                    // Fallback if state logic fails
+                    Activate(null, customerManager); 
+               }
+          }
 
         /// <summary>
         /// Resets NPC-specific TRANSIENT data fields managed by the Runner.

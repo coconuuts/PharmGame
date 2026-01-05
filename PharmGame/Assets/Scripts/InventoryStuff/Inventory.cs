@@ -478,5 +478,19 @@ namespace Systems.Inventory
                 }
             }
         }
+
+        // This satisfies the ISavableComponent interface by accepting the generic interface
+        // and casting it to the specific type we need.
+        public void Bind(ISaveable data)
+        {
+            if (data is InventoryData inventoryData)
+            {
+                Bind(inventoryData);
+            }
+            else
+            {
+                Debug.LogError($"Inventory: Failed to bind data. Expected InventoryData but got '{data?.GetType().Name ?? "null"}'", this);
+            }
+        }
     }
 }
