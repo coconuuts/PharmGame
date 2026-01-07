@@ -5,12 +5,16 @@ using UnityEngine;
 using TMPro;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal; // Assuming URP for Volume
+using Systems.Persistence; 
+using Systems.Inventory;
 
-public class TimeManager : MonoBehaviour {
+public class TimeManager : MonoBehaviour , IBind<GameData>
+{
     public static TimeManager Instance { get; private set; }
+    [field: SerializeField] public SerializableGuid Id { get; set; } = SerializableGuid.NewGuid();
+    private GameData boundData;
 
     [SerializeField] TextMeshProUGUI timeText;
-
     [SerializeField] Light sun;
     [SerializeField] Light moon; // Ensure you have a Light component assigned here for the moon
     [SerializeField] AnimationCurve lightIntensityCurve;
@@ -62,13 +66,39 @@ public class TimeManager : MonoBehaviour {
         if (Instance == null)
         {
             Instance = this;
-            // Optional: If you want this manager to persist across scenes
-            // DontDestroyOnLoad(gameObject);
+            DontDestroyOnLoad(gameObject);
+            
+            if (timeSettings == null) 
+            {
+                Debug.LogError("TimeSettings ScriptableObject is not assigned to the TimeManager!");
+                enabled = false;
+                return;
+            }
+            service = new TimeService(timeSettings); 
+            Debug.Log("TimeManager: Awake completed. TimeService initialized.");
         }
         else
         {
-            // If an instance already exists, destroy this new one
-            Debug.LogWarning("Multiple TimeManager instances found. Destroying duplicate.");
+            // We are the "Duplicate" in the new scene. We have the correct references to the new Sun, Moon, UI.
+            // Pass them to the Persistent Instance so it stops looking at dead objects.
+            Instance.sun = sun;
+            Instance.moon = moon;
+            Instance.timeText = timeText;
+            Instance.volume = volume;
+            Instance.skyboxMaterial = skyboxMaterial;
+            
+            // If specific settings might differ per scene, transfer them too, 
+            // otherwise the persistent manager keeps its original settings.
+            Instance.lightIntensityCurve = lightIntensityCurve;
+            Instance.maxSunIntensity = maxSunIntensity;
+            Instance.maxMoonIntensity = maxMoonIntensity;
+            Instance.dayAmbientLight = dayAmbientLight;
+            Instance.nightAmbientLight = nightAmbientLight;
+
+            // Force the persistent instance to re-grab internal components (like ColorAdjustments)
+            Instance.RefreshSceneBindings();
+            
+            Debug.Log("TimeManager: New scene loaded. References transferred to persistent instance.");
             Destroy(gameObject);
             return; // Stop execution for this object
         }
@@ -86,26 +116,52 @@ public class TimeManager : MonoBehaviour {
         Debug.Log("TimeManager: Awake completed. TimeService initialized."); // Added log
     }
 
-    void Start() {
-        // Try to get ColorAdjustments from the Volume profile
+    // Helper to refresh components that need to be fetched from the new references
+    public void RefreshSceneBindings()
+    {
         if (volume != null && volume.profile != null) {
             volume.profile.TryGet(out colorAdjustments);
         } else {
-             Debug.LogWarning("Volume or Volume Profile not assigned/found on TimeManager. Ambient color tinting will not work.");
+             Debug.LogWarning("Volume or Volume Profile not assigned/found on TimeManager.");
         }
-
-        // --- Subscribe to OnSunset for Day Tracking ---
-        service.OnSunset += HandleSunset;
-        // ---------------------------------------------
-
-
-        // Perform initial update to set lights/sky/UI based on starting time
-        UpdateTimeOfDay(); // This will also trigger events if the initial time is at a boundary
-        UpdateLightRotation(); // Use the new method name
+        
+        UpdateLightRotation();
         UpdateLightSettings();
         UpdateSkyBlend();
+        
+        if (timeText != null) {
+             timeText.text = service.CurrentTime.ToString("h:mm tt") + $" - Day {currentDay}";
+        }
+    }
+        
+    public void Bind(GameData data) 
+    {
+        boundData = data;
 
-        Debug.Log("TimeManager: Start completed."); // Added log
+        if (data.TimeTicks > 0) {
+            DateTime loadedTime = new DateTime(data.TimeTicks);
+            service.SetTime(loadedTime);
+            this.currentDay = data.CurrentDay; 
+            Debug.Log($"TimeManager: Loaded Time {loadedTime:t} (Day {currentDay})");
+        }
+
+        // Force visual update immediately on load
+        RefreshSceneBindings();
+    }
+
+    void LateUpdate() {
+        if (boundData != null && service != null) {
+            boundData.TimeTicks = service.CurrentTime.Ticks;
+            boundData.CurrentDay = currentDay;
+        }
+    }
+
+    void Start() {
+        // Only run this if we are the instance (The duplicate destroys itself in Awake, so this only runs for the first one)
+        if (Instance == this) RefreshSceneBindings();
+        
+        service.OnSunset += HandleSunset;
+        Debug.Log("TimeManager: Start completed."); 
     }
 
     void Update() {

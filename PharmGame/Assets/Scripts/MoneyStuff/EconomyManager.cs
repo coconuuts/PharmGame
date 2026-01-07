@@ -1,16 +1,19 @@
 using UnityEngine;
 using TMPro; // Import TextMeshPro namespace
 using GameEconomy;
+using Systems.Persistence;  
+using Systems.Inventory;
 
 namespace Systems.Economy
 {
     /// <summary>
     /// Manages the player's currency and updates the UI display.
     /// </summary>
-    public class EconomyManager : MonoBehaviour
+    public class EconomyManager : MonoBehaviour, IBind<GameData>
     {
         // --- Singleton Instance ---
         public static EconomyManager Instance { get; private set; }
+        [field: SerializeField] public SerializableGuid Id { get; set; } = SerializableGuid.NewGuid();
 
         [Header("Money Wallet")]
         [Tooltip("The ScriptableObject asset representing the player's money wallet.")]
@@ -22,8 +25,8 @@ namespace Systems.Economy
         [Tooltip("The TextMeshProUGUI component that displays the player's total money.")]
         [SerializeField] private TextMeshProUGUI moneyDisplayTMP; // Reference to the TextMeshProUGUI
 
-        // --- Provide access to the Money Wallet SO ---
         public MoneyWalletSO PlayerMoneyWallet => playerMoneyWallet;
+        private GameData boundData;
 
         private void Awake()
         {
@@ -31,10 +34,13 @@ namespace Systems.Economy
             if (Instance == null)
             {
                 Instance = this;
-                // Optional: DontDestroyOnLoad(gameObject); // If manager should persist between scenes
+                DontDestroyOnLoad(gameObject); 
             }
             else
             {
+                Instance.FindAndAssignMoneyDisplayTMP();
+                Instance.UpdateMoneyDisplay();
+
                 Debug.LogWarning("EconomyManager: Duplicate instance found. Destroying this one.", this);
                 Destroy(gameObject);
                 return;
@@ -65,6 +71,24 @@ namespace Systems.Economy
         {
             // Update the UI with the initial money amount
             UpdateMoneyDisplay();
+        }
+
+        private void OnEnable()
+        {
+            if (playerMoneyWallet != null)
+            {
+                playerMoneyWallet.OnCleanCashChanged += SyncCleanCash;
+                playerMoneyWallet.OnDirtyCashChanged += SyncDirtyCash;
+            }
+        }
+
+        private void OnDisable()
+        {
+            if (playerMoneyWallet != null)
+            {
+                playerMoneyWallet.OnCleanCashChanged -= SyncCleanCash;
+                playerMoneyWallet.OnDirtyCashChanged -= SyncDirtyCash;
+            }
         }
 
         private void OnDestroy()
@@ -181,6 +205,31 @@ namespace Systems.Economy
         public float GetDirtyCash() => playerMoneyWallet?.DirtyCash ?? 0;
         public float GetTotalCash() => playerMoneyWallet?.TotalCash ?? 0;
 
-        // TODO: Add methods for saving/loading currency if needed
+        public void Bind(GameData data)
+        {
+            this.boundData = data;
+
+            FindAndAssignMoneyDisplayTMP();
+            
+            // 1. LOAD: Apply saved data to the runtime wallet
+            // This puts the saved numbers INTO the ScriptableObject
+            if (playerMoneyWallet != null)
+            {
+                playerMoneyWallet.SetWallet(data.PlayerCleanMoney, data.PlayerDirtyMoney);
+            }
+
+            Debug.Log("EconomyManager: Bound to GameData. Wallet loaded.");
+        }
+
+        // These run whenever the wallet changes, ensuring 'boundData' is ready for saving at any moment.
+        void SyncCleanCash(float amount)
+        {
+            if (boundData != null) boundData.PlayerCleanMoney = amount;
+        }
+
+        void SyncDirtyCash(float amount)
+        {
+            if (boundData != null) boundData.PlayerDirtyMoney = amount;
+        }
     }
 }

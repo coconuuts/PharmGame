@@ -8,6 +8,8 @@ using UnityEngine;
 using System.Collections.Generic;
 using System; // Needed for Action
 using System.Linq; // Needed for ToHashSet(), FirstOrDefault
+using Systems.Persistence; 
+using Systems.Inventory;
 
 // Make sure this script is in a namespace if you are using them consistently
 // namespace Systems.Upgrades // Example namespace
@@ -20,7 +22,7 @@ using System.Linq; // Needed for ToHashSet(), FirstOrDefault
     /// MODIFIED: Added tracking and checking for purchased upgrades.
     /// ADDED: Constant and helper method for the "Music License" upgrade.
     /// </summary>
-    public class UpgradeManager : MonoBehaviour
+    public class UpgradeManager : MonoBehaviour, IBind<GameData>
     {
         // --- Public Configuration ---
         [Header("Passive Effect Modifiers")]
@@ -29,6 +31,8 @@ using System.Linq; // Needed for ToHashSet(), FirstOrDefault
 
         // --- Singleton Instance ---
         public static UpgradeManager Instance { get; private set; }
+        [field: SerializeField] public SerializableGuid Id { get; set; } = SerializableGuid.NewGuid();
+        private GameData boundData;
 
         // --- Upgrade Data ---
         [Header("Available Upgrades")]
@@ -98,6 +102,35 @@ using System.Linq; // Needed for ToHashSet(), FirstOrDefault
             }
         }
 
+        // IBind Implementation
+        public void Bind(GameData data)
+        {
+            boundData = data;
+            
+            // 1. LOAD: Restore purchased upgrades from ID list
+            purchasedUpgrades.Clear();
+            
+            if (data.UnlockedUpgradeIds != null)
+            {
+                foreach (string id in data.UnlockedUpgradeIds)
+                {
+                    // Find the SO asset that matches this saved ID
+                    UpgradeDetailsSO upgrade = allAvailableUpgrades.FirstOrDefault(u => u.uniqueID == id);
+                    
+                    if (upgrade != null)
+                    {
+                        purchasedUpgrades.Add(upgrade);
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"UpgradeManager: Could not find upgrade asset with ID '{id}' during load.");
+                    }
+                }
+            }
+            
+            Debug.Log($"UpgradeManager: Loaded {purchasedUpgrades.Count} upgrades.");
+        }
+
         // Optional: Add a method to trigger the purchase event from other scripts
         // (Though the UI handler will likely be the primary caller)
         public void TriggerUpgradePurchaseAttempt(UpgradeDetailsSO upgrade)
@@ -139,8 +172,13 @@ using System.Linq; // Needed for ToHashSet(), FirstOrDefault
             purchasedUpgrades.Add(upgrade);
             Debug.Log($"UpgradeManager: Marked upgrade '{upgrade.upgradeName}' (ID: {upgrade.uniqueID}) as purchased. Total purchased: {purchasedUpgrades.Count}");
 
-            // --- Future: Save purchased upgrades here ---
-            // SaveGameData();
+            if (boundData != null)
+            {
+                if (!boundData.UnlockedUpgradeIds.Contains(upgrade.uniqueID))
+                {
+                    boundData.UnlockedUpgradeIds.Add(upgrade.uniqueID);
+                }
+            }
 
             // Notify subscribers that an upgrade was successfully purchased
             OnUpgradePurchasedSuccessfully?.Invoke(upgrade);

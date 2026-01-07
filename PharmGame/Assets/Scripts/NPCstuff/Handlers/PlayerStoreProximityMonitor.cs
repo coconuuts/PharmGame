@@ -64,6 +64,15 @@ public class PlayerStoreProximityMonitor : MonoBehaviour
 
     void Update()
     {
+        if (playerTransform == null || storeCenterPoint == null)
+        {
+            RefreshReferences();
+
+            // If we still can't find them (e.g., during the exact frame of a scene load), 
+            // return immediately to prevent the crash.
+            if (playerTransform == null || storeCenterPoint == null) return;
+        }
+        
         // Calculate the squared distance between the player and the store
         float distanceToStoreSqr = (playerTransform.position - storeCenterPoint.position).sqrMagnitude;
 
@@ -84,6 +93,33 @@ public class PlayerStoreProximityMonitor : MonoBehaviour
             Debug.Log($"Player is near the store ({Mathf.Sqrt(distanceToStoreSqr):F1}m). Resuming customer spawning.", this);
             customerManager.SetStoreSimulationActive(false, StorePauseSource.Proximity);
 isPausedByProximity = false;
+        }
+    }
+
+    /// <summary>
+    /// Attempts to re-find references if they are lost/destroyed (e.g. after Scene Load).
+    /// </summary>
+    private void RefreshReferences()
+    {
+        // 1. Find Customer Manager
+        if (customerManager == null) customerManager = CustomerManager.Instance;
+
+        // 2. Find Player (Standard Tag Search)
+        if (playerTransform == null)
+        {
+            GameObject playerObj = GameObject.FindGameObjectWithTag("Player");
+            if (playerObj != null) playerTransform = playerObj.transform;
+        }
+
+        // 3. Find Store Center (Search by Name if reference is lost)
+        // Note: Since this reference breaks on scene load, we try to find an object named "StoreCenter"
+        // You can also change this to use a Tag if you prefer.
+        if (storeCenterPoint == null)
+        {
+            GameObject storeObj = GameObject.Find("StoreCenter"); 
+            // OR use a tag: GameObject.FindGameObjectWithTag("StoreCenter");
+            
+            if (storeObj != null) storeCenterPoint = storeObj.transform;
         }
     }
 }

@@ -146,39 +146,21 @@ public class TiNpcSimulationManager : MonoBehaviour
         {
             yield return new WaitForSeconds(simulationTickInterval);
 
-            // Dependencies check (will use injected fields later)
-            if (basicNpcStateManager == null)
+            // If any critical reference is missing (null or destroyed), try to find it again.       
+            if (playerTransform == null || gridManager == null || timeManager == null || basicNpcStateManager == null)
             {
-                Debug.LogError("SIM TiNpcSimulationManager: BasicNpcStateManager is null! Cannot simulate inactive NPCs.", this);
-                yield return new WaitForSeconds(simulationTickInterval * 5);
+                RefreshSceneReferences();
+            }
+
+            // If still missing after attempted refresh, wait and try again next tick.
+            if (basicNpcStateManager == null || gridManager == null || playerTransform == null || timeManager == null)
+            {
+                // Commented out Error Log to prevent spamming console during scene load transitions
+                // Debug.LogWarning("SIM TiNpcSimulationManager: Waiting for scene dependencies...");
+                yield return new WaitForSeconds(simulationTickInterval * 2); 
                 continue;
             }
-            if (gridManager == null)
-            {
-                Debug.LogError("SIM TiNpcSimulationManager: GridManager is null! Cannot efficiently find inactive NPCs for simulation.", this);
-                yield return new WaitForSeconds(simulationTickInterval * 5); // Cannot simulate efficiently without grid
-                continue;
-            }
-            if (playerTransform == null)
-            {
-                Debug.LogError("SIM TiNpcSimulationManager: Player Transform is null! Cannot query grid for simulation batch.", this);
-                yield return new WaitForSeconds(simulationTickInterval * 5);
-                continue;
-            }
-            // WaypointManager check is done within BasicPathStateSO
-            // if (waypointManager == null) // Check WaypointManager dependency for path simulation
-            // {
-            //     // Simulation for non-path states can continue, but path states will fallback internally.
-            //     // No need to yield longer here, just log the specific issue.
-            //     Debug.LogWarning("SIM TiNpcSimulationManager: WaypointManager not found. Simulation of path following for inactive NPCs may not work correctly.");
-            // }
-            // --- Check TimeManager dependency for schedule checks ---
-            if (timeManager == null) // Use injected field
-            {
-                Debug.LogError("SIM TiNpcSimulationManager: TimeManager instance is null! Cannot perform schedule checks during simulation.", this);
-                yield return new WaitForSeconds(simulationTickInterval * 5);
-                continue; // Cannot proceed
-            }
+
             DateTime currentTime = timeManager.CurrentGameTime; // Use injected field
 
             // --- Build the list of NPCs to simulate this tick ---
@@ -266,7 +248,6 @@ public class TiNpcSimulationManager : MonoBehaviour
                 Debug.LogError("SIM TiNpcSimulationManager: TiNpcManager or its allTiNpcs collection is null! Cannot find path-following/processing NPCs for simulation.");
             }
             // --- Finished building the list of NPCs to simulate ---
-
 
             int totalToSimulate = simulationCandidates.Count;
 
@@ -501,6 +482,25 @@ public class TiNpcSimulationManager : MonoBehaviour
                 // Debug.Log($"TiNpcSimulationManager: Significant move detected for active TI NPC '{data.Id}'. Grid updated.", data.NpcGameObject); // Too noisy
             }
         }
+    }
+
+    /// <summary>
+    /// This method attempts to find scene references if they are missing.
+    /// </summary>
+    private void RefreshSceneReferences()
+    {
+        if (playerTransform == null) 
+        {
+            GameObject player = GameObject.FindGameObjectWithTag("Player");
+            if (player != null) playerTransform = player.transform;
+        }
+
+        if (gridManager == null) gridManager = FindFirstObjectByType<GridManager>();
+        if (proximityManager == null) proximityManager = FindFirstObjectByType<ProximityManager>();
+        if (waypointManager == null) waypointManager = FindFirstObjectByType<WaypointManager>();
+        if (timeManager == null) timeManager = TimeManager.Instance; // Singleton ref might be safer
+        if (basicNpcStateManager == null) basicNpcStateManager = FindFirstObjectByType<BasicNpcStateManager>();
+        if (tiNpcManager == null) tiNpcManager = FindFirstObjectByType<TiNpcManager>();
     }
 
         /// <summary>

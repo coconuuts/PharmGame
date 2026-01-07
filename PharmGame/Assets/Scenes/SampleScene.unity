@@ -1944,6 +1944,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d8bd96a1c7f038848bb107f92eaf29ed, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  <Id>k__BackingField:
+    Part1: 3976897036
+    Part2: 1101037523
+    Part3: 2658703011
+    Part4: 2018106677
   playerMoneyWallet: {fileID: 11400000, guid: 0da4e5bcdbaba62458dd35bf846772e6, type: 2}
   playerUITag: PlayerUI
   moneyDisplayTMP: {fileID: 644033412}
@@ -2013,6 +2018,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f3f0e0e3d09f9444fafe01872f5a7b50, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  <Id>k__BackingField:
+    Part1: 635447844
+    Part2: 1274803297
+    Part3: 3908633021
+    Part4: 149113516
   timeText: {fileID: 1574710582}
   sun: {fileID: 410087040}
   moon: {fileID: 945536118}
@@ -2081,6 +2091,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 95032690e0c73a746a6e0ca65486f4e0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  <Id>k__BackingField:
+    Part1: 1731117858
+    Part2: 1229146494
+    Part3: 2726003089
+    Part4: 98683962
   allAvailableUpgrades:
   - {fileID: 11400000, guid: 19fd1027fab157943a8c5e16ec8b7c14, type: 2}
   - {fileID: 11400000, guid: 1818646fb3ab69d47b0182235aeb9521, type: 2}
@@ -5946,6 +5961,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2c291042a7c9d5d4dba7a36490bc6c83, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  <Id>k__BackingField:
+    Part1: 3939465639
+    Part2: 1330976354
+    Part3: 3664832925
+    Part4: 1545484454
   offModel: {fileID: 6462233583290642585}
   onModel: {fileID: 4579273273787343074}
   lightGroup: {fileID: 1268067426}
@@ -36739,6 +36759,71 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   rowIndex: 1
   columnIndex: 1
+--- !u!1 &1863998787
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1863998789}
+  - component: {fileID: 1863998788}
+  m_Layer: 0
+  m_Name: GlobalSystems
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1863998788
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1863998787}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 250d18c9aeddcd34b825f64319e5e415, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  UnparentOnAwake: 1
+  gameData:
+    Name: New Game
+    CurrentLevelName: SampleScene
+    playerData:
+      <Id>k__BackingField:
+        Part1: 0
+        Part2: 0
+        Part3: 0
+        Part4: 0
+      position: {x: 0, y: 0, z: 0}
+      rotation: {x: 0, y: 0, z: 0, w: 0}
+    inventories: []
+    tiNpcDataList: []
+    transientNpcSnapshots: []
+    worldInteractables: []
+    PlayerCleanMoney: 0
+    PlayerDirtyMoney: 0
+    CurrentDay: 1
+    TimeTicks: 0
+    UnlockedUpgradeIds: []
+--- !u!4 &1863998789
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1863998787}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0.5295187, y: 1.1677217, z: -5.399743}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1869059065
 GameObject:
   m_ObjectHideFlags: 0
@@ -49791,6 +49876,7 @@ SceneRoots:
   - {fileID: 257548374}
   - {fileID: 7972450836261178367}
   - {fileID: 1009796057}
+  - {fileID: 1863998789}
   - {fileID: 99645950}
   - {fileID: 1589559893}
   - {fileID: 29837263}

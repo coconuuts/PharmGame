@@ -1,5 +1,6 @@
 using UnityEngine;
 using TMPro;
+using UnityEngine.SceneManagement;
 
 public class PromptEditor : MonoBehaviour
 {
@@ -30,48 +31,58 @@ public class PromptEditor : MonoBehaviour
             return;
         }
 
-        // Find the shared prompt text element.  Important to do this in Awake.
+        // Initial setup
+        RefreshReferences();
+    }
+
+    // --- Subscribe to Scene Loading ---
+    private void OnEnable()
+    {
+        SceneManager.sceneLoaded += OnSceneLoaded;
+    }
+
+    private void OnDisable()
+    {
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+    }
+
+    private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        RefreshReferences();
+    }
+
+    private void RefreshReferences()
+    {
         GameObject promptObject = GameObject.FindGameObjectWithTag("InteractionPrompt");
         if (promptObject != null)
         {
             promptText = promptObject.GetComponent<TMP_Text>();
             if (promptText == null)
             {
-                Debug.LogError("GameObject with tag 'InteractionPrompt' does not have a TMP_Text component.");
+                Debug.LogError("PromptEditor: GameObject with tag 'InteractionPrompt' does not have a TMP_Text component.");
+            }
+            else
+            {
+                // Re-capture initial rotation if needed
+                initialPromptRotation = promptText.transform.rotation;
+                
+                // Ensure prompts are hidden on load
+                HidePrompt();
             }
         }
         else
         {
-            Debug.LogError("No GameObject found with the tag 'InteractionPrompt'.");
+            Debug.LogWarning("PromptEditor: No GameObject found with the tag 'InteractionPrompt' in this scene.");
         }
-
-        if (screenSpaceNPCPrompt != null)
-        {
-            screenSpaceNPCText = screenSpaceNPCPrompt.GetComponentInChildren<TMP_Text>(); // Use GetComponentInChildren in case the Text is on a child
-            if (screenSpaceNPCText == null)
-            {
-                Debug.LogError("Screen Space NPC Prompt GameObject is assigned but does not have a TMP_Text component (or in its children).");
-            }
-        } else {
-            Debug.LogError("Screen Space NPC Prompt GameObject is not assigned in PromptEditor!");
-        }
+        
+        // Note: screenSpaceNPCPrompt is a serialized field. 
+        // If that UI is also destroyed/recreated on load, you might need to find it dynamically too 
+        // or ensure this PromptEditor is part of the UI prefab that gets re-instantiated.
     }
 
     private void Start()
     {
-        // Store the initial rotation of the prompt text element (for world-space).
-        if (promptText != null)
-        {
-            initialPromptRotation = promptText.transform.rotation;
-        }
-        else
-        {
-            Debug.LogWarning("PromptEditor: promptText is null in Start(). World-space prompt rotation tracking disabled.");
-        }
-
-        // Ensure BOTH prompts are initially inactive
-        HidePrompt(); // Hide world-space
-        SetScreenSpaceNPCPromptActive(false, ""); // Hide screen-space and clear text
+        
     }
 
     /// <summary>
@@ -85,6 +96,7 @@ public class PromptEditor : MonoBehaviour
     {
         if (promptText == null)
         {
+            RefreshReferences();
             Debug.LogError("PromptEditor: promptText is null. Cannot display prompt.");
             return; // Exit if promptText is not assigned
         }

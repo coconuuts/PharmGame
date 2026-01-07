@@ -3,9 +3,13 @@
 using UnityEngine;
 using Systems.Interaction; // Needed for IInteractable, InteractionResponse, and the new InteractionManager
 using Systems.GameStates; // Needed for PromptEditor
+using Systems.Persistence; 
+using Systems.Inventory;
 
-public class LightSwitch : MonoBehaviour, IInteractable
+public class LightSwitch : MonoBehaviour, IInteractable, ISavableComponent
 {
+    [field: SerializeField] public SerializableGuid Id { get; set; } = SerializableGuid.NewGuid();
+
     [Header("Models")]
     public GameObject offModel;
     public GameObject onModel;
@@ -19,7 +23,7 @@ public class LightSwitch : MonoBehaviour, IInteractable
 
     [Header("Lightbulb Material Settings")]
     public Material onMaterial;
-    private Material offMaterial; // Store the initial OFF material
+    private Material offMaterial; 
 
     [Tooltip("Should this interactable be enabled by default when registered?")]
     [SerializeField] private bool enableOnStart = true;
@@ -33,11 +37,9 @@ public class LightSwitch : MonoBehaviour, IInteractable
     /// </summary>
     public string InteractionPrompt => isLightOn ? "Turn off (E)" : "Turn on (E)";
 
-    // --- NEW: Awake Method for Registration ---
     private void Awake()
     {
-         // --- NEW: Register with the singleton InteractionManager ---
-         if (Systems.Interaction.InteractionManager.Instance != null) // Use full namespace if needed
+         if (Systems.Interaction.InteractionManager.Instance != null)
          {
              Systems.Interaction.InteractionManager.Instance.RegisterInteractable(this);
          }
@@ -48,13 +50,7 @@ public class LightSwitch : MonoBehaviour, IInteractable
              // Optionally disable here if registration is absolutely required for function
              // enabled = false;
          }
-         // --- END NEW ---
-
-         // REMOVED: Any manual enabled = false calls from Awake if they existed
-         // The InteractionManager handles the initial enabled state.
     }
-    // --- END NEW ---
-
 
     private void Start()
     {
@@ -78,28 +74,18 @@ public class LightSwitch : MonoBehaviour, IInteractable
             Debug.LogError("No GameObject found with the tag 'Lightbulb'! Lightbulb material cannot be updated.");
         }
 
-        // Initialize visual state based on isLightOn
-        // Note: The initial state should ideally be set by the scene setup or a save system,
-        // but this ensures the models/lights match the default 'isLightOn = false'.
-        if (offModel != null) offModel.SetActive(!isLightOn);
-        if (onModel != null) onModel.SetActive(isLightOn);
-        if (lightGroup != null) lightGroup.SetActive(isLightOn);
-
-        UpdateLightbulbMaterial(); // Set initial material
+        UpdateVisuals();
     }
 
-    // --- NEW: OnDestroy Method for Unregistration ---
+    // OnDestroy Method for Unregistration ---
     private void OnDestroy()
     {
-         // --- NEW: Unregister from the singleton InteractionManager ---
+         // Unregister from the singleton InteractionManager ---
          if (Systems.Interaction.InteractionManager.Instance != null)
          {
              Systems.Interaction.InteractionManager.Instance.UnregisterInteractable(this);
          }
-         // --- END NEW ---
     }
-    // --- END NEW ---
-
 
     /// <summary>
     /// Activates the interaction prompt.
@@ -138,14 +124,7 @@ public class LightSwitch : MonoBehaviour, IInteractable
         Debug.Log($"LightSwitch ({gameObject.name}): Interact called. Returning ToggleLightResponse.", this);
 
         // --- Create and return the response ---
-        // The PlayerInteractionManager will receive this and pass it to the MenuManager
         return new ToggleLightResponse(this); // Pass a reference to this LightSwitch instance
-        // --------------------------------------
-
-        // REMOVED: Direct light toggling logic from here
-        // isLightOn = !isLightOn;
-        // if (offModel != null) offModel.SetActive(!isLightOn);
-        // ... etc.
     }
 
     /// <summary>
@@ -158,6 +137,11 @@ public class LightSwitch : MonoBehaviour, IInteractable
 
          Debug.Log($"LightSwitch ({gameObject.name}): Toggling light to: {(isLightOn ? "On" : "Off")}.");
 
+         UpdateVisuals();
+    }
+
+    private void UpdateVisuals()
+    {
          // Update models
          if (offModel != null) offModel.SetActive(!isLightOn);
          if (onModel != null) onModel.SetActive(isLightOn);
@@ -167,14 +151,7 @@ public class LightSwitch : MonoBehaviour, IInteractable
 
          // Update lightbulb material
          UpdateLightbulbMaterial();
-
-         // Optional: Update the interaction prompt immediately after toggling
-         // This is automatically updated by the PlayerInteractionManager when it raycasts again,
-         // but you could force an update here if needed for responsiveness.
-         // DeactivatePrompt(); // Hide the old prompt
-         // ActivatePrompt(); // Show the new prompt (requires PlayerInteractionManager to be active)
     }
-
 
     /// <summary>
     /// Updates the material of the lightbulb based on the current light state.
@@ -191,6 +168,31 @@ public class LightSwitch : MonoBehaviour, IInteractable
              if(onMaterial == null) Debug.LogWarning($"LightSwitch ({gameObject.name}): On Material is null. Cannot update material.", this);
              if(offMaterial == null) Debug.LogWarning($"LightSwitch ({gameObject.name}): Off Material is null. Cannot update material.", this);
          }
+    }
+
+    // ISavableComponent Implementation ---
+    // Create Data
+    public ISaveable CreateSaveData()
+    {
+        return new InteractableObjectData
+        {
+            Id = this.Id,
+            IsStateOn = this.isLightOn
+        };
+    }
+
+    // Bind Data
+    public void Bind(ISaveable data)
+    {
+        if (data is InteractableObjectData saveData)
+        {
+            this.isLightOn = saveData.IsStateOn;
+            
+            // Force visuals to match the loaded state
+            UpdateVisuals();
+            
+            Debug.Log($"LightSwitch ({gameObject.name}): Loaded state. Light is now {(isLightOn ? "On" : "Off")}.");
+        }
     }
 }
 // --- END OF FILE LightSwitch.cs ---

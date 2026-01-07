@@ -48,6 +48,19 @@ public class TimeService {
         return Mathf.Lerp(startDegree, startDegree + 180, (float) percentage);
     }
 
+    public void SetTime(DateTime newTime) 
+    {
+        currentTime = newTime;
+        
+        // Force update internal state so Sun/Moon calculations are correct immediately
+        isDayTime.Value = IsDayTime();
+        currentHour.Value = currentTime.Hour;
+        
+        // Optional: Trigger events if you want the game to react immediately
+        // (e.g. if loading into night, trigger OnSunset)
+        // isDayTime.Value ? OnSunrise?.Invoke() : OnSunset?.Invoke();
+    }
+
     // This method checks whether the current game time falls within the daytime period.
     // It returns true if the current time of day is later than sunriseTime and earlier than sunsetTime,
     // representing daytime. Otherwise, it returns false, indicating it is nighttime.

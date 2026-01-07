@@ -40,6 +40,23 @@ namespace GameEconomy // A namespace for economy-related systems
         }
 
         /// <summary>
+        /// Sets the wallet amounts directly and triggers events. 
+        /// Crucial for loading saved data so the UI updates immediately.
+        /// </summary>
+        public void SetWallet(float clean, float dirty)
+        {
+            cleanCash = clean;
+            dirtyCash = dirty;
+            
+            // Trigger events so UI reflects loaded data
+            OnCleanCashChanged?.Invoke(cleanCash);
+            OnDirtyCashChanged?.Invoke(dirtyCash);
+            OnAnyCashChanged?.Invoke();
+            
+            Debug.Log($"MoneyWalletSO: Wallet set from save. Clean: {clean}, Dirty: {dirty}");
+        }
+
+        /// <summary>
         /// Adds dirty cash to the wallet (e.g., from selling drugs).
         /// </summary>
         /// <param name="amount">The amount of dirty cash to add. Must be non-negative.</param>
