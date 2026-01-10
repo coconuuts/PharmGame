@@ -640,6 +640,7 @@ GameObject:
   - component: {fileID: 8460423928884640609}
   - component: {fileID: -8745179022885824650}
   - component: {fileID: -2245660967918091068}
+  - component: {fileID: 3147411910549019835}
   m_Layer: 7
   m_Name: NPC 1
   m_TagString: NPC
@@ -920,6 +921,7 @@ MonoBehaviour:
     lengthOfTreatmentDays: 0
     illegalOrder: 0
     moneyWorth: 0
+  PrefabID: 
 --- !u!114 &54584857617627132
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1070,6 +1072,24 @@ MonoBehaviour:
   visualizer: {fileID: 5491041511187438547}
   allowedLabels: 
   allowAllIfListEmpty: 1
+--- !u!114 &3147411910549019835
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4394407753789290286}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 67a3188b881611e468b7b7b95b2d9aea, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  tiNpcDataStringId: 
+  instanceGuid:
+    Part1: 0
+    Part2: 0
+    Part3: 0
+    Part4: 0
 --- !u!1 &4855562079567102611
 GameObject:
   m_ObjectHideFlags: 0

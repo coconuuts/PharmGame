@@ -24,7 +24,7 @@ namespace Game.NPC.Handlers // Place alongside other handlers
         // --- References ---
         private NpcMovementHandler movementHandler;
         private Rigidbody rb;
-        private WaypointManager waypointManager; // Reference to the singleton manager
+        private WaypointManager waypointManager;
 
         [Header("Path Following Settings")]
         [Tooltip("The speed at which the NPC moves along the path.")]
@@ -333,8 +333,12 @@ namespace Game.NPC.Handlers // Place alongside other handlers
         /// <returns>True if path following was successfully restored, false otherwise.</returns>
         public bool RestorePathProgress(PathSO path, int waypointIndex, bool reverse)
         {
-             // FIX: Clear the previous path reference here, as a new path is starting (restoring is like starting).
              currentPathSO = null; 
+
+             if (waypointManager == null)
+             {
+                  waypointManager = WaypointManager.Instance;
+             }
 
              if (path == null || path.WaypointCount < 2 || waypointManager == null)
              {
@@ -351,8 +355,6 @@ namespace Game.NPC.Handlers // Place alongside other handlers
                   // Fallback: Start the path from the beginning (index 0, forward)
                   return StartFollowingPath(path, 0, false); // Use existing method (will clear currentPathSO again)
              }
-             // --- End Validation ---
-
 
              // Get the transform for the target waypoint to validate it exists
              string targetWaypointID = path.GetWaypointID(waypointIndex);

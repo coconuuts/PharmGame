@@ -41,6 +41,10 @@ namespace Systems.Inventory {
             return $"{Part1:X8}{Part2:X8}{Part3:X8}{Part4:X8}";
         }
 
+        public override string ToString() {
+            return ToHexString();
+        }
+
         public override bool Equals(object obj) {
             return obj is SerializableGuid guid && this.Equals(guid);
         }

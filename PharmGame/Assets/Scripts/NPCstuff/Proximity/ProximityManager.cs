@@ -210,27 +210,27 @@ namespace Game.Proximity
         /// </summary>
         private IEnumerator ProximityCheckRoutine()
         {
+            yield return null;
+
             while (true) // Loop indefinitely
             {
-                yield return new WaitForSeconds(proximityCheckInterval);
-
                 if (playerTransform == null)
                 {
                     Debug.LogWarning("ProximityManager: Player Transform is null, skipping proximity checks.");
-                    yield return new WaitForSeconds(proximityCheckInterval * 5); // Wait longer if player is missing
+                    yield return new WaitForSeconds(proximityCheckInterval); 
                     continue; // Skip check logic
                 }
                  if (tiNpcManager == null)
                  {
                       Debug.LogError("ProximityManager: TiNpcManager is null! Cannot manage NPC activation/deactivation.", this);
-                      yield return new WaitForSeconds(proximityCheckInterval * 5);
+                      yield return new WaitForSeconds(proximityCheckInterval);
                       continue; // Cannot proceed
                  }
                  // --- Check TimeManager dependency ---
                  if (TimeManager.Instance == null)
                  {
                       Debug.LogError("ProximityManager: TimeManager instance is null! Cannot perform time-based scheduling checks.", this);
-                      yield return new WaitForSeconds(proximityCheckInterval * 5);
+                      yield return new WaitForSeconds(proximityCheckInterval);
                       continue; // Cannot proceed
                  }
                  DateTime currentTime = TimeManager.Instance.CurrentGameTime; // Get current game time
@@ -506,7 +506,8 @@ namespace Game.Proximity
                          npcProximityZones.Remove(tiData);
                     }
                 }
-                // --- END Cleanup ---
+                
+                yield return new WaitForSeconds(proximityCheckInterval);
             }
         }
 

@@ -14,6 +14,7 @@ public class PromptEditor : MonoBehaviour
     [SerializeField] private GameObject screenSpaceNPCPrompt; // Renamed for clarity
     [Tooltip("The TMP Text component *inside* the screen-space NPC prompt GameObject.")] // NEW FIELD
     [SerializeField] private TMP_Text screenSpaceNPCText;
+    public static bool HasInstance => instance != null;
 
 
     private static PromptEditor instance; // Singleton instance
@@ -33,6 +34,14 @@ public class PromptEditor : MonoBehaviour
 
         // Initial setup
         RefreshReferences();
+    }
+    private void OnDestroy()
+    {
+        // If this object is the registered instance, clear the reference
+        if (instance == this)
+        {
+            instance = null;
+        }
     }
 
     // --- Subscribe to Scene Loading ---

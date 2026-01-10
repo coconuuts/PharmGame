@@ -153,7 +153,21 @@ namespace Game.Spatial
         }
 
         /// <summary>
+        /// Helper to clamp coordinates to the valid grid range.
+        /// Used to gracefully handle items slightly out of bounds.
+        /// </summary>
+        private Vector3Int ClampCoords(Vector3Int coords)
+        {
+            return new Vector3Int(
+                Mathf.Clamp(coords.x, 0, gridDimensions.x - 1),
+                Mathf.Clamp(coords.y, 0, gridDimensions.y - 1),
+                Mathf.Clamp(coords.z, 0, gridDimensions.z - 1)
+            );
+        }
+
+        /// <summary>
         /// Adds an item (TiNpcData) to the grid at the specified world position.
+        /// Clamps position to valid bounds if outside.
         /// </summary>
         public void AddItem(TiNpcData npcData, Vector3 worldPosition)
         {
@@ -165,82 +179,75 @@ namespace Game.Spatial
 
             Vector3Int coords = WorldToGridCoords(worldPosition);
 
+            // FIX: If coords are invalid, clamp them instead of rejecting the item.
             if (!IsCoordsValid(coords))
             {
-                // Optionally handle items outside the grid bounds if they need to be queryable.
-                // For now, we'll skip adding items outside the grid, assuming NPCs stay within bounds or
-                // are deactivated outside the grid (which will be handled by ProximityManager).
-                Debug.LogWarning($"GridManager: Attempted to add item '{npcData.Id}' at world position {worldPosition} (coords {coords}) outside grid bounds. Skipping add.", this);
-                // Note: If items can legitimately exist outside the grid and need to be queried,
-                // you might need a separate list for 'out-of-bounds' items, or a more complex grid structure.
-                return;
+                Vector3Int clamped = ClampCoords(coords);
+                // Optional: Log only if the deviation is significant to avoid spam
+                if (Vector3Int.Distance(coords, clamped) > 1) 
+                {
+                    Debug.LogWarning($"GridManager: Item '{npcData.Id}' at {worldPosition} (coords {coords}) is significantly out of bounds. Clamped to {clamped}.", this);
+                }
+                coords = clamped;
             }
 
-            // Get or create the HashSet for the cell
             if (!grid.TryGetValue(coords, out HashSet<TiNpcData> cellItems))
             {
                 cellItems = new HashSet<TiNpcData>();
                 grid[coords] = cellItems;
             }
 
-            // Add the item to the cell's HashSet. HashSet handles duplicates.
             if (cellItems.Add(npcData))
             {
-                 // Optional: Debug.Log($"GridManager: Added item '{npcData.Id}' to grid cell {coords}.", this);
-            }
-            else
-            {
-                 // Optional: Debug.LogWarning($"GridManager: Item '{npcData.Id}' already exists in grid cell {coords}. Add skipped.", this);
+                 // Added successfully
             }
         }
 
          /// <summary>
-         /// Removes an item (TiNpcData) from the grid at the specified world position.
-         /// Assumes the item was previously added correctly.
+         /// Removes an item (TiNpcData) from the grid.
+         /// Checks both exact and clamped coordinates to ensure removal.
          /// </summary>
          public void RemoveItem(TiNpcData npcData, Vector3 worldPosition)
          {
-             if (npcData == null) return; // Cannot remove null
+             if (npcData == null) return;
 
              Vector3Int coords = WorldToGridCoords(worldPosition);
 
-             if (!IsCoordsValid(coords))
+             // Try removing from the exact calculated cell first
+             if (IsCoordsValid(coords) && RemoveFromCell(coords, npcData))
              {
-                 // If the item was outside the grid when added (and we allowed that),
-                 // or if the item moved outside, we need a different removal strategy
-                 // (e.g., checking the 'out-of-bounds' list).
-                 // For now, if it's outside valid coords, assume it wasn't in a valid cell.
-                 // Debug.LogWarning($"GridManager: Attempted to remove item '{npcData.Id}' at world position {worldPosition} (coords {coords}) outside grid bounds. Assuming not in a valid grid cell.", this);
-                 return;
+                 return; // Found and removed
              }
 
+             // If not found or invalid, try the clamped cell (in case it was added via clamping)
+             Vector3Int clamped = ClampCoords(coords);
+             if (clamped != coords)
+             {
+                 RemoveFromCell(clamped, npcData);
+             }
+         }
+
+         // Helper for removing from a specific cell
+         private bool RemoveFromCell(Vector3Int coords, TiNpcData npcData)
+         {
              if (grid.TryGetValue(coords, out HashSet<TiNpcData> cellItems))
              {
                  if (cellItems.Remove(npcData))
                  {
-                     // Optional: Debug.Log($"GridManager: Removed item '{npcData.Id}' from grid cell {coords}.", this);
-                     // Clean up empty HashSets to save memory
                      if (cellItems.Count == 0)
                      {
                          grid.Remove(coords);
-                          // Optional: Debug.Log($"GridManager: Removed empty cell {coords} from dictionary.", this);
                      }
-                 }
-                 else
-                 {
-                      // Optional: Debug.LogWarning($"GridManager: Attempted to remove item '{npcData.Id}' from grid cell {coords}, but it was not found in that cell.", this);
+                     return true;
                  }
              }
-             else
-             {
-                  // Optional: Debug.LogWarning($"GridManager: Attempted to remove item '{npcData.Id}' from grid cell {coords}, but the cell itself was not found in the dictionary.", this);
-             }
+             return false;
          }
 
 
         /// <summary>
-        /// Updates the grid position of an item that has moved from an old world position to a new one.
-        /// This is more efficient than Remove + Add if the cell hasn't changed.
+        /// Updates the grid position of an item.
+        /// Handles out-of-bounds movement by clamping.
         /// </summary>
         public void UpdateItemPosition(TiNpcData npcData, Vector3 oldWorldPosition, Vector3 newWorldPosition)
         {
@@ -249,83 +256,42 @@ namespace Game.Spatial
              Vector3Int oldCoords = WorldToGridCoords(oldWorldPosition);
              Vector3Int newCoords = WorldToGridCoords(newWorldPosition);
 
-             if (oldCoords == newCoords)
+             // Clamp both to ensure consistent tracking
+             if (!IsCoordsValid(oldCoords)) oldCoords = ClampCoords(oldCoords);
+             if (!IsCoordsValid(newCoords)) newCoords = ClampCoords(newCoords);
+
+             if (oldCoords == newCoords) return; // Still in same cell (or same clamped edge cell)
+
+             // Remove from old
+             RemoveFromCell(oldCoords, npcData);
+
+             // Add to new
+             if (!grid.TryGetValue(newCoords, out HashSet<TiNpcData> newCellItems))
              {
-                  // Item is still in the same grid cell, no need to update the grid structure.
-                  // Optional: Debug.Log($"GridManager: Item '{npcData.Id}' position updated, but remains in the same cell {newCoords}.", this);
-                  return;
+                 newCellItems = new HashSet<TiNpcData>();
+                 grid[newCoords] = newCellItems;
              }
-
-             // Remove from old cell (if valid)
-             if (IsCoordsValid(oldCoords) && grid.TryGetValue(oldCoords, out HashSet<TiNpcData> oldCellItems))
-             {
-                 if (oldCellItems.Remove(npcData))
-                 {
-                     if (oldCellItems.Count == 0)
-                     {
-                         grid.Remove(oldCoords);
-                     }
-                     // Optional: Debug.Log($"GridManager: Removed item '{npcData.Id}' from old cell {oldCoords}.", this);
-                 }
-             } else {
-                 // Optional: Debug.LogWarning($"GridManager: Could not remove item '{npcData.Id}' from old cell {oldCoords} during update (cell invalid or item not found). Assuming it wasn't there.", this);
-             }
-
-
-             // Add to new cell (if valid)
-             if (IsCoordsValid(newCoords))
-             {
-                 if (!grid.TryGetValue(newCoords, out HashSet<TiNpcData> newCellItems))
-                 {
-                     newCellItems = new HashSet<TiNpcData>();
-                     grid[newCoords] = newCellItems;
-                 }
-
-                 if (newCellItems.Add(npcData))
-                 {
-                      // Optional: Debug.Log($"GridManager: Added item '{npcData.Id}' to new cell {newCoords}.", this);
-                 } else {
-                      // Optional: Debug.LogWarning($"GridManager: Item '{npcData.Id}' already existed in new cell {newCoords} during update.", this);
-                 }
-             } else {
-                  Debug.LogWarning($"GridManager: Item '{npcData.Id}' moved to world position {newWorldPosition} (coords {newCoords}) outside grid bounds during update. Not added to grid.", this);
-                   // Item is now effectively 'lost' to the grid query. ProximityManager will need to handle this.
-                   // Maybe the ProximityManager queries a larger radius than the grid bounds or has a fallback check.
-             }
+             newCellItems.Add(npcData);
         }
 
 
         /// <summary>
         /// Queries items within a sphere defined by center and radius.
-        /// Returns a list of unique TiNpcData instances found.
         /// </summary>
-        /// <param name="center">The center of the sphere in world coordinates.</param>
-        /// <param name="radius">The radius of the sphere.</param>
-        /// <returns>A list of unique TiNpcData objects found within the radius.</returns>
         public List<TiNpcData> QueryItemsInRadius(Vector3 center, float radius)
         {
             List<TiNpcData> results = new List<TiNpcData>();
-            HashSet<TiNpcData> uniqueResults = new HashSet<TiNpcData>(); // Use HashSet to ensure uniqueness
+            HashSet<TiNpcData> uniqueResults = new HashSet<TiNpcData>(); 
 
-            // Determine the range of grid cells that could potentially intersect the sphere
             Vector3Int minCoords = WorldToGridCoords(center - Vector3.one * radius);
             Vector3Int maxCoords = WorldToGridCoords(center + Vector3.one * radius);
 
-            // Clamp the cell range to be within grid dimensions
-            Vector3Int startCoords = new Vector3Int(
-                Mathf.Max(0, minCoords.x),
-                Mathf.Max(0, minCoords.y),
-                Mathf.Max(0, minCoords.z)
-            );
-            Vector3Int endCoords = new Vector3Int(
-                Mathf.Min(gridDimensions.x - 1, maxCoords.x),
-                Mathf.Min(gridDimensions.y - 1, maxCoords.y),
-                Mathf.Min(gridDimensions.z - 1, maxCoords.z)
-            );
+            // Clamp search range to valid grid
+            Vector3Int startCoords = ClampCoords(minCoords);
+            Vector3Int endCoords = ClampCoords(maxCoords);
 
             float radiusSq = radius * radius;
 
-            // Iterate through all relevant grid cells
             for (int x = startCoords.x; x <= endCoords.x; x++)
             {
                 for (int y = startCoords.y; y <= endCoords.y; y++)
@@ -334,15 +300,12 @@ namespace Game.Spatial
                     {
                         Vector3Int currentCoords = new Vector3Int(x, y, z);
 
-                        // Check if the cell contains any items
                         if (grid.TryGetValue(currentCoords, out HashSet<TiNpcData> cellItems))
                         {
-                            // Check each item in the cell for actual distance
                             foreach (var npcData in cellItems)
                             {
-                                // Determine the item's actual world position
-                                // If the NPC is active, use its GameObject position
-                                // If inactive, use its data's stored position
+                                // Actual distance check ensures we only get relevant items, 
+                                // even if they were clamped to this cell from far away.
                                 Vector3 itemPosition = npcData.IsActiveGameObject && npcData.NpcGameObject != null ?
                                                         npcData.NpcGameObject.transform.position :
                                                         npcData.CurrentWorldPosition;
@@ -351,10 +314,9 @@ namespace Game.Spatial
 
                                 if (distanceToItemSq <= radiusSq)
                                 {
-                                    // Add to unique results set
                                     if (uniqueResults.Add(npcData))
                                     {
-                                        results.Add(npcData); // Also add to the list for the return value
+                                        results.Add(npcData); 
                                     }
                                 }
                             }
@@ -362,8 +324,6 @@ namespace Game.Spatial
                     }
                 }
             }
-
-            // The list 'results' now contains all unique TiNpcData within the specified radius.
             return results;
         }
 

@@ -405,75 +405,63 @@ namespace Systems.Inventory
         {
             if (data == null)
             {
-                Debug.LogWarning($"Inventory ({gameObject.name}, ID: {Id}): Attempted to bind null InventoryData. Initializing to empty/default state.", this);
-                // Optionally clear inventory or reset to default if no data is provided.
-                if (combiner?.InventoryState != null)
-                {
-                    combiner.InventoryState.Clear();
-                }
-                // Reset filtering to defaults if data is null (or keep design-time defaults)
-                allowedLabels.Clear(); // Clear existing labels
-                allowAllIfListEmpty = true; // Default
+                if (combiner?.InventoryState != null) combiner.InventoryState.Clear();
+                allowedLabels.Clear(); 
+                allowAllIfListEmpty = true; 
                 return;
             }
 
-            Debug.Log($"Inventory ({gameObject.name}, ID: {Id}): Binding data for Inventory ID: {data.Id}.");
+            Debug.Log($"Inventory ({gameObject.name}, ID: {Id}): Binding data...");
 
-            // --- Apply Filtering Rules ---
-            allowedLabels = new List<ItemLabel>(data.allowedLabels); // Copy the list
+            // Apply Filtering Rules
+            allowedLabels = new List<ItemLabel>(data.allowedLabels); 
             allowAllIfListEmpty = data.allowAllIfListEmpty;
 
-            // --- Populate InventoryState with loaded items ---
-            if (combiner?.InventoryState == null)
-            {
-                Debug.LogError($"Inventory ({gameObject.name}, ID: {Id}): Cannot bind items, Combiner or InventoryState is null.", this);
-                return;
-            }
+            // Populate InventoryState
+            if (combiner?.InventoryState == null) return;
 
-            combiner.InventoryState.Clear(); // Clear any existing items first (e.g., from NewGame/Start)
+            combiner.InventoryState.Clear(); 
 
             if (data.items != null)
             {
-                // Iterate through the loaded ItemData and convert back to runtime Item instances
                 for (int i = 0; i < data.items.Count; i++)
                 {
                     ItemData itemData = data.items[i];
-                    if (itemData != null)
+                    
+                    // If the item data is null or has an Empty ID, skip it, leaving the slot cleared.
+                    if (itemData == null || itemData.ItemDetailsId == SerializableGuid.Empty)
                     {
-                        ItemDetails details = ItemDatabase.GetDetailsById(itemData.ItemDetailsId);
-                        if (details != null)
-                        {
-                            // Create the runtime Item instance
-                            Item loadedItem = new Item(details, itemData.quantity); 
-                            loadedItem.Id = itemData.Id; // Preserve the instance ID
-                            loadedItem.health = itemData.health;
-                            loadedItem.usageEventsSinceLastLoss = itemData.usageEventsSinceLastLoss;
-                            loadedItem.currentMagazineHealth = itemData.currentMagazineHealth;
-                            loadedItem.totalReserveHealth = itemData.totalReserveHealth;
-                            loadedItem.isReloading = itemData.isReloading;
-                            loadedItem.reloadStartTime = itemData.reloadStartTime;
-                            loadedItem.patientNameTag = itemData.patientNameTag;
+                        continue; 
+                    }
 
-                            // Place the item at its original index.
-                            // Ensure index is within the physical slots range.
-                            if (i >= 0 && i < combiner.PhysicalSlotCount)
-                            {
-                                combiner.InventoryState.SetItemAtIndex(loadedItem, i);
-                                Debug.Log($"Inventory ({gameObject.name}, ID: {Id}): Loaded item '{loadedItem.details.Name}' (Instance ID: {loadedItem.Id}) into slot {i}.");
-                            }
-                            else
-                            {
-                                Debug.LogWarning($"Inventory ({gameObject.name}, ID: {Id}): Loaded item '{loadedItem.details.Name}' (Instance ID: {loadedItem.Id}) had an out-of-bounds index {i}. Attempting to add it to any available physical slot.", this);
-                                // If the original index is invalid (e.g., beyond physical slots), try to add it.
-                                // Note: This might change its slot index if the inventory was resized.
-                                if (loadedItem.details.maxStack > 1) { combiner.AddStackableItems(loadedItem); }
-                                else { combiner.AddSingleInstance(loadedItem); }
-                            }
+                    ItemDetails details = ItemDatabase.GetDetailsById(itemData.ItemDetailsId);
+                    if (details != null)
+                    {
+                        Item loadedItem = new Item(details, itemData.quantity); 
+                        loadedItem.Id = itemData.Id; 
+                        loadedItem.health = itemData.health;
+                        loadedItem.usageEventsSinceLastLoss = itemData.usageEventsSinceLastLoss;
+                        loadedItem.currentMagazineHealth = itemData.currentMagazineHealth;
+                        loadedItem.totalReserveHealth = itemData.totalReserveHealth;
+                        loadedItem.isReloading = itemData.isReloading;
+                        loadedItem.reloadStartTime = itemData.reloadStartTime;
+                        loadedItem.patientNameTag = itemData.patientNameTag;
+
+                        if (i >= 0 && i < combiner.PhysicalSlotCount)
+                        {
+                            combiner.InventoryState.SetItemAtIndex(loadedItem, i);
+                            Debug.Log($"Inventory ({gameObject.name}): Loaded '{loadedItem.details.Name}' into slot {i}.");
                         }
                         else
                         {
-                            Debug.LogError($"Inventory ({gameObject.name}, ID: {Id}): Could not find ItemDetails for ID: {itemData.ItemDetailsId} when binding item at index {i}. Item will be skipped.", this);
+                            // Fallback for out of bounds items
+                            if (loadedItem.details.maxStack > 1) combiner.AddStackableItems(loadedItem);
+                            else combiner.AddSingleInstance(loadedItem);
                         }
+                    }
+                    else
+                    {
+                        Debug.LogError($"Inventory ({gameObject.name}): Could not find ItemDetails for ID: {itemData.ItemDetailsId}.");
                     }
                 }
             }

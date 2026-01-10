@@ -68,7 +68,10 @@ namespace Systems.Player // Place in Systems.Player namespace for consistency
             // Ensure prompt is deactivated and current interactable cleared when disabled
              if (currentInteractable != null)
              {
-                  currentInteractable.DeactivatePrompt();
+                  if (PromptEditor.HasInstance)
+                  {
+                      currentInteractable.DeactivatePrompt();
+                  }
                   currentInteractable = null;
              }
         }

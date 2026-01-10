@@ -17,7 +17,7 @@ namespace Game.NPC.TI
     {
         [Header("TI Persistence Link")]
         [Tooltip("The persistent string ID that links this active GameObject to its TiNpcData record.")]
-        [SerializeField] private string tiNpcDataStringId;
+        private string tiNpcDataStringId;
 
         [Tooltip("The GUID assigned to this instance for scene-based saving/loading.")]
         [SerializeField] private SerializableGuid instanceGuid = SerializableGuid.Empty;
@@ -61,7 +61,7 @@ namespace Game.NPC.TI
         
         /// <summary>
         /// Implements ISavableComponent.
-        /// PHASE 2 UPDATE: This method now "flushes" the active state to the central TiNpcData 
+        /// This method  "flushes" the active state to the central TiNpcData 
         /// and returns NULL to indicate no separate save artifact is needed.
         /// </summary>
         public ISaveable CreateSaveData()
@@ -95,15 +95,43 @@ namespace Game.NPC.TI
                  var currentState = runner.GetCurrentState();
                  if (currentState != null)
                  {
-                     data.SetCurrentState(currentState.HandledState);
-                     // Debug.Log($"TiNpcSavableComponent: Flushed state '{currentState.HandledState}' for '{data.Id}' to data.");
+                     // Convert the Active State enum to a Basic State enum before saving.
+                     // This ensures DetermineActivationState sees the data format it expects (Basic States) when loading.
+                     Enum activeState = currentState.HandledState;
+                     Enum basicState = tiNpcManager.GetBasicStateFromActiveState(activeState);
+                     
+                     data.SetCurrentState(basicState);
+                 }
+
+                 // Flush Path Data if applicable ---
+                 if (runner.PathFollowingHandler != null && runner.PathFollowingHandler.IsFollowingPath)
+                 {
+                     var pathSO = runner.PathFollowingHandler.GetCurrentPathSO();
+                     if (pathSO != null)
+                     {
+                         data.simulatedPathID = pathSO.PathID;
+                         data.simulatedWaypointIndex = runner.PathFollowingHandler.GetCurrentTargetWaypointIndex();
+                         data.simulatedFollowReverse = runner.PathFollowingHandler.GetFollowReverse();
+                         data.isFollowingPathBasic = true; // Flag for simulation logic
+                         
+                         Debug.Log($"[TiNpcSavableComponent] Flushed Path Data for '{data.Id}': Path={data.simulatedPathID}, Index={data.simulatedWaypointIndex}, Reverse={data.simulatedFollowReverse}");
+                     }
+                 }
+                 else
+                 {
+                     // Ensure we clear these if NOT following a path, to prevent stale data
+                     // This prevents an NPC saved in 'Idle' from accidentally resuming an old path if they transition back to a path state later.
+                     data.simulatedPathID = null;
+                     data.simulatedWaypointIndex = -1;
+                     data.simulatedFollowReverse = false;
+                     data.isFollowingPathBasic = false;
                  }
              }
 
+             // Confirm the position being saved to data
+             Debug.Log($"[TiNpcSavableComponent] Saving '{data.Id}'. Flushed WorldPos: {data.CurrentWorldPosition}, Rotation: {data.CurrentWorldRotation.eulerAngles}. State: {data.CurrentStateEnumKey}");
+
              // 5. Return NULL
-             // We return null because the data is now safely inside 'data', which resides in the 'TiNpcManager.allTiNpcs' list.
-             // The SaveLoadSystem will grab that ENTIRE list via the TiNpcPersistenceBridge.
-             // We do NOT want to add a duplicate partial record to the generic save list.
              return null; 
         }
         

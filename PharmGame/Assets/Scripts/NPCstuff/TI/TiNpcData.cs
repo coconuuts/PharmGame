@@ -62,19 +62,17 @@ namespace Game.NPC.TI // Keep in the TI namespace
         [Tooltip("The time range during the day when this NPC should begin exiting/returning home.")]
         [SerializeField] public Game.Utilities.TimeRange endDay;
 
-        // --- NEW: Day Start Control Flag --- // <-- ADDED FIELD
+        // --- Day Start Control Flag 
         [Header("Day Start Control")]
         [Tooltip("If true, this NPC is allowed to start their scheduled day when the time is right. Set to false to keep them at BasicIdleAtHome.")]
         [SerializeField] public bool canStartDay = true; // Default to true for most NPCs
-        // --- END NEW ---
 
         // --- Decision Point Settings ---
         [Header("Decision Point Settings")]
         [Tooltip("Unique decision options for this NPC, keyed by Decision Point ID.")]
         [SerializeField]
-        // --- FIX: Make the serialized field public internal for manager access ---
+        // --- Make the serialized field public internal for manager access ---
         public SerializableDecisionOptionDictionary uniqueDecisionOptions = new SerializableDecisionOptionDictionary();
-        // --- END FIX ---
 
         // Public getter returns a runtime Dictionary derived from the serialized list
         public Dictionary<string, DecisionOption> UniqueDecisionOptions => uniqueDecisionOptions.ToDictionary();
@@ -124,13 +122,13 @@ namespace Game.NPC.TI // Keep in the TI namespace
         [Tooltip("Optional: If true, follow the path in reverse from the start index if the day start behavior is path following.")]
         [SerializeField] internal bool dayStartFollowReverse;
 
-        // --- Prescription Data --- // <-- NEW HEADER
+        // --- Prescription Data --- 
         [Header("Prescription Data")]
         [Tooltip("True if this TI NPC has a pending prescription order assigned.")]
-        [SerializeField] public bool pendingPrescription; // <-- NEW FIELD
+        [SerializeField] public bool pendingPrescription; 
 
         [Tooltip("The prescription order assigned to this TI NPC.")]
-        [SerializeField] public PrescriptionOrder assignedOrder; // <-- NEW FIELD (struct is serializable)
+        [SerializeField] public PrescriptionOrder assignedOrder; 
 
 
         [System.NonSerialized] public GameObject NpcGameObject; // Runtime reference to the active GameObject

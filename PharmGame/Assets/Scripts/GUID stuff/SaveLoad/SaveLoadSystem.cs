@@ -69,8 +69,13 @@ namespace Systems.Persistence {
     [Serializable]
     public class InteractableObjectData : ISaveable
     {
-        public SerializableGuid Id { get; set; }
-        public bool IsStateOn; 
+        [SerializeField] private SerializableGuid _id;
+        
+        public SerializableGuid Id { 
+            get => _id; 
+            set => _id = value; 
+        }
+        public bool IsStateOn;
     }
     
     public class SaveLoadSystem : PersistentSingleton<SaveLoadSystem> {

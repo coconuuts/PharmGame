@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Systems.Inventory; // For ItemLabel, SerializableGuid
+using UnityEngine;
 
 namespace Systems.Persistence {
     /// <summary>
@@ -8,7 +9,13 @@ namespace Systems.Persistence {
     /// </summary>
     [Serializable]
     public class InventoryData : ISaveable { // Implement ISaveable to fit SaveLoadSystem.Bind signature
-        public SerializableGuid Id { get; set; } // The ID of the Inventory MonoBehaviour in the scene
+        [SerializeField] private SerializableGuid _id;
+
+        // The Interface accesses the field via this property
+        public SerializableGuid Id { 
+            get => _id; 
+            set => _id = value; 
+        }
         public List<ItemData> items; // List of items in this inventory
         public List<ItemLabel> allowedLabels;
         public bool allowAllIfListEmpty;

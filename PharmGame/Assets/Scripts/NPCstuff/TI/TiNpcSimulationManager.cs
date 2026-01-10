@@ -319,6 +319,10 @@ public class TiNpcSimulationManager : MonoBehaviour
                     countProcessedThisTick++; // Still count this entry as processed in the batch to advance index correctly
                     continue; // Skip simulation logic for this NPC
                 }
+
+                // Check if simulation is running on an NPC that was just loaded (position might be modified here)
+                Debug.Log($"[TiNpcSimulationManager] Simulating '{npcData.Id}'. Pre-Sim Position: {npcData.CurrentWorldPosition}. State: {npcData.CurrentStateEnumKey}");
+
                 // Ensure the state is valid for simulation before ticking
                 BasicNpcStateSO currentStateSO = basicNpcStateManager?.GetBasicStateSO(npcData.CurrentStateEnum); // Use injected field
                 if (currentStateSO == null)
