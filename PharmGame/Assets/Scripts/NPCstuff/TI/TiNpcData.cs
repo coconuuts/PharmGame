@@ -67,6 +67,10 @@ namespace Game.NPC.TI // Keep in the TI namespace
         [Tooltip("If true, this NPC is allowed to start their scheduled day when the time is right. Set to false to keep them at BasicIdleAtHome.")]
         [SerializeField] public bool canStartDay = true; // Default to true for most NPCs
 
+        [Header("Persistence Extensions")]
+        [Tooltip("The index of the BrowseLocation this NPC was targeting, if saved during Entering state.")]
+        [SerializeField] public int savedBrowseLocationIndex = -1; // Default to -1 (none)
+
         // --- Decision Point Settings ---
         [Header("Decision Point Settings")]
         [Tooltip("Unique decision options for this NPC, keyed by Decision Point ID.")]

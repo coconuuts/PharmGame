@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Systems.Inventory;
 using System.Linq;
 using Random = UnityEngine.Random;
+using Game.NPC;
 
 public class CustomerShopper : MonoBehaviour
 {
@@ -325,5 +326,64 @@ public class CustomerShopper : MonoBehaviour
 
             consecutiveShelvesWithNoItemsFound = 0;
             Debug.Log("CustomerShopper: Reset completed.");
+        }
+
+        // --- Transient Data Saving ---
+        /// <summary>
+        /// Extracts the current contents of the shopping cart into a serializable list.
+        /// </summary>
+        public List<TransientInventoryItemData> GetTransientInventoryData()
+        {
+            List<TransientInventoryItemData> dataList = new List<TransientInventoryItemData>();
+
+            if (inventoryNPC != null && inventoryNPC.InventoryState != null)
+            {
+                var items = inventoryNPC.InventoryState.GetCurrentArrayState();
+                foreach (var item in items)
+                {
+                    if (item != null && item.details != null && item.quantity > 0)
+                    {
+                        // Assuming item.details.Id is a string or compatible unique identifier
+                        dataList.Add(new TransientInventoryItemData(item.details.Id.ToString(), item.quantity));
+                    }
+                }
+            }
+            return dataList;
+        }
+
+        /// <summary>
+        /// Rebuilds the shopping cart from saved data.
+        /// </summary>
+        public void RestoreTransientInventoryData(List<TransientInventoryItemData> dataList)
+        {
+            // 1. Clear existing inventory to be safe
+            Reset(); 
+
+            if (dataList == null || dataList.Count == 0) return;
+
+            // 2. Re-add items
+            foreach (var itemData in dataList)
+            {
+                // TODO: YOU MUST IMPLEMENT THIS LOOKUP
+                // Example: ItemDetails details = InventoryManager.Instance.GetItemDetails(itemData.ItemId);
+                
+                // ItemDetails details = ... // Find details by itemData.ItemId
+                
+                /* if (details != null)
+                {
+                    // Create the item instance
+                    Item item = details.Create(itemData.Quantity);
+                    
+                    // Add directly to inventory
+                    inventoryNPC.AddItem(item);
+                }
+                else
+                {
+                    Debug.LogWarning($"CustomerShopper: Could not find ItemDetails for ID '{itemData.ItemId}' during restoration.");
+                }
+                */
+            }
+            
+            Debug.Log($"CustomerShopper: Restored {dataList.Count} item entries from save.");
         }
 }

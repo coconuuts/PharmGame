@@ -20,40 +20,43 @@ namespace Game.NPC.States
         {
             base.OnEnter(context); // Call base OnEnter (logs entry, enables Agent)
 
-            // --- NEW: Publish event to signal entry into the store ---
+            // --- Publish event to signal entry into the store ---
             // This event is listened to by the CustomerManager to update the activeCustomers count.
             Debug.Log($"{context.NpcObject.name}: Publishing NpcEnteredStoreEvent.", context.NpcObject);
             context.PublishEvent(new NpcEnteredStoreEvent(context.NpcObject));
-            // --- END NEW ---
 
+            // 1. Check if a location was restored from save data (stored in Runner)
+            BrowseLocation? targetLocation = context.Runner.CurrentTargetLocation;
 
-            // --- Logic from CustomerEnteringLogic.OnEnter (Migration) ---
-            BrowseLocation? firstBrowseLocation = context.GetRandomBrowseLocation(); // Use context helper
-
-            if (firstBrowseLocation.HasValue && firstBrowseLocation.Value.browsePoint != null)
+            // 2. If NO restored location exists, pick a new random one
+            if (targetLocation == null)
             {
-                context.Runner.CurrentTargetLocation = firstBrowseLocation; // Update context/runner
+                targetLocation = context.GetRandomBrowseLocation();
+            }
 
-                // Initiate movement using context helper (resets _hasReachedCurrentDestination flag)
-                bool moveStarted = context.MoveToDestination(firstBrowseLocation.Value.browsePoint.position);
+            // 3. Process the location (whether restored or new)
+            if (targetLocation.HasValue && targetLocation.Value.browsePoint != null)
+            {
+                context.Runner.CurrentTargetLocation = targetLocation; // Ensure it's set/updated
 
-                 if (!moveStarted) // Add check for move failure from SetDestination
+                // Initiate movement 
+                bool moveStarted = context.MoveToDestination(targetLocation.Value.browsePoint.position);
+
+                 if (!moveStarted) 
                  {
-                      Debug.LogError($"{context.NpcObject.name}: Failed to start movement to first browse point! Is the point on the NavMesh?", context.NpcObject);
-                      context.TransitionToState(CustomerState.Exiting); // Fallback on movement failure
-                      return; // Exit OnEnter early if movement failed
+                      Debug.LogError($"{context.NpcObject.name}: Failed to start movement to browse point!", context.NpcObject);
+                      context.TransitionToState(CustomerState.Exiting); 
+                      return; 
                  }
 
-
-                Debug.Log($"{context.NpcObject.name}: Set destination to first browse point: {firstBrowseLocation.Value.browsePoint.position}.", context.NpcObject);
+                Debug.Log($"{context.NpcObject.name}: Set destination to browse point (Restored: {context.Runner.CurrentTargetLocation != null}).", context.NpcObject);
             }
             else
             {
-                Debug.LogWarning($"{context.NpcObject.name}: No Browse locations available for Entering state! Exiting empty-handed.", context.NpcObject);
-                context.TransitionToState(CustomerState.Exiting); // Transition via context
-                 return; // Exit OnEnter early
+                Debug.LogWarning($"{context.NpcObject.name}: No Browse locations available! Exiting.", context.NpcObject);
+                context.TransitionToState(CustomerState.Exiting); 
+                 return; 
             }
-            // ---------------------------------------------------------------
         }
 
         public override void OnUpdate(NpcStateContext context)

@@ -19,6 +19,7 @@ using Game.Prescriptions; // Needed for PrescriptionOrder, PrescriptionManager
 using Systems.Interaction; // Needed for IInteractable, InteractionManager 
 using Game.Interaction; // Needed for ObtainPrescription
 using Systems.Persistence;
+using Game.NPC;
 
 
 namespace Game.NPC
@@ -250,47 +251,46 @@ namespace Game.NPC
 
           private void Start() // <-- Use Start for Manager singletons
           {
-               // Get references to managers
-               Manager = CustomerManagement.CustomerManager.Instance;
-               if (Manager == null) Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): CustomerManager instance not found!", this);
-
-               tiNpcManager = TiNpcManager.Instance;
-               if (tiNpcManager == null) Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): TiNpcManager instance not found!", this);
-
-               prescriptionManager = PrescriptionManager.Instance;
-               if (prescriptionManager == null) Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): PrescriptionManager instance not found!", this);
-
-               // --- GET CashierManager reference --- // <-- NEW GET
-               cashierManager = CashierManager.Instance;
-               if (cashierManager == null) Debug.LogWarning($"NpcStateMachineRunner ({gameObject.name}): CashierManager instance not found! Cashier functionality will not work. Ensure CashierManager is in the scene.", this);
-               // --- END NEW GET ---
-
-               // --- GET UpgradeManager reference --- // <-- NEW GET
-               upgradeManager = UpgradeManager.Instance;
-               if (upgradeManager == null)
-               {
-                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): UpgradeManager instance not found! Upgrade-based effects will not work.", this);
-               }
-               // --- END NEW GET ---
-
-
-               // Get reference to GridManager // MOVED TO TiNpcManager
-               // gridManager = GridManager.Instance; // MOVED
-               // if (gridManager == null) // MOVED
-               // { // MOVED
-               //      Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): GridManager instance not found! Cannot track grid position for active NPCs.", this); // MOVED
-               // } // MOVED
-
-               // Initialize lastGridPosition if this is a TI NPC being activated // MOVED TO TiNpcData.LinkGameObject
-               // if (IsTrueIdentityNpc && TiData != null && gridManager != null) // MOVED
-               // { // MOVED
-               //    // Use the position loaded from TiData during Activate() // MOVED
-               //    lastGridPosition = transform.position; // Initialize with current position after warp // MOVED
-               // } // MOVED
-
-               // timeSinceLastGridUpdate = 0f; // MOVED TO TiNpcData.LinkGameObject
+               InitializeManagers();
           }
 
+          /// <summary>
+          /// Method to grab managers. Called by Start() and RestoreTransientData().
+          /// Ensures singleton references are valid before states try to use them.
+          /// </summary>
+          private void InitializeManagers()
+          {
+               // Only fetch if not already set
+               if (Manager == null) 
+               {
+                    Manager = CustomerManagement.CustomerManager.Instance;
+                    if (Manager == null) Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): CustomerManager instance not found!", this);
+               }
+
+               if (tiNpcManager == null) 
+               {
+                    tiNpcManager = TiNpcManager.Instance;
+                    if (tiNpcManager == null) Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): TiNpcManager instance not found!", this);
+               }
+
+               if (prescriptionManager == null)
+               {
+                    prescriptionManager = PrescriptionManager.Instance;
+                    if (prescriptionManager == null) Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): PrescriptionManager instance not found!", this);
+               }
+
+               if (cashierManager == null)
+               {
+                    cashierManager = CashierManager.Instance;
+                    if (cashierManager == null) Debug.LogWarning($"NpcStateMachineRunner ({gameObject.name}): CashierManager instance not found!", this);
+               }
+
+               if (upgradeManager == null)
+               {
+                    upgradeManager = UpgradeManager.Instance;
+                    if (upgradeManager == null) Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): UpgradeManager instance not found!", this);
+               }
+          }
 
           private void LoadAvailableStates()
           {
@@ -345,18 +345,16 @@ namespace Game.NPC
                     _stateContext.TiNpcManager = tiNpcManager;
                     _stateContext.PrescriptionManager = prescriptionManager;
                     _stateContext.CashierManager = cashierManager;
-                    _stateContext.UpgradeManager = upgradeManager; // <-- NEW: Populate UpgradeManager
+                    _stateContext.UpgradeManager = upgradeManager; 
                     _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                     _stateContext.Runner = this;
                     _stateContext.InterruptionHandler = interruptionHandler;
                     _stateContext.QueueHandler = QueueHandler;
                     _stateContext.PathFollowingHandler = PathFollowingHandler;
                     _stateContext.TiData = TiData;
-                    // REMOVED: _stateContext.MultiInteractableManager = MultiInteractableManager; // No longer populate this
-                    _stateContext.ObtainPrescription = ObtainPrescription; // <-- NEW: Populate cached reference
-                    // Need to populate DeltaTime here too if OnExit logic uses it, but typically it doesn't.
-                    // _stateContext.DeltaTime = Time.deltaTime; // Or some default? Let's assume OnExit doesn't need it.
+                    _stateContext.ObtainPrescription = ObtainPrescription; 
                     currentState.OnExit(_stateContext);
+                    currentState = null;
                }
                else if (currentState != null && IsTrueIdentityNpc)
                {
@@ -690,6 +688,13 @@ namespace Game.NPC
                     return;
                }
 
+               if (tiData.savedBrowseLocationIndex != -1)
+               {
+                    // Manager reference is already set above in existing code
+                    CurrentTargetLocation = Manager.GetBrowseLocation(tiData.savedBrowseLocationIndex);
+                    Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Restored persistent BrowseLocation index {tiData.savedBrowseLocationIndex}.");
+               }
+
                // --- Determine the state to transition to ---
                NpcStateSO startingState = null;
 
@@ -765,6 +770,15 @@ namespace Game.NPC
 
                Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Deactivating TI NPC '{TiData.Id}'. Saving state and position to TiData.");
 
+               if (CurrentTargetLocation.HasValue)
+               {
+                    TiData.savedBrowseLocationIndex = Manager.GetBrowseLocationIndex(CurrentTargetLocation.Value);
+               }
+               else
+               {
+                    TiData.savedBrowseLocationIndex = -1;
+               }
+
                // --- Save necessary data to TiData ---
                TiData.CurrentWorldPosition = transform.position;
                TiData.CurrentWorldRotation = transform.rotation;
@@ -783,110 +797,235 @@ namespace Game.NPC
                Debug.Log($"NpcStateMachineRunner ({gameObject.name}): TI NPC '{TiData.Id}' Deactivated."); // Corrected log message
           }
 
-        /// <summary>
-        /// Resets NPC-specific TRANSIENT data fields managed by the Runner.
-        /// Called during Initialize or Activate. Preserves TI data link if present.
-        /// </summary>
-        private void ResetRunnerTransientData()
-          {
-               CurrentTargetLocation = null;
-               CurrentDestinationPosition = null; // Clear the last set destination position
-               CachedCashRegister = null;
-               _hasReachedCurrentDestination = true;
-               // lastGridPosition = Vector3.zero; // MOVED TO TiNpcData
-               // timeSinceLastGridUpdate = 0f; // MOVED TO TiNpcData
-               visualPositionStart = transform.position; // Reset to current visual position
-               visualPositionEnd = transform.position;
-               visualRotationStart = transform.rotation; // Reset to current visual rotation
-               visualRotationEnd = transform.rotation;
-               interpolationTimer = 0f;
-               interpolationDuration = 0f;
-               isInterpolatingPosition = false;
-               isInterpolatingRotation = false;
-               interruptedPathID = null;
-               interruptedWaypointIndex = -1;
-               interruptedFollowReverse = false;
-               wasInterruptedFromPathState = false;
-
-               // --- Reset temporary path fields ---
-               tempPathSO = null;
-               tempStartIndex = 0;
-               tempFollowReverse = false;
-
-               // --- Reset transient prescription fields ---
-               hasPendingPrescriptionTransient = false;
-               assignedOrderTransient = new PrescriptionOrder(); // Reset to default struct values
-
-               // --- Reset Cashier specific fields ---
-               CurrentCustomerRunner = null;
-
-               if (!IsTrueIdentityNpc)
-               {
-                    Shopper?.Reset();
-               }
-
-               interruptionHandler?.Reset();
-               queueHandler?.Reset();
-               npcPathFollowingHandler?.Reset();
-
-               // --- Reset Interaction Component states ---
-               obtainPrescription?.ResetInteraction(); // Call the ResetInteraction method
-               // Note: MultiInteractableManager state is handled by the State SOs in OnEnter/OnExit
-
-               Debug.Log($"{gameObject.name}: NpcStateMachineRunner transient data reset, including handlers.");
-          }
-
-
           /// <summary>
-          /// Transitions the state machine to a new state.
-          /// Handles OnExit, OnEnter.
-          /// Includes fallback logic for missing states.
-          /// Note: This method triggers Deactivate() via the pooling flow IF this is a TI NPC
-          /// and the state is ReturningToPool.
+          /// Resets NPC-specific TRANSIENT data fields managed by the Runner.
+          /// Called during Initialize or Activate. Preserves TI data link if present.
           /// </summary>
-          /// <param name="nextState">The State Scriptable Object to transition to.</param>
-          public void TransitionToState(NpcStateSO nextState)
-          {
-               if (nextState == null)
+          private void ResetRunnerTransientData()
                {
-                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Attempted to transition to a null state! Attempting fallback.", this);
-                    NpcStateSO fallbackState = GetStateSO(GeneralState.ReturningToPool);
+                    CurrentTargetLocation = null;
+                    CurrentDestinationPosition = null; // Clear the last set destination position
+                    CachedCashRegister = null;
+                    _hasReachedCurrentDestination = true;
+                    visualPositionStart = transform.position; // Reset to current visual position
+                    visualPositionEnd = transform.position;
+                    visualRotationStart = transform.rotation; // Reset to current visual rotation
+                    visualRotationEnd = transform.rotation;
+                    interpolationTimer = 0f;
+                    interpolationDuration = 0f;
+                    isInterpolatingPosition = false;
+                    isInterpolatingRotation = false;
+                    interruptedPathID = null;
+                    interruptedWaypointIndex = -1;
+                    interruptedFollowReverse = false;
+                    wasInterruptedFromPathState = false;
+                    if (TiData != null) TiData.savedBrowseLocationIndex = -1;
 
-                    if (fallbackState == null)
+                    // --- Reset temporary path fields ---
+                    tempPathSO = null;
+                    tempStartIndex = 0;
+                    tempFollowReverse = false;
+
+                    // --- Reset transient prescription fields ---
+                    hasPendingPrescriptionTransient = false;
+                    assignedOrderTransient = new PrescriptionOrder(); // Reset to default struct values
+
+                    // --- Reset Cashier specific fields ---
+                    CurrentCustomerRunner = null;
+
+                    if (!IsTrueIdentityNpc)
                     {
-                         Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): ReturningToPool fallback state is null! Attempting Idle fallback.", this);
-                         fallbackState = GetStateSO(GeneralState.Idle);
+                         Shopper?.Reset();
                     }
 
-                    if (fallbackState != null && currentState != fallbackState)
+                    interruptionHandler?.Reset();
+                    queueHandler?.Reset();
+                    npcPathFollowingHandler?.Reset();
+
+                    // --- Reset Interaction Component states ---
+                    obtainPrescription?.ResetInteraction(); // Call the ResetInteraction method
+                    // Note: MultiInteractableManager state is handled by the State SOs in OnEnter/OnExit
+
+                    Debug.Log($"{gameObject.name}: NpcStateMachineRunner transient data reset, including handlers.");
+               }
+
+               /// <summary>
+               /// Creates a snapshot of this transient NPC's data.
+               /// Returns null if this is a TI NPC or if they are currently leaving the world (ReturningToPool).
+               /// </summary>
+               public TransientNpcData CreateTransientSaveData()
+               {
+                    // 1. Filter out invalid candidates
+                    if (IsTrueIdentityNpc) return null; // TI NPCs are handled by TiNpcManager
+                    
+                    if (currentState != null && currentState.HandledState.ToString() == "ReturningToPool") 
                     {
-                         Debug.LogWarning($"NpcStateMachineRunner ({gameObject.name}): Transitioning to fallback state '{fallbackState.name}' for missing state.", this);
-                         TransitionToState(fallbackState);
+                    return null; // Don't save NPCs that are already despawning
+                    }
+
+                    // 2. Build Data
+                    TransientNpcData data = new TransientNpcData();
+                    
+                    // Physics
+                    data.Position = transform.position;
+                    data.Rotation = transform.rotation;
+                    
+                    // State
+                    if (currentState != null)
+                    {
+                         data.CurrentStateEnumKey = currentState.HandledState.ToString();
+                         data.CurrentStateEnumType = currentState.HandledState.GetType().AssemblyQualifiedName;
+                    }
+
+                    if (CurrentTargetLocation.HasValue)
+                    {
+                         data.SavedBrowseLocationIndex = Manager.GetBrowseLocationIndex(CurrentTargetLocation.Value);
                     }
                     else
                     {
-                         Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Fallback state is also null or already current! Cannot transition to a safe state. Self-disabling.", this);
-                         enabled = false;
+                         data.SavedBrowseLocationIndex = -1;
                     }
-                    return;
+
+                    // Inventory
+                    if (Shopper != null)
+                    {
+                         data.InventoryItems = Shopper.GetTransientInventoryData();
+                    }
+
+                    return data;
                }
 
-               if (currentState == nextState)
+               /// <summary>
+               /// Restores this NPC to a specific state from save data.
+               /// </summary>
+               public void RestoreTransientData(TransientNpcData data)
                {
-                    // Debug.Log($"DEBUG Runner TransitionToState ({gameObject.name}): Attempted to transition to current state '{currentState.name}'. Skipping transition logic.", this); // Too noisy
-                    return;
+                    if (data == null) return;
+
+                    // 1. Ensure managers are loaded because Start() might not have run yet
+                    InitializeManagers();
+
+                    // 2. Restore Physics
+                    if (MovementHandler != null)
+                    {
+                         MovementHandler.Warp(data.Position);
+                         transform.rotation = data.Rotation;
+                    }
+
+                    // 3. Restore Inventory
+                    if (Shopper != null && data.InventoryItems != null)
+                    {
+                         Shopper.RestoreTransientInventoryData(data.InventoryItems);
+                    }
+
+                    if (data.SavedBrowseLocationIndex != -1)
+                    {
+                         CurrentTargetLocation = Manager.GetBrowseLocation(data.SavedBrowseLocationIndex);
+                    }
+
+                    // 4. Restore State
+                    if (!string.IsNullOrEmpty(data.CurrentStateEnumKey) && !string.IsNullOrEmpty(data.CurrentStateEnumType))
+                    {
+                         // Helper to parse string back to Enum (reusing logic from TiNpcData or creating similar)
+                         try 
+                         {
+                              Type enumType = Type.GetType(data.CurrentStateEnumType);
+                              if (enumType != null)
+                              {
+                                   Debug.Log("Debug to make sure this block is running");
+                                   Enum stateEnum = (Enum)Enum.Parse(enumType, data.CurrentStateEnumKey);
+                                   // Transition immediately
+                                   TransitionToState(GetStateSO(stateEnum));
+                              }
+                         }
+                         catch (Exception e)
+                         {
+                              Debug.LogError($"NpcStateMachineRunner: Failed to restore state '{data.CurrentStateEnumKey}': {e.Message}");
+                              // Fallback
+                              TransitionToState(GetStateSO(GeneralState.Idle));
+                         }
+                    }
                }
 
-               Debug.Log($"NpcStateMachineRunner ({gameObject.name}): <color=cyan>Transitioning from {(currentState != null ? currentState.name : "NULL")} to {nextState.name}</color>", this);
-
-               previousState = currentState;
-
-               if (currentState != null)
+               /// <summary>
+               /// Transitions the state machine to a new state.
+               /// Handles OnExit, OnEnter.
+               /// Includes fallback logic for missing states.
+               /// Note: This method triggers Deactivate() via the pooling flow IF this is a TI NPC
+               /// and the state is ReturningToPool.
+               /// </summary>
+               /// <param name="nextState">The State Scriptable Object to transition to.</param>
+               public void TransitionToState(NpcStateSO nextState)
                {
-                    StopManagedStateCoroutine(activeStateCoroutine);
-                    activeStateCoroutine = null;
+                    if (nextState == null)
+                    {
+                         Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Attempted to transition to a null state! Attempting fallback.", this);
+                         NpcStateSO fallbackState = GetStateSO(GeneralState.ReturningToPool);
 
-                    // Populate context before calling OnExit
+                         if (fallbackState == null)
+                         {
+                              Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): ReturningToPool fallback state is null! Attempting Idle fallback.", this);
+                              fallbackState = GetStateSO(GeneralState.Idle);
+                         }
+
+                         if (fallbackState != null && currentState != fallbackState)
+                         {
+                              Debug.LogWarning($"NpcStateMachineRunner ({gameObject.name}): Transitioning to fallback state '{fallbackState.name}' for missing state.", this);
+                              TransitionToState(fallbackState);
+                         }
+                         else
+                         {
+                              Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Fallback state is also null or already current! Cannot transition to a safe state. Self-disabling.", this);
+                              enabled = false;
+                         }
+                         return;
+                    }
+
+                    if (currentState == nextState)
+                    {
+                         // Debug.Log($"DEBUG Runner TransitionToState ({gameObject.name}): Attempted to transition to current state '{currentState.name}'. Skipping transition logic.", this); // Too noisy
+                         return;
+                    }
+
+                    Debug.Log($"NpcStateMachineRunner ({gameObject.name}): <color=cyan>Transitioning from {(currentState != null ? currentState.name : "NULL")} to {nextState.name}</color>", this);
+
+                    previousState = currentState;
+
+                    if (currentState != null)
+                    {
+                         StopManagedStateCoroutine(activeStateCoroutine);
+                         activeStateCoroutine = null;
+
+                         // Populate context before calling OnExit
+                         _stateContext.Manager = Manager;
+                         _stateContext.TiNpcManager = tiNpcManager;
+                         _stateContext.PrescriptionManager = prescriptionManager;
+                         _stateContext.CashierManager = cashierManager;
+                         _stateContext.UpgradeManager = upgradeManager; // <-- NEW: Populate UpgradeManager
+                         _stateContext.CurrentTargetLocation = CurrentTargetLocation;
+                         _stateContext.Runner = this;
+                         _stateContext.InterruptionHandler = interruptionHandler;
+                         _stateContext.QueueHandler = QueueHandler;
+                         _stateContext.PathFollowingHandler = PathFollowingHandler;
+                         _stateContext.TiData = TiData;
+                         // REMOVED: _stateContext.MultiInteractableManager = MultiInteractableManager; // No longer populate this
+                         _stateContext.ObtainPrescription = ObtainPrescription; // <-- NEW: Populate cached reference
+
+
+                         currentState.OnExit(_stateContext);
+                    }
+
+                    // Handle TI Deactivation BEFORE changing currentState if going to ReturningToPool
+                    if (IsTrueIdentityNpc && nextState.HandledState != null && nextState.HandledState.Equals(GeneralState.ReturningToPool))
+                    {
+                         Debug.Log($"NpcStateMachineRunner ({gameObject.name}): TI NPC transitioning to ReturningToPool. Calling Deactivate().", this);
+                         Deactivate(); // Call Deactivate BEFORE changing currentState
+                    }
+
+                    // Set the new current state
+                    currentState = nextState;
+
+                    // Populate context before calling OnEnter
                     _stateContext.Manager = Manager;
                     _stateContext.TiNpcManager = tiNpcManager;
                     _stateContext.PrescriptionManager = prescriptionManager;
@@ -895,395 +1034,366 @@ namespace Game.NPC
                     _stateContext.CurrentTargetLocation = CurrentTargetLocation;
                     _stateContext.Runner = this;
                     _stateContext.InterruptionHandler = interruptionHandler;
-                    _stateContext.QueueHandler = QueueHandler;
-                    _stateContext.PathFollowingHandler = PathFollowingHandler;
+                    _stateContext.QueueHandler = queueHandler;
+                    _stateContext.PathFollowingHandler = npcPathFollowingHandler;
                     _stateContext.TiData = TiData;
                     // REMOVED: _stateContext.MultiInteractableManager = MultiInteractableManager; // No longer populate this
                     _stateContext.ObtainPrescription = ObtainPrescription; // <-- NEW: Populate cached reference
+                    // DeltaTime is not typically needed in OnEnter, but populate defensively if needed
+                    // _stateContext.DeltaTime = Time.deltaTime; // Or some default?
 
+                    // Call OnEnter for the new state
+                    currentState.OnEnter(_stateContext);
 
-                    currentState.OnExit(_stateContext);
+                    // --- Reset interpolation state on state transition ---
+                    // Any ongoing interpolation should stop when the state changes.
+                    visualPositionStart = transform.position; // Snap visual to current actual position
+                    visualPositionEnd = transform.position;
+                    visualRotationStart = transform.rotation; // Snap visual to current actual rotation
+                    visualRotationEnd = transform.rotation;
+                    interpolationTimer = 0f;
+                    interpolationDuration = 0f;
+                    isInterpolatingPosition = false;
+                    isInterpolatingRotation = false;
                }
 
-               // Handle TI Deactivation BEFORE changing currentState if going to ReturningToPool
-               if (IsTrueIdentityNpc && nextState.HandledState != null && nextState.HandledState.Equals(GeneralState.ReturningToPool))
+               /// <summary>
+               /// Overload for TransitionToState that takes System.Enum keys.
+               /// </summary>
+               public void TransitionToState(string stateEnumKey, string stateEnumType)
                {
-                    Debug.Log($"NpcStateMachineRunner ({gameObject.name}): TI NPC transitioning to ReturningToPool. Calling Deactivate().", this);
-                    Deactivate(); // Call Deactivate BEFORE changing currentState
+                    if (string.IsNullOrEmpty(stateEnumKey) || string.IsNullOrEmpty(stateEnumType))
+                    {
+                         Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Attempted to transition using invalid string Enum key ('{stateEnumKey}') or type ('{stateEnumType}')! Attempting fallback.", this);
+                         TransitionToState((NpcStateSO)null);
+                         return;
+                    }
+
+                    System.Enum targetEnum = null;
+                    try
+                    {
+                         Type type = Type.GetType(stateEnumType);
+                         if (type != null && type.IsEnum)
+                         {
+                              targetEnum = (System.Enum)Enum.Parse(type, stateEnumKey);
+                         }
+                         else
+                         {
+                              Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Invalid Enum Type string '{stateEnumType}' provided for transition!", this);
+                         }
+                    }
+                    catch (Exception e)
+                    {
+                         Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Error parsing state enum key '{stateEnumKey}' of type '{stateEnumType}' for transition: {e.Message}", this);
+                    }
+
+                    NpcStateSO nextState = GetStateSO(targetEnum);
+
+                    TransitionToState(nextState);
                }
 
-               // Set the new current state
-               currentState = nextState;
+               /// <summary>
+               /// Prepares the Runner with path data for the *next* transition,
+               /// assuming the next state will be the generic PathState.FollowPath.
+               /// This data is read by PathStateSO.OnEnter when starting a new path.
+               /// </summary>
+               /// <param name="path">The PathSO to follow.</param>
+               /// <param name="startIndex">The index of the waypoint to start from.</param>
+               /// <param name="reverse">Whether to follow the path in reverse.</param>
+               public void PreparePathTransition(PathSO path, int startIndex, bool reverse)
+               {
+                    if (path == null)
+                    {
+                         Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): PreparePathTransition called with a null PathSO!", this);
+                         // Clear existing temp data on error
+                         tempPathSO = null;
+                         tempStartIndex = 0;
+                         tempFollowReverse = false;
+                         return;
+                    }
+                    if (startIndex < 0 || startIndex >= path.WaypointCount)
+                    {
+                         Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): PreparePathTransition called with invalid startIndex {startIndex} for path '{path.PathID}' (WaypointCount: {path.WaypointCount})!", this);
+                         // Clear existing temp data on error
+                         tempPathSO = null;
+                         tempStartIndex = 0;
+                         tempFollowReverse = false;
+                         return;
+                    }
 
-               // Populate context before calling OnEnter
-               _stateContext.Manager = Manager;
-               _stateContext.TiNpcManager = tiNpcManager;
-               _stateContext.PrescriptionManager = prescriptionManager;
-               _stateContext.CashierManager = cashierManager;
-               _stateContext.UpgradeManager = upgradeManager; // <-- NEW: Populate UpgradeManager
-               _stateContext.CurrentTargetLocation = CurrentTargetLocation;
-               _stateContext.Runner = this;
-               _stateContext.InterruptionHandler = interruptionHandler;
-               _stateContext.QueueHandler = queueHandler;
-               _stateContext.PathFollowingHandler = npcPathFollowingHandler;
-               _stateContext.TiData = TiData;
-               // REMOVED: _stateContext.MultiInteractableManager = MultiInteractableManager; // No longer populate this
-               _stateContext.ObtainPrescription = ObtainPrescription; // <-- NEW: Populate cached reference
-               // DeltaTime is not typically needed in OnEnter, but populate defensively if needed
-               // _stateContext.DeltaTime = Time.deltaTime; // Or some default?
+                    tempPathSO = path;
+                    tempStartIndex = startIndex;
+                    tempFollowReverse = reverse;
+                    // Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Prepared path transition data for path '{path.PathID}', start index {startIndex}, reverse {reverse}.", this); // Too noisy
+               }
 
-               // Call OnEnter for the new state
-               currentState.OnEnter(_stateContext);
 
-               // --- Reset interpolation state on state transition ---
-               // Any ongoing interpolation should stop when the state changes.
-               visualPositionStart = transform.position; // Snap visual to current actual position
-               visualPositionEnd = transform.position;
-               visualRotationStart = transform.rotation; // Snap visual to current actual rotation
-               visualRotationEnd = transform.rotation;
-               interpolationTimer = 0f;
-               interpolationDuration = 0f;
-               isInterpolatingPosition = false;
-               isInterpolatingRotation = false;
+               /// <summary>
+               /// Allows a State SO (via context) to start a coroutine managed by the Runner.
+               /// </summary>
+               public Coroutine StartManagedStateCoroutine(IEnumerator routine)
+               {
+                    if (routine == null)
+                    {
+                         Debug.LogWarning($"{gameObject.name}: Attempted to start a null coroutine.", this);
+                         return null;
+                    }
+                    StopManagedStateCoroutine(activeStateCoroutine); // Stop any existing managed coroutine
+                    activeStateCoroutine = StartCoroutine(routine); // Start the new coroutine
+                    return activeStateCoroutine;
+               }
+
+               /// <summary>
+          /// Helper for state SOs to stop a managed coroutine.
+          /// </summary>
+          public void StopManagedStateCoroutine(Coroutine routine)
+          {
+                    if (routine != null)
+                    {
+                    StopCoroutine(routine);
+                    }
+                    // If the stopped routine was the currently active one, clear the reference
+                    if (activeStateCoroutine == routine)
+                    {
+                    activeStateCoroutine = null;
+                    }
           }
 
-          /// <summary>
-          /// Overload for TransitionToState that takes System.Enum keys.
-          /// </summary>
-          public void TransitionToState(string stateEnumKey, string stateEnumType)
-          {
-               if (string.IsNullOrEmpty(stateEnumKey) || string.IsNullOrEmpty(stateEnumType))
+               public NpcStateSO GetCurrentState()
                {
-                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Attempted to transition using invalid string Enum key ('{stateEnumKey}') or type ('{stateEnumType}')! Attempting fallback.", this);
-                    TransitionToState((NpcStateSO)null);
-                    return;
+                    return currentState;
                }
 
-               System.Enum targetEnum = null;
-               try
+               public NpcStateSO GetPreviousState()
                {
-                    Type type = Type.GetType(stateEnumType);
-                    if (type != null && type.IsEnum)
+                    return previousState;
+               }
+
+
+               /// <summary>
+               /// Gets a state SO by its Enum key. Includes configurable fallbacks.
+               /// Also attempts to load state from TiData first (if not already handled by Activate override).
+               /// </summary>
+               public NpcStateSO GetStateSO(Enum stateEnum)
+               {
+                    if (stateEnum == null)
                     {
-                         targetEnum = (System.Enum)Enum.Parse(type, stateEnumKey);
+                         Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Attempted to get state with a null Enum key!", this);
+                         return null;
+                    }
+
+                    if (availableStates != null && availableStates.TryGetValue(stateEnum, out NpcStateSO stateSO))
+                    {
+                         return stateSO;
+                    }
+
+                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): State SO not found in compiled states for Enum '{stateEnum.GetType().Name}.{stateEnum.ToString()}'! Attempting fallbacks.", this);
+
+                    NpcStateSO returningStateFallback = null;
+                    if (!string.IsNullOrEmpty(fallbackReturningStateEnumKey) && !string.IsNullOrEmpty(fallbackReturningStateEnumType))
+                    {
+                         try
+                         {
+                              Type enumType = Type.GetType(fallbackReturningStateEnumType);
+                              if (enumType != null && enumType.IsEnum)
+                              {
+                                   Enum fallbackEnum = (Enum)Enum.Parse(enumType, fallbackReturningStateEnumKey);
+                                   if (availableStates.TryGetValue(fallbackEnum, out returningStateFallback))
+                                   {
+                                        // Only return fallback if it's not the *same* enum key we were trying to get (avoids infinite loop if fallback config is recursive)
+                                        if (!stateEnum.Equals(fallbackEnum))
+                                        {
+                                             Debug.LogWarning($"NpcStateMachineRunner ({gameObject.name}): Returning '{returningStateFallback.name}' as Returning fallback for missing state '{stateEnum.GetType().Name}.{stateEnum.ToString()}'.", this);
+                                             return returningStateFallback;
+                                        } else {
+                                             Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Configured Returning fallback enum key '{fallbackReturningStateEnumKey}' is the same as the requested key '{stateEnum.GetType().Name}.{stateEnum.ToString()}'! Recursive fallback configuration.", this);
+                                        }
+                                   }
+                              }
+                              else
+                              {
+                                   Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Configured Returning fallback Enum Type '{fallbackReturningStateEnumType}' is invalid!", this);
+                              }
+                         }
+                         catch (Exception e)
+                         {
+                              Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Error parsing Returning fallback config: {e}", this);
+                         }
+                    }
+
+
+                    NpcStateSO idleStateFallback = null;
+                    if (!string.IsNullOrEmpty(fallbackIdleStateEnumKey) && !string.IsNullOrEmpty(fallbackIdleStateEnumType))
+                    {
+                         try
+                         {
+                              Type enumType = Type.GetType(fallbackIdleStateEnumType);
+                              if (enumType != null && enumType.IsEnum)
+                              {
+                                   Enum fallbackEnum = (Enum)Enum.Parse(enumType, fallbackIdleStateEnumKey);
+                                   if (availableStates.TryGetValue(fallbackEnum, out idleStateFallback))
+                                   {
+                                        // Only return fallback if it's not the *same* enum key we were trying to get
+                                        if (!stateEnum.Equals(fallbackEnum))
+                                        {
+                                             Debug.LogWarning($"NpcStateMachineRunner ({gameObject.name}): Returning '{idleStateFallback.name}' as Idle fallback for missing state '{stateEnum.GetType().Name}.{stateEnum.ToString()}'.", this);
+                                             return idleStateFallback;
+                                        } else {
+                                             Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Configured Idle fallback enum key '{fallbackIdleStateEnumKey}' is the same as the requested key '{stateEnum.GetType().Name}.{stateEnum.ToString()}'! Recursive fallback configuration.", this);
+                                        }
+                                   }
+                              }
+                              else
+                              {
+                                   Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Configured Idle fallback Enum Type '{fallbackIdleStateEnumType}' is invalid!", this);
+                              }
+                         }
+                         catch (Exception e)
+                         {
+                              Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Error parsing Idle fallback config: {e}", this);
+                         }
+                    }
+
+
+                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): All configured fallback states (Returning/Idle) failed or are missing. Cannot provide a safe state for missing '{stateEnum.GetType().Name}.{stateEnum.ToString()}'.", this);
+                    return null;
+               }
+
+                         /// <summary>
+               /// Determines the primary starting state for this NPC based on its configured types.
+               /// For TI NPCs, attempts to load state from TiData first (if not already handled by Activate override).
+               /// </summary>
+               public NpcStateSO GetPrimaryStartingStateSO()
+               {
+                    // This method is now primarily a fallback if Activate did NOT provide an override state.
+                    // The logic here for loading state from TiData might need reconsideration
+                    // if TiData.CurrentStateEnum is expected to be a BasicState now.
+                    // Let's assume if Activate didn't provide an override, it means
+                    // either it's a transient NPC, or a TI NPC with no saved state,
+                    // or a TI NPC with a saved state that couldn't be mapped to Basic.
+                    // In these cases, we default to the Type Definition's primary start state.
+
+                    Debug.Log($"NpcStateMachineRunner ({gameObject.name}): GetPrimaryStartingStateSO called. Checking Type Definition primary state.");
+
+
+                    // Use the Type Definition primary starting state.
+                    Enum startingStateEnum = null;
+                    NpcTypeDefinitionSO primaryTypeDef = null;
+
+                    if (npcTypes != null)
+                    {
+                         foreach (var typeDef in npcTypes)
+                         {
+                              if (typeDef != null)
+                              {
+                                   Enum parsedEnum = typeDef.ParsePrimaryStartingStateEnum();
+                                   if (parsedEnum != null)
+                                   {
+                                        primaryTypeDef = typeDef;
+                                        startingStateEnum = parsedEnum;
+                                        break;
+                                   }
+                              }
+                         }
+                    }
+
+                    if (startingStateEnum != null)
+                    {
+                         Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Found primary starting state '{startingStateEnum.GetType().Name}.{startingStateEnum.ToString()}' defined in type '{primaryTypeDef?.name ?? "Unknown Type"}'. Looking up state SO.");
+                         NpcStateSO startState = GetStateSO(startingStateEnum);
+
+                         if (startState == null)
+                         {
+                              Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): GetStateSO returned null for primary starting state '{startingStateEnum.GetType().Name}.{startingStateEnum.ToString()}'. Cannot provide a safe start state.");
+                         }
+                         return startState;
                     }
                     else
                     {
-                         Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Invalid Enum Type string '{stateEnumType}' provided for transition!", this);
-                    }
-               }
-               catch (Exception e)
-               {
-                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Error parsing state enum key '{stateEnumKey}' of type '{stateEnumType}' for transition: {e.Message}", this);
-               }
+                         Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): No valid primary starting state configured in any assigned type definitions! Cannot start NPC state machine. Attempting ReturningToPool fallback.");
+                         NpcStateSO finalFallback = null;
+                         // Hardcoded fallback to ReturningToPool if no primary start state is defined
+                         if (availableStates != null) availableStates.TryGetValue(GeneralState.ReturningToPool, out finalFallback);
 
-               NpcStateSO nextState = GetStateSO(targetEnum);
-
-               TransitionToState(nextState);
-          }
-
-          /// <summary>
-          /// Prepares the Runner with path data for the *next* transition,
-          /// assuming the next state will be the generic PathState.FollowPath.
-          /// This data is read by PathStateSO.OnEnter when starting a new path.
-          /// </summary>
-          /// <param name="path">The PathSO to follow.</param>
-          /// <param name="startIndex">The index of the waypoint to start from.</param>
-          /// <param name="reverse">Whether to follow the path in reverse.</param>
-          public void PreparePathTransition(PathSO path, int startIndex, bool reverse)
-          {
-               if (path == null)
-               {
-                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): PreparePathTransition called with a null PathSO!", this);
-                    // Clear existing temp data on error
-                    tempPathSO = null;
-                    tempStartIndex = 0;
-                    tempFollowReverse = false;
-                    return;
-               }
-               if (startIndex < 0 || startIndex >= path.WaypointCount)
-               {
-                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): PreparePathTransition called with invalid startIndex {startIndex} for path '{path.PathID}' (WaypointCount: {path.WaypointCount})!", this);
-                     // Clear existing temp data on error
-                    tempPathSO = null;
-                    tempStartIndex = 0;
-                    tempFollowReverse = false;
-                    return;
-               }
-
-               tempPathSO = path;
-               tempStartIndex = startIndex;
-               tempFollowReverse = reverse;
-               // Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Prepared path transition data for path '{path.PathID}', start index {startIndex}, reverse {reverse}.", this); // Too noisy
-          }
-
-
-          /// <summary>
-          /// Allows a State SO (via context) to start a coroutine managed by the Runner.
-          /// </summary>
-          public Coroutine StartManagedStateCoroutine(IEnumerator routine)
-          {
-               if (routine == null)
-               {
-                    Debug.LogWarning($"{gameObject.name}: Attempted to start a null coroutine.", this);
-                    return null;
-               }
-               StopManagedStateCoroutine(activeStateCoroutine); // Stop any existing managed coroutine
-               activeStateCoroutine = StartCoroutine(routine); // Start the new coroutine
-               return activeStateCoroutine;
-          }
-
-          /// <summary>
-         /// Helper for state SOs to stop a managed coroutine.
-         /// </summary>
-         public void StopManagedStateCoroutine(Coroutine routine)
-         {
-               if (routine != null)
-               {
-                   StopCoroutine(routine);
-               }
-               // If the stopped routine was the currently active one, clear the reference
-               if (activeStateCoroutine == routine)
-               {
-                   activeStateCoroutine = null;
-               }
-         }
-
-          public NpcStateSO GetCurrentState()
-          {
-               return currentState;
-          }
-
-          public NpcStateSO GetPreviousState()
-          {
-               return previousState;
-          }
-
-
-          /// <summary>
-          /// Gets a state SO by its Enum key. Includes configurable fallbacks.
-          /// Also attempts to load state from TiData first (if not already handled by Activate override).
-          /// </summary>
-          public NpcStateSO GetStateSO(Enum stateEnum)
-          {
-               if (stateEnum == null)
-               {
-                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Attempted to get state with a null Enum key!", this);
-                    return null;
-               }
-
-               if (availableStates != null && availableStates.TryGetValue(stateEnum, out NpcStateSO stateSO))
-               {
-                    return stateSO;
-               }
-
-               Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): State SO not found in compiled states for Enum '{stateEnum.GetType().Name}.{stateEnum.ToString()}'! Attempting fallbacks.", this);
-
-               NpcStateSO returningStateFallback = null;
-               if (!string.IsNullOrEmpty(fallbackReturningStateEnumKey) && !string.IsNullOrEmpty(fallbackReturningStateEnumType))
-               {
-                    try
-                    {
-                         Type enumType = Type.GetType(fallbackReturningStateEnumType);
-                         if (enumType != null && enumType.IsEnum)
+                         if (finalFallback != null)
                          {
-                              Enum fallbackEnum = (Enum)Enum.Parse(enumType, fallbackReturningStateEnumKey);
-                              if (availableStates.TryGetValue(fallbackEnum, out returningStateFallback))
-                              {
-                                   // Only return fallback if it's not the *same* enum key we were trying to get (avoids infinite loop if fallback config is recursive)
-                                   if (!stateEnum.Equals(fallbackEnum))
-                                   {
-                                        Debug.LogWarning($"NpcStateMachineRunner ({gameObject.name}): Returning '{returningStateFallback.name}' as Returning fallback for missing state '{stateEnum.GetType().Name}.{stateEnum.ToString()}'.", this);
-                                        return returningStateFallback;
-                                   } else {
-                                        Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Configured Returning fallback enum key '{fallbackReturningStateEnumKey}' is the same as the requested key '{stateEnum.GetType().Name}.{stateEnum.ToString()}'! Recursive fallback configuration.", this);
-                                    }
-                              }
+                              Debug.LogWarning($"NpcStateMachineRunner ({gameObject.name}): No primary start state configured and hardcoded ReturningToPool fallback not available either! Cannot start NPC.", this);
+                              return finalFallback;
                          }
-                         else
+
+                         Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): No primary start state configured and hardcoded ReturningToPool fallback not available either! Cannot start NPC.", this);
+                         return null;
+                    }
+               }
+
+               // These methods are called by the CashRegisterInteractable OR Runner internal logic
+               public void StartTransaction()
+               {
+                    Debug.Log($"NpcStateMachineRunner ({gameObject.name}): StartTransaction called. Transitioning to TransactionActive.");
+                    TransitionToState(GetStateSO(CustomerState.TransactionActive));
+               }
+
+               public void OnTransactionCompleted(float paymentReceived)
+               {
+                    Debug.Log($"NpcStateMachineRunner ({gameObject.name}): OnTransactionCompleted called. Transitioning to Exiting.");
+                    TransitionToState(GetStateSO(CustomerState.Exiting));
+               }
+
+
+               public List<(ItemDetails details, int quantity)> GetItemsToBuy()
+               {
+                    if (Shopper != null)
+                    {
+                         return Shopper.GetItemsToBuy();
+                    }
+                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Shopper component is null! Cannot get items to buy.", this);
+                    return new List<(ItemDetails details, int quantity)>();
+               }
+
+               /// <summary>
+               /// The position the NavMeshAgent was last commanded to move to.
+               /// Used for saving state for inactive simulation.
+               /// </summary>
+               public Vector3? CurrentDestinationPosition { get; private set; }
+               // Method in NpcStateContext.MoveToDestination sets this field now.
+
+               // Make method internal so NpcStateContext can set it
+               internal void SetCurrentDestinationPosition(Vector3? position)
+               {
+               CurrentDestinationPosition = position;
+               }
+
+               /// <summary>
+               /// Helper method for NpcStateContext to call PathFollowingHandler.RestorePathProgress.
+               /// </summary>
+               internal bool RestorePathProgress(PathSO path, int waypointIndex, bool reverse)
+               {
+                    if (PathFollowingHandler != null)
+                    {
+                         return PathFollowingHandler.RestorePathProgress(path, waypointIndex, reverse);
+                    }
+                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): PathFollowingHandler is null! Cannot restore path progress.", this);
+                    return false;
+               }
+
+               // --- Helper method for animation speed update (moved from Update) ---
+               private void UpdateAnimationSpeed()
+               {
+                    if (MovementHandler != null && AnimationHandler != null)
+                    {
+                         // Only update animation speed if NavMeshAgent is enabled (standard movement)
+                         if (MovementHandler.IsAgentEnabled)
                          {
-                              Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Configured Returning fallback Enum Type '{fallbackReturningStateEnumType}' is invalid!", this);
+                              float speed = MovementHandler.Agent.velocity.magnitude;
+                              AnimationHandler.SetSpeed(speed);
                          }
-                    }
-                    catch (Exception e)
-                    {
-                         Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Error parsing Returning fallback config: {e}", this);
-                    }
-               }
-
-
-               NpcStateSO idleStateFallback = null;
-               if (!string.IsNullOrEmpty(fallbackIdleStateEnumKey) && !string.IsNullOrEmpty(fallbackIdleStateEnumType))
-               {
-                    try
-                    {
-                         Type enumType = Type.GetType(fallbackIdleStateEnumType);
-                         if (enumType != null && enumType.IsEnum)
-                         {
-                              Enum fallbackEnum = (Enum)Enum.Parse(enumType, fallbackIdleStateEnumKey);
-                              if (availableStates.TryGetValue(fallbackEnum, out idleStateFallback))
-                              {
-                                   // Only return fallback if it's not the *same* enum key we were trying to get
-                                   if (!stateEnum.Equals(fallbackEnum))
-                                   {
-                                        Debug.LogWarning($"NpcStateMachineRunner ({gameObject.name}): Returning '{idleStateFallback.name}' as Idle fallback for missing state '{stateEnum.GetType().Name}.{stateEnum.ToString()}'.", this);
-                                        return idleStateFallback;
-                                   } else {
-                                         Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Configured Idle fallback enum key '{fallbackIdleStateEnumKey}' is the same as the requested key '{stateEnum.GetType().Name}.{stateEnum.ToString()}'! Recursive fallback configuration.", this);
-                                    }
-                              }
-                         }
-                         else
-                         {
-                              Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Configured Idle fallback Enum Type '{fallbackIdleStateEnumType}' is invalid!", this);
-                         }
-                    }
-                    catch (Exception e)
-                    {
-                         Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Error parsing Idle fallback config: {e}", this);
+                         // Add logic here if PathFollowingHandler also needs animation speed control
+                         // else if (PathFollowingHandler != null && PathFollowingHandler.IsFollowingPath)
+                         // {
+                         //     AnimationHandler.SetSpeed(PathFollowingHandler.pathFollowingSpeed); // Assuming speed is accessible
+                         // }
                     }
                }
-
-
-               Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): All configured fallback states (Returning/Idle) failed or are missing. Cannot provide a safe state for missing '{stateEnum.GetType().Name}.{stateEnum.ToString()}'.", this);
-               return null;
-          }
-
-                    /// <summary>
-          /// Determines the primary starting state for this NPC based on its configured types.
-          /// For TI NPCs, attempts to load state from TiData first (if not already handled by Activate override).
-          /// </summary>
-          public NpcStateSO GetPrimaryStartingStateSO()
-          {
-               // This method is now primarily a fallback if Activate did NOT provide an override state.
-               // The logic here for loading state from TiData might need reconsideration
-               // if TiData.CurrentStateEnum is expected to be a BasicState now.
-               // Let's assume if Activate didn't provide an override, it means
-               // either it's a transient NPC, or a TI NPC with no saved state,
-               // or a TI NPC with a saved state that couldn't be mapped to Basic.
-               // In these cases, we default to the Type Definition's primary start state.
-
-               Debug.Log($"NpcStateMachineRunner ({gameObject.name}): GetPrimaryStartingStateSO called. Checking Type Definition primary state.");
-
-
-               // Use the Type Definition primary starting state.
-               Enum startingStateEnum = null;
-               NpcTypeDefinitionSO primaryTypeDef = null;
-
-               if (npcTypes != null)
-               {
-                    foreach (var typeDef in npcTypes)
-                    {
-                         if (typeDef != null)
-                         {
-                              Enum parsedEnum = typeDef.ParsePrimaryStartingStateEnum();
-                              if (parsedEnum != null)
-                              {
-                                   primaryTypeDef = typeDef;
-                                   startingStateEnum = parsedEnum;
-                                   break;
-                              }
-                         }
-                    }
-               }
-
-               if (startingStateEnum != null)
-               {
-                    Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Found primary starting state '{startingStateEnum.GetType().Name}.{startingStateEnum.ToString()}' defined in type '{primaryTypeDef?.name ?? "Unknown Type"}'. Looking up state SO.");
-                    NpcStateSO startState = GetStateSO(startingStateEnum);
-
-                    if (startState == null)
-                    {
-                         Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): GetStateSO returned null for primary starting state '{startingStateEnum.GetType().Name}.{startingStateEnum.ToString()}'. Cannot provide a safe start state.");
-                    }
-                    return startState;
-               }
-               else
-               {
-                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): No valid primary starting state configured in any assigned type definitions! Cannot start NPC state machine. Attempting ReturningToPool fallback.");
-                    NpcStateSO finalFallback = null;
-                    // Hardcoded fallback to ReturningToPool if no primary start state is defined
-                    if (availableStates != null) availableStates.TryGetValue(GeneralState.ReturningToPool, out finalFallback);
-
-                    if (finalFallback != null)
-                    {
-                         Debug.LogWarning($"NpcStateMachineRunner ({gameObject.name}): No primary start state configured and hardcoded ReturningToPool fallback not available either! Cannot start NPC.", this);
-                         return finalFallback;
-                    }
-
-                    Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): No primary start state configured and hardcoded ReturningToPool fallback not available either! Cannot start NPC.", this);
-                    return null;
-               }
-          }
-
-          // These methods are called by the CashRegisterInteractable OR Runner internal logic
-          public void StartTransaction()
-          {
-               Debug.Log($"NpcStateMachineRunner ({gameObject.name}): StartTransaction called. Transitioning to TransactionActive.");
-               TransitionToState(GetStateSO(CustomerState.TransactionActive));
-          }
-
-          public void OnTransactionCompleted(float paymentReceived)
-          {
-               Debug.Log($"NpcStateMachineRunner ({gameObject.name}): OnTransactionCompleted called. Transitioning to Exiting.");
-               TransitionToState(GetStateSO(CustomerState.Exiting));
-          }
-
-
-          public List<(ItemDetails details, int quantity)> GetItemsToBuy()
-          {
-               if (Shopper != null)
-               {
-                    return Shopper.GetItemsToBuy();
-               }
-               Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Shopper component is null! Cannot get items to buy.", this);
-               return new List<(ItemDetails details, int quantity)>();
-          }
-
-          /// <summary>
-          /// The position the NavMeshAgent was last commanded to move to.
-          /// Used for saving state for inactive simulation.
-          /// </summary>
-          public Vector3? CurrentDestinationPosition { get; private set; }
-          // Method in NpcStateContext.MoveToDestination sets this field now.
-
-          // Make method internal so NpcStateContext can set it
-          internal void SetCurrentDestinationPosition(Vector3? position)
-          {
-              CurrentDestinationPosition = position;
-          }
-
-          /// <summary>
-          /// Helper method for NpcStateContext to call PathFollowingHandler.RestorePathProgress.
-          /// </summary>
-          internal bool RestorePathProgress(PathSO path, int waypointIndex, bool reverse)
-          {
-               if (PathFollowingHandler != null)
-               {
-                    return PathFollowingHandler.RestorePathProgress(path, waypointIndex, reverse);
-               }
-               Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): PathFollowingHandler is null! Cannot restore path progress.", this);
-               return false;
-          }
-
-          // --- Helper method for animation speed update (moved from Update) ---
-          private void UpdateAnimationSpeed()
-          {
-               if (MovementHandler != null && AnimationHandler != null)
-               {
-                    // Only update animation speed if NavMeshAgent is enabled (standard movement)
-                    if (MovementHandler.IsAgentEnabled)
-                    {
-                         float speed = MovementHandler.Agent.velocity.magnitude;
-                         AnimationHandler.SetSpeed(speed);
-                    }
-                    // Add logic here if PathFollowingHandler also needs animation speed control
-                    // else if (PathFollowingHandler != null && PathFollowingHandler.IsFollowingPath)
-                    // {
-                    //     AnimationHandler.SetSpeed(PathFollowingHandler.pathFollowingSpeed); // Assuming speed is accessible
-                    // }
-               }
-          }
      }
 }
 // --- END OF FILE NpcStateMachineRunner.cs ---

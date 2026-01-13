@@ -9678,7 +9678,6 @@ GameObject:
   - component: {fileID: 763258590}
   - component: {fileID: 763258591}
   - component: {fileID: 763258592}
-  - component: {fileID: 763258594}
   - component: {fileID: 763258593}
   m_Layer: 0
   m_Name: NPCmanagers
@@ -10161,21 +10160,10 @@ MonoBehaviour:
   m_GameObject: {fileID: 763258579}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 40873c980ce975e4799967415eb29c17, type: 3}
+  m_Script: {fileID: 11500000, guid: d747afbaae6a7464ba60cd14feb8bf7d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
---- !u!114 &763258594
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 763258579}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f5e57e9d5c4756a42a1c485f456b14d2, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  transientNpcPrefab: {fileID: 4394407753789290286, guid: 488534cc76898354d8320c55d1770728, type: 3}
 --- !u!1 &765084589
 GameObject:
   m_ObjectHideFlags: 0
@@ -23865,7 +23853,7 @@ GameObject:
   - component: {fileID: 1863998788}
   - component: {fileID: 1863998792}
   - component: {fileID: 1863998791}
-  - component: {fileID: 1863998790}
+  - component: {fileID: 1863998793}
   m_Layer: 0
   m_Name: GlobalBootstrapper
   m_TagString: Untagged
@@ -23899,6 +23887,7 @@ MonoBehaviour:
       rotation: {x: 0, y: 0, z: 0, w: 0}
     inventories: []
     tiNpcDataList: []
+    transientNpcs: []
     worldInteractables: []
     PlayerCleanMoney: 0
     PlayerDirtyMoney: 0
@@ -23920,19 +23909,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1863998790
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1863998787}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 3b95a75d9967b9c41994025d0b17018f, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  poolingConfig: {fileID: 11400000, guid: 1e3ad343288ee824fafad7d4b4872914, type: 2}
 --- !u!114 &1863998791
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -24014,6 +23990,19 @@ MonoBehaviour:
   skyboxMaterial: {fileID: 2100000, guid: d7e0b043f024cb842a15ecfd51fbe487, type: 2}
   timeSettings: {fileID: 11400000, guid: 809dc195db61d5e478860b1b2b7c313a, type: 2}
   currentDay: 1
+--- !u!114 &1863998793
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1863998787}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3b95a75d9967b9c41994025d0b17018f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  poolingConfig: {fileID: 11400000, guid: 1e3ad343288ee824fafad7d4b4872914, type: 2}
 --- !u!1 &1869059065
 GameObject:
   m_ObjectHideFlags: 0

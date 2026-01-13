@@ -18,6 +18,7 @@ namespace Systems.Persistence {
         public PlayerData playerData;
         public List<InventoryData> inventories;
         public List<TiNpcData> tiNpcDataList;
+        public List<Game.NPC.TransientNpcData> transientNpcs;
         public List<InteractableObjectData> worldInteractables;
 
         // Global Variables
@@ -44,6 +45,7 @@ namespace Systems.Persistence {
             playerData = new PlayerData();
             inventories = new List<InventoryData>();
             tiNpcDataList = new List<TiNpcData>();
+            transientNpcs = new List<Game.NPC.TransientNpcData>();
         }
     }
         
@@ -160,7 +162,7 @@ namespace Systems.Persistence {
                 invComponent.Bind(invData);
             }
 
-            // NPC RESTORATION 
+            // --- Restore TINPCs ---
             // Restore TI NPCs (Persistent Staff/Unique chars)
             if (TiNpcPersistenceBridge.Instance != null)
             {
@@ -170,6 +172,16 @@ namespace Systems.Persistence {
             {
                 var bridge = FindFirstObjectByType<TiNpcPersistenceBridge>();
                 if (bridge != null) bridge.LoadAllTiNpcData(gameData.tiNpcDataList);
+            }
+
+            // --- Restore Transient NPCs ---
+            if (TransientNpcPersistenceBridge.Instance != null)
+            {
+                TransientNpcPersistenceBridge.Instance.LoadAllTransientData(gameData.transientNpcs);
+            }
+            else
+            {
+                Debug.LogWarning("SaveLoadSystem: TransientNpcPersistenceBridge not found. Transient NPCs will not be restored.");
             }
             
             Debug.Log("SaveLoadSystem: Data binding sequence complete.");
@@ -235,6 +247,9 @@ namespace Systems.Persistence {
             
             // 2. Clear NPC lists to prevent duplication
             gameData.tiNpcDataList.Clear();
+
+            if (gameData.transientNpcs == null) gameData.transientNpcs = new List<Game.NPC.TransientNpcData>();
+            gameData.transientNpcs.Clear();
             
             // 3. Find and Iterate Savable Components
             var allSceneMonoBehaviours = FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None);
@@ -277,6 +292,12 @@ namespace Systems.Persistence {
                  // FIX: Use FindFirstObjectByType
                  var bridge = FindFirstObjectByType<TiNpcPersistenceBridge>();
                  if (bridge != null) gameData.tiNpcDataList = bridge.GetAllTiNpcData();
+            }
+
+            // --- Save Transient NPCs ---
+            if (TransientNpcPersistenceBridge.Instance != null)
+            {
+                gameData.transientNpcs = TransientNpcPersistenceBridge.Instance.GetAllTransientData();
             }
 
             // 7. Write to Disk

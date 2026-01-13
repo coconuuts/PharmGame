@@ -1008,6 +1008,38 @@ namespace CustomerManagement
         }
 
         /// <summary>
+        /// Retrieves a specific BrowseLocation by its index in the list.
+        /// Used for restoring state from save files.
+        /// </summary>
+        public BrowseLocation? GetBrowseLocation(int index)
+        {
+            if (BrowseLocations != null && index >= 0 && index < BrowseLocations.Count)
+            {
+                return BrowseLocations[index];
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Finds the index of a specific BrowseLocation in the list.
+        /// Used for saving state to files.
+        /// </summary>
+        public int GetBrowseLocationIndex(BrowseLocation location)
+        {
+            if (BrowseLocations == null) return -1;
+
+            for (int i = 0; i < BrowseLocations.Count; i++)
+            {
+                // Compare the unique Transform reference to identify the location
+                if (BrowseLocations[i].browsePoint == location.browsePoint)
+                {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        /// <summary>
         /// Gets the register point transform.
         /// </summary>
         public Transform GetRegisterPoint()
