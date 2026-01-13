@@ -7,7 +7,6 @@ using UnityEngine.SceneManagement;
 using Systems.SaveLoad;
 using Game.NPC.TI; 
 using Game.NPC;    
-using CustomerManagement.Tracking; 
 using Systems.Economy;
 
 namespace Systems.Persistence {
@@ -19,7 +18,6 @@ namespace Systems.Persistence {
         public PlayerData playerData;
         public List<InventoryData> inventories;
         public List<TiNpcData> tiNpcDataList;
-        public List<TransientNpcSnapshotData> transientNpcSnapshots;
         public List<InteractableObjectData> worldInteractables;
 
         // Global Variables
@@ -46,7 +44,6 @@ namespace Systems.Persistence {
             playerData = new PlayerData();
             inventories = new List<InventoryData>();
             tiNpcDataList = new List<TiNpcData>();
-            transientNpcSnapshots = new List<TransientNpcSnapshotData>();
         }
     }
         
@@ -90,7 +87,6 @@ namespace Systems.Persistence {
             if (gameData == null) gameData = new GameData();
             if (gameData.inventories == null) gameData.inventories = new List<InventoryData>();
             if (gameData.tiNpcDataList == null) gameData.tiNpcDataList = new List<TiNpcData>();
-            if (gameData.transientNpcSnapshots == null) gameData.transientNpcSnapshots = new List<TransientNpcSnapshotData>();
         }
         
         void Start() 
@@ -175,17 +171,6 @@ namespace Systems.Persistence {
                 var bridge = FindFirstObjectByType<TiNpcPersistenceBridge>();
                 if (bridge != null) bridge.LoadAllTiNpcData(gameData.tiNpcDataList);
             }
-
-            // Restore Transient NPCs (Customers)
-            if (TransientNpcPersistenceBridge.Instance != null)
-            {
-                TransientNpcPersistenceBridge.Instance.LoadSnapshots(gameData.transientNpcSnapshots);
-            }
-            else
-            {
-                var bridge = FindFirstObjectByType<TransientNpcPersistenceBridge>();
-                if (bridge != null) bridge.LoadSnapshots(gameData.transientNpcSnapshots);
-            }
             
             Debug.Log("SaveLoadSystem: Data binding sequence complete.");
         }
@@ -210,7 +195,6 @@ namespace Systems.Persistence {
                 playerData = new PlayerData(),
                 inventories = new List<InventoryData>(),
                 tiNpcDataList = new List<TiNpcData>(),
-                transientNpcSnapshots = new List<TransientNpcSnapshotData>()
             };
 
             // 2. Load the Scene
@@ -251,7 +235,6 @@ namespace Systems.Persistence {
             
             // 2. Clear NPC lists to prevent duplication
             gameData.tiNpcDataList.Clear();
-            gameData.transientNpcSnapshots.Clear();
             
             // 3. Find and Iterate Savable Components
             var allSceneMonoBehaviours = FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None);
@@ -296,19 +279,6 @@ namespace Systems.Persistence {
                  if (bridge != null) gameData.tiNpcDataList = bridge.GetAllTiNpcData();
             }
 
-            // 6. Gather Transient Snapshots
-            if (TransientNpcPersistenceBridge.Instance != null)
-            {
-                gameData.transientNpcSnapshots = TransientNpcPersistenceBridge.Instance.GetSnapshots();
-                Debug.Log($"SaveLoadSystem: Saved {gameData.transientNpcSnapshots.Count} Transient Snapshots.");
-            }
-            else
-            {
-                 // FIX: Use FindFirstObjectByType
-                 var bridge = FindFirstObjectByType<TransientNpcPersistenceBridge>();
-                 if (bridge != null) gameData.transientNpcSnapshots = bridge.GetSnapshots();
-            }
-
             // 7. Write to Disk
             dataService.Save(gameData);
             Debug.Log("SaveLoadSystem: Save Complete.");
@@ -323,7 +293,6 @@ namespace Systems.Persistence {
             
             // Ensure lists exist
             if (gameData.tiNpcDataList == null) gameData.tiNpcDataList = new List<TiNpcData>();
-            if (gameData.transientNpcSnapshots == null) gameData.transientNpcSnapshots = new List<TransientNpcSnapshotData>();
 
             SceneManager.LoadScene(gameData.CurrentLevelName);
         }

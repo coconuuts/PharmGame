@@ -22,7 +22,7 @@ MonoBehaviour:
     maxSize: 1000
     canGrow: 1
   - prefab: {fileID: 4394407753789290286, guid: 488534cc76898354d8320c55d1770728, type: 3}
-    initialSize: 10
+    initialSize: 1
     maxSize: 30
     canGrow: 1
   - prefab: {fileID: 7931329014851535385, guid: 5aa6f53b2e285e848aec22cb6351813a, type: 3}

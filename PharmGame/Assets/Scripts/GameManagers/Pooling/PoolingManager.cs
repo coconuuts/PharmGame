@@ -18,6 +18,7 @@ namespace Utils.Pooling
         [SerializeField] private PoolingConfigSO poolingConfig;
 
         private Dictionary<GameObject, GameObjectPool> gameObjectPools = new Dictionary<GameObject, GameObjectPool>();
+        private bool isInitialized = false;
 
         private void Awake()
         {
@@ -48,6 +49,8 @@ namespace Utils.Pooling
 
         private void InitializePoolsFromConfig()
         {
+            if (isInitialized) return;
+
             if (poolingConfig == null)
             {
                 Debug.LogError("PoolingManager: Pooling Configuration ScriptableObject is not assigned! No pools will be pre-initialized.");
@@ -81,10 +84,17 @@ namespace Utils.Pooling
             {
                 Debug.LogWarning("PoolingManager: GameObject pool configurations list in the ScriptableObject is null or empty.");
             }
+            isInitialized = true;
         }
 
         public GameObject GetPooledObject(GameObject prefab)
         {
+            // Ensure initialization has happened before we try to look up pools.
+            if (!isInitialized) 
+            {
+                InitializePoolsFromConfig();
+            }
+            
             if (prefab == null)
             {
                 Debug.LogError("PoolingManager: Cannot get pooled object, prefab is null!");

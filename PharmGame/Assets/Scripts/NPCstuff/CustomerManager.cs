@@ -294,7 +294,6 @@ namespace CustomerManagement
                 Debug.Log("CustomerManager: SpawnCustomer skipped. Store activity is paused, preventing active NPC spawning.", this);
                 return; // Do not attempt to spawn if store simulation is active
             }
-            // --- END ---
 
             // Determine which spawn points to use
             List<Transform> currentSpawnPoints = isBusSpawn ? busSpawnPoints : spawnPoints;
@@ -329,7 +328,6 @@ namespace CustomerManagement
                         else Destroy(customerObject); // Fallback
                         return; // Abort spawn process for this object
                     }
-                    // --- End Check ---
 
                     Transform chosenSpawnPoint = currentSpawnPoints[Random.Range(0, currentSpawnPoints.Count)]; // Use the determined spawn points list
                     // Warp the NPC to the spawn point - this is done by the Runner's Initialize
@@ -468,7 +466,7 @@ namespace CustomerManagement
                 return; // Exit the method, let TiNpcManager handle pooling for TI NPCs
             }
 
-            // --- Existing Transient NPC Pooling Logic ---
+            // --- Transient NPC Pooling Logic ---
             // This else block contains the original logic for transient customers
             Debug.Log($"CustomerManager: Handling NpcReturningToPoolEvent for Transient NPC '{npcObject.name}'. Returning to pool.", npcObject);
 
@@ -515,7 +513,6 @@ namespace CustomerManagement
                 Debug.LogError($"CustomerManager: PoolingManager is null! Cannot return transient NPC '{npcObject.name}' to pool. Destroying object.", this);
                 Destroy(npcObject);
             }
-            // --- End Existing Transient NPC Pooling Logic ---
         }
 
 

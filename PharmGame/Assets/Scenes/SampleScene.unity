@@ -7524,7 +7524,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   storeCenterPoint: {fileID: 569638160}
-  pauseDistance: 5
+  pauseDistance: 20
   playerTransform: {fileID: 1579874845}
 --- !u!1 &572234183
 GameObject:
@@ -9678,6 +9678,8 @@ GameObject:
   - component: {fileID: 763258590}
   - component: {fileID: 763258591}
   - component: {fileID: 763258592}
+  - component: {fileID: 763258594}
+  - component: {fileID: 763258593}
   m_Layer: 0
   m_Name: NPCmanagers
   m_TagString: Untagged
@@ -9700,8 +9702,8 @@ MonoBehaviour:
   npcPrefabs:
   - {fileID: 4394407753789290286, guid: 488534cc76898354d8320c55d1770728, type: 3}
   maxCustomersInStore: 7
-  minSpawnInterval: 28
-  maxSpawnInterval: 30
+  minSpawnInterval: 5
+  maxSpawnInterval: 6
   _busArrivalInterval: 75
   npcsPerBus: 3
   initialBusDelay: 60
@@ -10148,6 +10150,30 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: ea3db7d04c7e01a40b6b1e1cb2740c23, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &763258593
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 763258579}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 40873c980ce975e4799967415eb29c17, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &763258594
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 763258579}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f5e57e9d5c4756a42a1c485f456b14d2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
 --- !u!1 &765084589
@@ -23873,7 +23899,6 @@ MonoBehaviour:
       rotation: {x: 0, y: 0, z: 0, w: 0}
     inventories: []
     tiNpcDataList: []
-    transientNpcSnapshots: []
     worldInteractables: []
     PlayerCleanMoney: 0
     PlayerDirtyMoney: 0
@@ -33943,11 +33968,11 @@ SceneRoots:
   - {fileID: 2564988366592900889}
   - {fileID: 7262349399658645270}
   - {fileID: 1302600659}
+  - {fileID: 1863998789}
   - {fileID: 99645950}
   - {fileID: 763258581}
   - {fileID: 29837263}
   - {fileID: 1589559893}
-  - {fileID: 1863998789}
   - {fileID: 673708012}
   - {fileID: 257548374}
   - {fileID: 7972450836261178367}
