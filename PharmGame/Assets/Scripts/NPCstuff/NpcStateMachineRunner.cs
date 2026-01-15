@@ -587,6 +587,7 @@ namespace Game.NPC
                     return;
                }
 
+               InitializeManagers();
                this.Manager = manager; // Set Manager reference
                // Other manager references (TI, Prescription, Cashier, Upgrade) are obtained in Start
 
@@ -636,6 +637,8 @@ namespace Game.NPC
           /// <param name="overrideStartingState">Optional: An active state enum to transition to immediately instead of determining via GetPrimaryStartingStateSO.</param>
           public void Activate(TiNpcData tiData, CustomerManagement.CustomerManager customerManager, Enum overrideStartingState = null)
           {
+               InitializeManagers();
+               
                if (tiData == null)
                {
                     Debug.LogError($"NpcStateMachineRunner ({gameObject.name}): Activate called with null TiNpcData! Self-disabling.", this);
@@ -664,13 +667,6 @@ namespace Game.NPC
                     {
                          Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Warped to {tiData.CurrentWorldPosition} using MovementHandler from TiData.");
                          transform.rotation = tiData.CurrentWorldRotation;
-                         // --- Initialize lastGridPosition after warp --- // MOVED TO TiNpcData.LinkGameObject
-                         // if (gridManager != null) // MOVED
-                         // { // MOVED
-                         //      lastGridPosition = transform.position; // Initialize with current position after warp // MOVED
-                         //      // Note: TiNpcManager.ActivateTiNpc should have already updated the grid with this position // MOVED
-                         // } // MOVED
-                         // After warp, ensure interpolation is off
                          isInterpolatingPosition = false;
                          isInterpolatingRotation = false;
                     }

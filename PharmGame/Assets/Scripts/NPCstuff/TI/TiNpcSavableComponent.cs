@@ -4,6 +4,7 @@ using Systems.Persistence;
 using Systems.Inventory; // Needed for SerializableGuid if referenced
 using Game.NPC.TI;
 using Game.NPC;
+using CustomerManagement;
 
 namespace Game.NPC.TI
 {
@@ -101,6 +102,31 @@ namespace Game.NPC.TI
                      Enum basicState = tiNpcManager.GetBasicStateFromActiveState(activeState);
                      
                      data.SetCurrentState(basicState);
+                 }
+
+                 // --- Flush Browse Location Index ---
+                 // If the Runner has a target location selected (e.g., during CustomerEntering), save its index.
+                 if (runner.CurrentTargetLocation.HasValue)
+                 {
+                     var customerManager = runner.Manager ?? CustomerManager.Instance;
+                     
+                     if (customerManager != null)
+                     {
+                         // Find the index of the specific location struct
+                         int index = customerManager.GetBrowseLocationIndex(runner.CurrentTargetLocation.Value);
+                         data.savedBrowseLocationIndex = index;
+                         Debug.Log($"[TiNpcSavableComponent] Flushed BrowseLocation Index {index} for '{data.Id}' (Active Flush)."); 
+                     }
+                     else
+                     {
+                         Debug.LogWarning($"[TiNpcSavableComponent] Cannot flush BrowseLocation for '{data.Id}' - CustomerManager not found.");
+                         data.savedBrowseLocationIndex = -1;
+                     }
+                 }
+                 else
+                 {
+                     // Clear the index if no location is targeted
+                     data.savedBrowseLocationIndex = -1;
                  }
 
                  // Flush Path Data if applicable ---

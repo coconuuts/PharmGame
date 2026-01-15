@@ -9701,8 +9701,8 @@ MonoBehaviour:
   npcPrefabs:
   - {fileID: 4394407753789290286, guid: 488534cc76898354d8320c55d1770728, type: 3}
   maxCustomersInStore: 7
-  minSpawnInterval: 5
-  maxSpawnInterval: 6
+  minSpawnInterval: 50
+  maxSpawnInterval: 51
   _busArrivalInterval: 75
   npcsPerBus: 3
   initialBusDelay: 60
