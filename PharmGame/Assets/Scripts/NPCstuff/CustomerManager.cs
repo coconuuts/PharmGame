@@ -1,6 +1,4 @@
 // --- START OF FILE CustomerManager.cs ---
-
-// --- START OF FILE CustomerManager.cs ---
 using UnityEngine;
 using System.Collections.Generic;
 using Utils.Pooling; // Required for PoolingManager
@@ -354,6 +352,41 @@ namespace CustomerManagement
             else
             {
                 Debug.LogWarning($"CustomerManager: Failed to get pooled object for prefab '{npcPrefabToSpawn.name}'. Pool might be exhausted and cannot grow.");
+            }
+        }
+
+        /// <summary>
+        /// Manually registers an NPC as being "inside" the store without triggering entry events.
+        /// vital for Save/Load systems where an NPC loads directly into a Browse/Queue state,
+        /// bypassing the Entering state that normally handles registration.
+        /// </summary>
+        /// <param name="runner">The NPC runner to register.</param>
+        public void RegisterLoadedCustomer(Game.NPC.NpcStateMachineRunner runner)
+        {
+            if (runner == null) return;
+
+            // 1. Handle True Identity NPCs
+            if (runner.IsTrueIdentityNpc)
+            {
+                if (runner.TiData != null)
+                {
+                    if (tiNpcsInsideStore == null) tiNpcsInsideStore = new HashSet<TiNpcData>();
+
+                    if (!tiNpcsInsideStore.Contains(runner.TiData))
+                    {
+                        tiNpcsInsideStore.Add(runner.TiData);
+                        Debug.Log($"CustomerManager: Manually registered loaded TI NPC '{runner.TiData.Id}' as inside store. Total active: {activeCustomers.Count + tiNpcsInsideStore.Count}");
+                    }
+                }
+            }
+            // 2. Handle Transient NPCs
+            else
+            {
+                if (!activeCustomers.Contains(runner))
+                {
+                    activeCustomers.Add(runner);
+                    Debug.Log($"CustomerManager: Manually registered loaded Transient NPC '{runner.gameObject.name}' as inside store. Total active: {activeCustomers.Count + tiNpcsInsideStore.Count}");
+                }
             }
         }
 
@@ -841,7 +874,7 @@ namespace CustomerManagement
         /// and releases them if so and if the secondary queue is not empty.
         /// This replaces the main queue threshold check.
         /// </summary>
-        private void CheckStoreCapacityAndReleaseSecondaryCustomer()
+        public void CheckStoreCapacityAndReleaseSecondaryCustomer()
         {
             // --- Use the combined count for store capacity ---
             int currentCustomersInside = activeCustomers.Count + (tiNpcsInsideStore?.Count ?? 0);
@@ -873,30 +906,51 @@ namespace CustomerManagement
             {
                 Game.NPC.NpcStateMachineRunner runnerToRelease = firstOccupiedSpot.currentOccupant;
 
-                // Robustness check for valid Runner reference
-                if (runnerToRelease == null || !runnerToRelease.gameObject.activeInHierarchy || runnerToRelease.GetCurrentState() == null || !runnerToRelease.GetCurrentState().HandledState.Equals(CustomerState.SecondaryQueue))
+                // --- MODIFIED ROBUSTNESS CHECKS ---
+                
+                // 1. Check if reference is null (Data corruption)
+                if (runnerToRelease == null)
                 {
-                    Debug.LogError($"CustomerManager: Inconsistency detected! Secondary Queue spot {firstOccupiedSpot.spotIndex} is marked occupied by a Runner ('{runnerToRelease?.gameObject.name ?? "NULL Runner"}') that is invalid, inactive, or not in Secondary Queue state ('{runnerToRelease?.GetCurrentState()?.name ?? "NULL State"}'). Forcing spot {firstOccupiedSpot.spotIndex} free and trying the next spot.", this);
+                     Debug.LogError($"CustomerManager: Inconsistency detected! Secondary Queue spot {firstOccupiedSpot.spotIndex} is marked occupied but Runner is null. Forcing spot free.", this);
+                     firstOccupiedSpot.currentOccupant = null; 
+                     CheckStoreCapacityAndReleaseSecondaryCustomer(); // Try next spot
+                     return;
+                }
+
+                // 2. Check if GameObject is inactive (Likely Loading/Pooling)
+                // If the object is inactive, we shouldn't consider it an error. We just can't release it yet.
+                // We return here (aborting release) because we must wait for the head of the line to become active.
+                if (!runnerToRelease.gameObject.activeInHierarchy)
+                {
+                     Debug.Log($"CustomerManager: Secondary Queue spot {firstOccupiedSpot.spotIndex} is occupied by '{runnerToRelease.gameObject.name}', but object is inactive (likely loading). Skipping release attempt.", this);
+                     return; 
+                }
+
+                // 3. Check for Wrong State (Logic Error)
+                // Now we check state validity only if the object is active
+                if (runnerToRelease.GetCurrentState() == null || !runnerToRelease.GetCurrentState().HandledState.Equals(CustomerState.SecondaryQueue))
+                {
+                    Debug.LogWarning($"CustomerManager: Inconsistency detected! Secondary Queue spot {firstOccupiedSpot.spotIndex} is occupied by '{runnerToRelease.gameObject.name}' who is in state '{runnerToRelease.GetCurrentState()?.name ?? "NULL"}', not SecondaryQueue. Forcing spot free.", this);
                     firstOccupiedSpot.currentOccupant = null; // Force free this inconsistent spot
-                    CheckStoreCapacityAndReleaseSecondaryCustomer(); // Call self
+                    CheckStoreCapacityAndReleaseSecondaryCustomer(); // Try next spot
+                    return;
                 }
-                else
-                {
-                    // Clear the spot's occupant reference immediately
-                    firstOccupiedSpot.currentOccupant = null; // <-- Clear spot's occupant
+                
+                // --- END MODIFIED CHECKS ---
 
-                    // Publish the event for the specific NPC GameObject
-                    Debug.Log($"CustomerManager: Found {runnerToRelease.gameObject.name} occupying Secondary Queue spot {firstOccupiedSpot.spotIndex}. Clearing spot and Publishing ReleaseNpcFromSecondaryQueueEvent.", runnerToRelease.gameObject);
+                // Clear the spot's occupant reference immediately
+                firstOccupiedSpot.currentOccupant = null; // <-- Clear spot's occupant
 
-                    EventManager.Publish(new ReleaseNpcFromSecondaryQueueEvent(runnerToRelease.gameObject));
-                }
+                // Publish the event for the specific NPC GameObject
+                Debug.Log($"CustomerManager: Found {runnerToRelease.gameObject.name} occupying Secondary Queue spot {firstOccupiedSpot.spotIndex}. Clearing spot and Publishing ReleaseNpcFromSecondaryQueueEvent.", runnerToRelease.gameObject);
+
+                EventManager.Publish(new ReleaseNpcFromSecondaryQueueEvent(runnerToRelease.gameObject));
             }
             else
             {
                 Debug.Log("CustomerManager: Secondary queue appears empty (no spots marked occupied).");
             }
         }
-
 
         /// <summary>
         /// Coroutine to handle timed customer spawning (trickle).
@@ -995,16 +1049,88 @@ namespace CustomerManagement
         // --- Public methods for CustomerAI to request navigation/system info ---
 
         /// <summary>
-        /// Gets a random Browse location (point and associated inventory).
+        /// Gets an available Browse location that is NOT currently targeted by another NPC.
+        /// Returns null if all locations are taken.
         /// </summary>
-        public BrowseLocation? GetRandomBrowseLocation()
+        /// <param name="requestingRunner">The NPC asking for a spot (so they don't block themselves).</param>
+        public BrowseLocation? GetAvailableBrowseLocation(Game.NPC.NpcStateMachineRunner requestingRunner)
         {
             if (BrowseLocations == null || BrowseLocations.Count == 0)
             {
                 Debug.LogWarning("CustomerManager: No Browse locations assigned!");
-                return null; // Return null for nullable struct
+                return null;
             }
-            return BrowseLocations[Random.Range(0, BrowseLocations.Count)];
+
+            // 1. Identify occupied points
+            // We use a HashSet for fast lookup of occupied Transforms
+            HashSet<Transform> occupiedPoints = new HashSet<Transform>();
+
+            // Helper to check a runner and add their target to the occupied list
+            void MarkRunnerTargetAsOccupied(Game.NPC.NpcStateMachineRunner runner)
+            {
+                // We only care if:
+                // - The runner exists
+                // - It is NOT the runner currently asking (we can stay at our own spot or re-pick it)
+                // - It has a valid target browse point
+                if (runner != null && runner != requestingRunner && 
+                    runner.CurrentTargetLocation.HasValue && 
+                    runner.CurrentTargetLocation.Value.browsePoint != null)
+                {
+                    occupiedPoints.Add(runner.CurrentTargetLocation.Value.browsePoint);
+                }
+            }
+
+            // Check Active Transient Customers
+            if (activeCustomers != null)
+            {
+                foreach (var runner in activeCustomers)
+                {
+                    MarkRunnerTargetAsOccupied(runner);
+                }
+            }
+
+            // Check Active True Identity (TI) NPCs inside the store
+            if (tiNpcsInsideStore != null)
+            {
+                foreach (var tiData in tiNpcsInsideStore)
+                {
+                    if (tiData != null && tiData.NpcGameObject != null)
+                    {
+                        var runner = tiData.NpcGameObject.GetComponent<Game.NPC.NpcStateMachineRunner>();
+                        MarkRunnerTargetAsOccupied(runner);
+                    }
+                }
+            }
+
+            // 2. Create a list of available locations
+            List<BrowseLocation> availableLocations = new List<BrowseLocation>();
+            for (int i = 0; i < BrowseLocations.Count; i++)
+            {
+                // Only add if the browsePoint is NOT in the occupied set
+                if (!occupiedPoints.Contains(BrowseLocations[i].browsePoint))
+                {
+                    availableLocations.Add(BrowseLocations[i]);
+                }
+            }
+
+            // 3. Return a random one from the available list, or null if empty
+            if (availableLocations.Count == 0)
+            {
+                // Debug.Log($"CustomerManager: No available browse locations for {requestingRunner?.name}. All {BrowseLocations.Count} are occupied.");
+                return null; 
+            }
+
+            return availableLocations[Random.Range(0, availableLocations.Count)];
+        }
+
+        /// <summary>
+        /// Gets a random Browse location.
+        /// UPDATED: Now redirects to GetAvailableBrowseLocation(null) to prevent stacking 
+        /// even for legacy calls that don't provide a runner.
+        /// </summary>
+        public BrowseLocation? GetRandomBrowseLocation()
+        {
+            return GetAvailableBrowseLocation(null);
         }
 
         /// <summary>
@@ -1080,6 +1206,31 @@ namespace CustomerManagement
         }
 
         /// <summary>
+        /// Manually restores an NPC to a specific queue spot. 
+        /// Used by the Save/Load system to rebuild the queue state.
+        /// </summary>
+        public void RestoreQueueOccupant(Game.NPC.NpcStateMachineRunner runner, QueueType type, int index)
+        {
+            List<QueueSpot> targetQueue = null;
+            if (type == QueueType.Main) targetQueue = mainQueueSpots;
+            else if (type == QueueType.Secondary) targetQueue = secondaryQueueSpots;
+
+            if (targetQueue != null && index >= 0 && index < targetQueue.Count)
+            {
+                QueueSpot spot = targetQueue[index];
+                
+                // Force assignment
+                spot.currentOccupant = runner;
+                
+                Debug.Log($"CustomerManager: Restored '{runner.name}' to {type} Queue Spot {index}.");
+            }
+            else
+            {
+                Debug.LogWarning($"CustomerManager: Failed to restore '{runner.name}' to {type} Queue Spot {index}. Spot invalid or queue list null.");
+            }
+        }
+
+        /// <summary>
         /// Attempts to add a customer to the main queue.
         /// Finds the first available spot based on the QueueSpotData list.
         /// </summary>
@@ -1127,15 +1278,14 @@ namespace CustomerManagement
 
         /// <summary>
         /// Signals that a customer is currently moving towards or is at the register.
-        /// This is handled by caching the register reference on the Runner itself now.
-        /// This method might become redundant if the Runner's state handles caching directly.
-        /// Keeping it for now, but its purpose is reduced.
+        /// Now ensures the customer is correctly tracked in the manager's active lists (Critical for Save/Load).
         /// </summary>
-        /// <param name="customer">The customer Runner that is now occupying the register spot.</param>
+        /// <param name="customerRunner">The customer Runner that is now occupying the register spot.</param>
         public void SignalCustomerAtRegister(Game.NPC.NpcStateMachineRunner customerRunner)
         {
             if (customerRunner == null) { Debug.LogWarning("CustomerManager: SignalCustomerAtRegister called with null customerRunner."); return; }
-            Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) is being signalled as being at the register (Manager tracking removed).");
+
+            Debug.Log($"CustomerManager: {customerRunner.gameObject.name} (Runner) is being signalled as being at the register.");
         }
 
         /// <summary>
@@ -1159,21 +1309,48 @@ namespace CustomerManagement
         /// </summary>
         public bool IsRegisterOccupied()
         {
-            // Check if any active customer is in a register-related state
-            foreach (var activeRunner in activeCustomers) // Check only customers currently 'inside' the store AND have an active GameObject
+            // 1. Check Active Transient Customers
+            if (activeCustomers != null)
             {
-                if (activeRunner != null && activeRunner.GetCurrentState() != null)
+                foreach (var activeRunner in activeCustomers) 
                 {
-                    System.Enum state = activeRunner.GetCurrentState().HandledState;
-                    if (state.Equals(CustomerState.WaitingAtRegister) || state.Equals(CustomerState.TransactionActive) || state.Equals(CustomerState.MovingToRegister))
+                    if (activeRunner != null && activeRunner.GetCurrentState() != null)
                     {
-                        return true;
+                        System.Enum state = activeRunner.GetCurrentState().HandledState;
+                        if (state.Equals(CustomerState.WaitingAtRegister) || 
+                            state.Equals(CustomerState.TransactionActive) || 
+                            state.Equals(CustomerState.MovingToRegister))
+                        {
+                            return true;
+                        }
                     }
                 }
             }
-            // --- END Existing Logic ---
 
-            return false; // Not occupied by a Cashier or a Customer
+            // 2. Check Active TI Customers (FIX: Was previously missing)
+            if (tiNpcsInsideStore != null)
+            {
+                foreach (var tiData in tiNpcsInsideStore)
+                {
+                    // Check if the TI NPC is physically instantiated and active
+                    if (tiData != null && tiData.NpcGameObject != null)
+                    {
+                        var runner = tiData.NpcGameObject.GetComponent<Game.NPC.NpcStateMachineRunner>();
+                        if (runner != null && runner.GetCurrentState() != null)
+                        {
+                            System.Enum state = runner.GetCurrentState().HandledState;
+                            if (state.Equals(CustomerState.WaitingAtRegister) || 
+                                state.Equals(CustomerState.TransactionActive) || 
+                                state.Equals(CustomerState.MovingToRegister))
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return false; // Not occupied
         }
 
         /// <summary>

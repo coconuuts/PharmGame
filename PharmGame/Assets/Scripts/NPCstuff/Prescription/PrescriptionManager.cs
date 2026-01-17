@@ -223,28 +223,30 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
 
         private void OnEnable()
         {
-             // Subscribe to events if needed (e.g., NPC Initializing event if not checking in Update)
-             // EventManager.Subscribe<NpcInitializingEvent>(HandleNpcInitializing); // Placeholder
-             if (timeManager != null)
-             {
-                 timeManager.OnSunset += HandleSunset;
-                 timeManager.OnSunrise += HandleSunrise;
-             }
-             // Subscribe to new prescription events
-             EventManager.Subscribe<ClaimPrescriptionSpotEvent>(HandleClaimPrescriptionSpot);
-             EventManager.Subscribe<FreePrescriptionClaimSpotEvent>(HandleFreePrescriptionClaimSpot);
-             EventManager.Subscribe<QueueSpotFreedEvent>(HandlePrescriptionQueueSpotFreed);
+            // Subscribe to EventManager events (safe to do here)
+            EventManager.Subscribe<ClaimPrescriptionSpotEvent>(HandleClaimPrescriptionSpot);
+            EventManager.Subscribe<FreePrescriptionClaimSpotEvent>(HandleFreePrescriptionClaimSpot);
+            EventManager.Subscribe<QueueSpotFreedEvent>(HandlePrescriptionQueueSpotFreed);
 
-             // Restart generation coroutine on enable if it was supposed to be running based on time/flags
-             // and the generator is available.
-             if (orderGenerationCoroutine == null && ordersToGeneratePerDay > 0 && !ordersGeneratedToday && timeManager != null && timeManager.CurrentGameTime != DateTime.MinValue && orderGenerationTime.IsWithinRange(timeManager.CurrentGameTime) && prescriptionGenerator != null) // Added generator check
-             {
-                 Debug.Log("PrescriptionManager: Restarting order generation routine on OnEnable.");
-                 StartOrderGenerationRoutine();
-             } else if (prescriptionGenerator == null)
-             {
-                  Debug.LogWarning("PrescriptionManager: Cannot restart order generation routine on OnEnable because PrescriptionGenerator is null.", this);
-             }
+            // 1. Prioritize the valid Singleton over the Inspector reference (which might be a "dead" duplicate).
+            if (TimeManager.Instance != null)
+            {
+                timeManager = TimeManager.Instance;
+            }
+
+            // 2. Only subscribe if we have the specific Singleton instance.
+            // If TimeManager.Instance is null (Start of game), we skip this and let Start() handle it.
+            if (timeManager != null && timeManager == TimeManager.Instance)
+            {
+                timeManager.OnSunset += HandleSunset;
+                timeManager.OnSunrise += HandleSunrise;
+                
+                // Restart logic if applicable
+                if (orderGenerationCoroutine == null && ordersToGeneratePerDay > 0 && !ordersGeneratedToday && orderGenerationTime.IsWithinRange(timeManager.CurrentGameTime) && prescriptionGenerator != null)
+                {
+                    StartOrderGenerationRoutine();
+                }
+            }
         }
 
         private void OnDisable()

@@ -59,6 +59,8 @@ namespace Game.NPC.TI
                 return;
             }
 
+            loadedData.Sort(SortByStatePriority);
+
             // Access the internal dictionary of the manager (allowed since we are in the same namespace)
             TiNpcManager.Instance.allTiNpcs.Clear();
 
@@ -96,6 +98,48 @@ namespace Game.NPC.TI
             
             // Note: SimulationManager will pick these up automatically on its next tick.
             // GridManager will be updated when SimulationManager runs or when active objects are spawned.
+        }
+
+        /// <summary>
+        /// Helper to determine load order priority based on the saved state key.
+        /// Lower number = Loads First.
+        /// </summary>
+        private int SortByStatePriority(TiNpcData a, TiNpcData b)
+        {
+            int priorityA = GetStateLoadPriority(a.CurrentStateEnumKey);
+            int priorityB = GetStateLoadPriority(b.CurrentStateEnumKey);
+            return priorityA.CompareTo(priorityB);
+        }
+
+        private int GetStateLoadPriority(string stateKey)
+        {
+            if (string.IsNullOrEmpty(stateKey)) return 100;
+
+            // Priority 0: Holding Critical Resources (Register)
+            if (stateKey.Contains("TransactionActive") || 
+                stateKey.Contains("WaitingAtRegister") || 
+                stateKey.Contains("MovingToRegister") ||
+                stateKey.Contains("ProcessingCheckout")) 
+                return 0;
+
+            // Priority 1: Occupying Main Queue Spots (Finite resource)
+            // Ensure we don't accidentally catch 'SecondaryQueue' here
+            if (stateKey.Contains("Queue") && !stateKey.Contains("Secondary")) 
+                return 1;
+
+            // Priority 2: Shopping and outside
+            if (stateKey.Contains("Browse") || 
+                stateKey.Contains("Exiting") || 
+                stateKey.Contains("SecondaryQueue")) 
+                return 2;
+
+            // Priority 3: Looking to Shop
+            if (stateKey.Contains("Entering") || 
+                stateKey.Contains("LookToShop")) 
+                return 3;
+
+            // Priority 4: Default/Other
+            return 4;
         }
     }
 }

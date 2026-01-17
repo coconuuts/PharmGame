@@ -58,9 +58,7 @@ namespace Game.NPC.Handlers // Placing handlers together
             Debug.Log($"NpcQueueHandler ({gameObject.name}): Awake completed. Required components acquired.", this);
         }
 
-        // No OnEnable/OnDisable subscriptions needed here currently.
-
-        // --- Initialization Method (Called by NpcStateMachineRunner) ---
+        // --- Initialization Method ---
         /// <summary>
         /// Initializes the Queue Handler with necessary external references.
         /// Called by the NpcStateMachineRunner during its Initialize or Activate process.
@@ -107,11 +105,15 @@ namespace Game.NPC.Handlers // Placing handlers together
         {
              AssignedQueueSpotIndex = -1;
              _currentQueueMoveType = QueueType.Main; // Reset to a default/invalid type (Main as default)
+
+             // Sync with TiData if applicable 
+             if (runner != null && runner.IsTrueIdentityNpc && runner.TiData != null)
+             {
+                 runner.TiData.savedQueueIndex = -1;
+             }
+
              Debug.Log($"NpcQueueHandler ({gameObject.name}): Queue assignment cleared.");
         }
-
-
-        // --- Methods Moved from NpcStateMachineRunner (Step 3 Implementation) ---
 
         /// <summary>
         /// Signals this NPC to transition to the state for moving to the cash register.
@@ -391,12 +393,23 @@ namespace Game.NPC.Handlers // Placing handlers together
         {
             // Optional: Add logging or validation here
             AssignedQueueSpotIndex = index;
+
+            // Sync with TiData if applicable 
+            if (runner != null && runner.IsTrueIdentityNpc && runner.TiData != null)
+            {
+                runner.TiData.savedQueueIndex = index;
+            }
         }
 
          private void QueueType_Internal(QueueType type)
          {
-             // Optional: Add logging or validation here
              _currentQueueMoveType = type;
+
+             // Sync with TiData if applicable 
+             if (runner != null && runner.IsTrueIdentityNpc && runner.TiData != null)
+             {
+                 runner.TiData.savedQueueType = type;
+             }
          }
 
         // --- End Moved Methods ---

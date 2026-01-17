@@ -552,6 +552,9 @@ namespace Game.NPC
                          currentState.OnReachedDestination(_stateContext);
                     }
 
+                    // --- Check if state is still valid ---
+                    if (currentState == null) return;
+
                      // Re-populate context just in case Update loop took time (defensive)
                     _stateContext.Manager = Manager;
                     _stateContext.TiNpcManager = tiNpcManager;
@@ -684,9 +687,23 @@ namespace Game.NPC
                     return;
                }
 
+               // --- Restore Queue State ---
+               if (tiData.savedQueueIndex != -1 && queueHandler != null)
+               {
+                    // 1. Restore internal handler state
+                    queueHandler.ReceiveQueueAssignment(tiData.savedQueueIndex, tiData.savedQueueType);
+                    
+                    // 2. Restore global manager state (occupy the spot)
+                    // Only do this for Main/Secondary queues handled by CustomerManager
+                    if (tiData.savedQueueType == QueueType.Main || tiData.savedQueueType == QueueType.Secondary)
+                    {
+                        Manager.RestoreQueueOccupant(this, tiData.savedQueueType, tiData.savedQueueIndex);
+                    }
+               }
+
+               // --- Restore Browselocation ---
                if (tiData.savedBrowseLocationIndex != -1)
                {
-                    // Manager reference is already set above in existing code
                     CurrentTargetLocation = Manager.GetBrowseLocation(tiData.savedBrowseLocationIndex);
                     Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Restored persistent BrowseLocation index {tiData.savedBrowseLocationIndex}.");
                }
@@ -743,6 +760,8 @@ namespace Game.NPC
 
                gameObject.SetActive(true);
                enabled = true;
+
+               CheckAndRegisterStorePresence();
 
                // Initialize timers here. ProximityManager will set the initial mode via SetUpdateMode // MOVED TO TiNpcData.LinkGameObject
                // timeSinceLastGridUpdate = 0f; // MOVED
@@ -873,6 +892,7 @@ namespace Game.NPC
                          data.CurrentStateEnumType = currentState.HandledState.GetType().AssemblyQualifiedName;
                     }
 
+                    //Browselocation
                     if (CurrentTargetLocation.HasValue)
                     {
                          data.SavedBrowseLocationIndex = Manager.GetBrowseLocationIndex(CurrentTargetLocation.Value);
@@ -882,13 +902,52 @@ namespace Game.NPC
                          data.SavedBrowseLocationIndex = -1;
                     }
 
+                    // Queue
+                    if (QueueHandler != null)
+                    {
+                        data.QueueIndex = QueueHandler.AssignedQueueSpotIndex;
+                        data.QueueTypeString = QueueHandler._currentQueueMoveType.ToString();
+                    }
+
                     // Inventory
                     if (Shopper != null)
                     {
                          data.InventoryItems = Shopper.GetTransientInventoryData();
                     }
+                    
 
                     return data;
+               }
+
+               /// <summary>
+               /// Checks if the current state implies the NPC is physically inside the store.
+               /// If so, manually registers them with the CustomerManager to ensure capacity counts are correct on Load.
+               /// </summary>
+               private void CheckAndRegisterStorePresence()
+               {
+                    if (currentState == null || Manager == null) return;
+
+                    bool isInside = false;
+                    System.Enum state = currentState.HandledState;
+
+                    // Check specific CustomerStates requested
+                    if (state.Equals(CustomerState.Browse) ||
+                    state.Equals(CustomerState.MovingToRegister) ||
+                    state.Equals(CustomerState.WaitingAtRegister) ||
+                    state.Equals(CustomerState.Queue) ||
+                    state.Equals(CustomerState.WaitingInLine) ||
+                    state.Equals(CustomerState.TransactionActive)) 
+                    {
+                         isInside = true;
+                    }
+
+                    // You can add Prescription logic here if needed:
+                    // if (state.Equals(CustomerState.PrescriptionQueue) || state.Equals(CustomerState.WaitingForPrescription)) isInside = true;
+
+                    if (isInside)
+                    {
+                         Manager.RegisterLoadedCustomer(this);
+                    }
                }
 
                /// <summary>
@@ -908,6 +967,11 @@ namespace Game.NPC
                          transform.rotation = data.Rotation;
                     }
 
+                    if (QueueHandler != null)
+                    {
+                         QueueHandler.Initialize(Manager);
+                    }
+
                     // 3. Restore Inventory
                     if (Shopper != null && data.InventoryItems != null)
                     {
@@ -919,7 +983,47 @@ namespace Game.NPC
                          CurrentTargetLocation = Manager.GetBrowseLocation(data.SavedBrowseLocationIndex);
                     }
 
-                    // 4. Restore State
+                    // 4. Restore Queue
+                    if (data.QueueIndex != -1 && !string.IsNullOrEmpty(data.QueueTypeString) && QueueHandler != null)
+                    {
+                         if (Enum.TryParse(data.QueueTypeString, out QueueType type))
+                         {
+                              // 1. Restore internal handler state
+                              QueueHandler.ReceiveQueueAssignment(data.QueueIndex, type);
+
+                              // 2. Restore global manager state
+                              if (type == QueueType.Main || type == QueueType.Secondary)
+                              {
+                                  Manager.RestoreQueueOccupant(this, type, data.QueueIndex);
+
+                                  // --- Restore CurrentTargetLocation for the Queue Spot ---
+                                  Transform spotTransform = null;
+                                  if (type == QueueType.Main) 
+                                  {
+                                      spotTransform = Manager.GetQueuePoint(data.QueueIndex);
+                                  }
+                                  else if (type == QueueType.Secondary) 
+                                  {
+                                      spotTransform = Manager.GetSecondaryQueuePoint(data.QueueIndex);
+                                  }
+
+                                  if (spotTransform != null)
+                                  {
+                                      // Manually recreate the target location so the State's OnEnter logic succeeds
+                                      CurrentTargetLocation = new BrowseLocation { browsePoint = spotTransform, inventory = null };
+                                      SetCurrentDestinationPosition(spotTransform.position);
+                                      
+                                      Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Manually restored CurrentTargetLocation for {type} Queue Spot {data.QueueIndex}.");
+                                  }
+                                  else
+                                  {
+                                      Debug.LogWarning($"NpcStateMachineRunner ({gameObject.name}): Could not find transform for restored queue spot {data.QueueIndex} in {type} queue! State transition may fail.");
+                                  }
+                              }
+                         }
+                    }
+
+                    // 5. Restore State
                     if (!string.IsNullOrEmpty(data.CurrentStateEnumKey) && !string.IsNullOrEmpty(data.CurrentStateEnumType))
                     {
                          // Helper to parse string back to Enum (reusing logic from TiNpcData or creating similar)
@@ -941,6 +1045,8 @@ namespace Game.NPC
                               TransitionToState(GetStateSO(GeneralState.Idle));
                          }
                     }
+
+                    CheckAndRegisterStorePresence();
                }
 
                /// <summary>

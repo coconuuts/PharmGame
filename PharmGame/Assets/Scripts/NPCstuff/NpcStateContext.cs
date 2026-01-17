@@ -235,7 +235,11 @@ namespace Game.NPC.States // Context is closely related to states
          public List<(ItemDetails details, int quantity)> GetItemsToBuy() => Shopper?.GetItemsToBuy() ?? new List<(ItemDetails, int)>();
 
         // Access to Manager methods (These already correctly call Manager, passing Runner)
-        public BrowseLocation? GetRandomBrowseLocation() => Manager?.GetRandomBrowseLocation();
+        public BrowseLocation? GetRandomBrowseLocation() 
+        {
+            // We pass 'Runner' so the Manager knows WHO is asking and doesn't mark their own spot as "occupied"
+            return Manager?.GetAvailableBrowseLocation(Runner); 
+        }
         public Transform GetRegisterPoint() => Manager?.GetRegisterPoint();
         public Transform GetRandomExitPoint() => Manager?.GetRandomExitPoint();
         public Transform GetQueuePoint(int index) => Manager?.GetQueuePoint(index);

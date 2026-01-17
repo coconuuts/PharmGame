@@ -17,6 +17,8 @@ namespace Game.NPC
         public string CurrentStateEnumType;
 
         public int SavedBrowseLocationIndex = -1;
+        public int QueueIndex = -1;
+        public string QueueTypeString;
 
         // --- Inventory State ---
         public List<TransientInventoryItemData> InventoryItems;

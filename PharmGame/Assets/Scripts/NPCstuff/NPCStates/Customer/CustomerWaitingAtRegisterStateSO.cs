@@ -31,7 +31,7 @@ namespace Game.NPC.States
             context.MovementHandler?.StopMoving();
 
              // Cache the register reference here:
-            if (context.RegisterCached == null) // <-- Use the new property
+            if (context.RegisterCached == null) 
             {
                 GameObject registerGO = GameObject.FindGameObjectWithTag("CashRegister");
                 if (registerGO != null)
@@ -40,10 +40,10 @@ namespace Game.NPC.States
                 }
             }
 
-            if (context.RegisterCached != null) // <-- Use the new property
+            if (context.RegisterCached != null) 
             {
-                Debug.Log($"{context.NpcObject.name}: Notifying CashRegister '{context.RegisterCached.gameObject.name}' of arrival.", context.NpcObject); // <-- Use the new property
-                context.RegisterCached.CustomerArrived(context.Runner); // <-- Use the new property
+                Debug.Log($"{context.NpcObject.name}: Notifying CashRegister '{context.RegisterCached.gameObject.name}' of arrival.", context.NpcObject); 
+                context.RegisterCached.CustomerArrived(context.Runner); 
             }
             else
             {
@@ -52,7 +52,12 @@ namespace Game.NPC.States
                 return;
             }
 
-            // MODIFIED for Music License
+            if (context.Manager != null)
+            {
+                context.Manager.SignalCustomerAtRegister(context.Runner);
+            }
+
+            // MODIFIED for Music License Upgrade
             Vector2 localTimeRange = impatientTimeRange;
             if (context.UpgradeManager != null && context.UpgradeManager.IsMusicLicensePurchased())
             {

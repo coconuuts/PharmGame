@@ -144,7 +144,7 @@ public class PromptEditor : MonoBehaviour
         {
             if (instance == null)
             {
-                Debug.LogError("PromptEditor Instance is null.  There needs to be one in the scene.");
+                Debug.LogWarning("PromptEditor Instance is null.  There needs to be one in the scene.");
             }
             return instance;
         }

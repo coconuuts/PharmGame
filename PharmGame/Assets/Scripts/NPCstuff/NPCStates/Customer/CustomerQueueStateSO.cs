@@ -101,19 +101,42 @@ namespace Game.NPC.States
 
             impatientTimer = 0f;
 
-            // --- Publish the QueueSpotFreedEvent ---
-             // This event must be published when the NPC EXITS this state, regardless of the reason.
-             // The CustomerManager will receive this event, free the spot, and start the cascade if needed.
-             // Use context properties now
-             if (context.AssignedQueueSpotIndex != -1)
-             {
-                  Debug.Log($"{context.NpcObject.name}: Exiting {name}. Publishing QueueSpotFreedEvent for spot {context.AssignedQueueSpotIndex} in {context.CurrentQueueMoveType} queue.", context.NpcObject);
-                  context.PublishEvent(new QueueSpotFreedEvent(context.CurrentQueueMoveType, context.AssignedQueueSpotIndex));
-             }
-             else
-             {
-                  Debug.LogWarning($"{context.NpcObject.name}: Queue spot index not set when exiting {name} state! Cannot publish QueueSpotFreedEvent.", context.NpcObject);
-             }
+            // --- Publish the QueueSpotFreedEvent & Clean Up ---
+            if (context.AssignedQueueSpotIndex != -1)
+            {
+                // Manually free the spot in the appropriate Manager BEFORE publishing the event.          
+                if (context.CurrentQueueMoveType == QueueType.Main || context.CurrentQueueMoveType == QueueType.Secondary)
+                {
+                    if (context.Manager != null)
+                    {
+                        Debug.Log($"{context.NpcObject.name}: Exiting {name}. Manually freeing spot {context.AssignedQueueSpotIndex} in {context.CurrentQueueMoveType} queue via CustomerManager.", context.NpcObject);
+                        context.Manager.FreePreviousQueueSpotOnArrival(context.CurrentQueueMoveType, context.AssignedQueueSpotIndex);
+                    }
+                }
+                else if (context.CurrentQueueMoveType == QueueType.Prescription)
+                {
+                    // Use the property on context to access PrescriptionManager
+                    if (context.PrescriptionManager != null)
+                    {
+                        Debug.Log($"{context.NpcObject.name}: Exiting {name}. Manually freeing spot {context.AssignedQueueSpotIndex} in {context.CurrentQueueMoveType} queue via PrescriptionManager.", context.NpcObject);
+                        context.PrescriptionManager.FreePreviousPrescriptionQueueSpotOnArrival(context.CurrentQueueMoveType, context.AssignedQueueSpotIndex);
+                    }
+                }
+
+                // Now safe to publish the event to trigger the cascade (moving other NPCs up)
+                Debug.Log($"{context.NpcObject.name}: Exiting {name}. Publishing QueueSpotFreedEvent for spot {context.AssignedQueueSpotIndex} in {context.CurrentQueueMoveType} queue.", context.NpcObject);
+                context.PublishEvent(new QueueSpotFreedEvent(context.CurrentQueueMoveType, context.AssignedQueueSpotIndex));
+
+                // Clear the internal assignment on the QueueHandler so the NPC knows it's no longer queued.
+                if (context.QueueHandler != null)
+                {
+                    context.QueueHandler.ClearQueueAssignment();
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"{context.NpcObject.name}: Queue spot index not set when exiting {name} state! Cannot publish QueueSpotFreedEvent.", context.NpcObject);
+            }
 
             // Example: Stop waiting animation
             // context.PlayAnimation("Idle");

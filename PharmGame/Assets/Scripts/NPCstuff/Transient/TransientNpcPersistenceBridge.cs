@@ -107,6 +107,7 @@ namespace Systems.Persistence
                 return;
             }
 
+            dataList.Sort(SortByStatePriority);
             Debug.Log($"TransientNpcPersistenceBridge: Restoring {dataList.Count} transient NPCs...");
 
             foreach (var data in dataList)
@@ -126,7 +127,6 @@ namespace Systems.Persistence
                         npcObj.SetActive(true); 
                         
                         // Force assign Manager if Start() hasn't happened or to be safe
-                        // (Assuming CustomerManager is a Singleton accessible via Instance, or we find it)
                         if (runner.Manager == null) 
                         {
                             // If your runner has a public/internal SetManager, use it. 
@@ -139,6 +139,47 @@ namespace Systems.Persistence
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Helper to determine load order priority based on the saved state key.
+        /// Lower number = Loads First.
+        /// </summary>
+        private int SortByStatePriority(TransientNpcData a, TransientNpcData b)
+        {
+            int priorityA = GetStateLoadPriority(a.CurrentStateEnumKey);
+            int priorityB = GetStateLoadPriority(b.CurrentStateEnumKey);
+            return priorityA.CompareTo(priorityB);
+        }
+
+        private int GetStateLoadPriority(string stateKey)
+        {
+            if (string.IsNullOrEmpty(stateKey)) return 100;
+
+            // Priority 0: Holding Critical Resources (Register)
+            if (stateKey.Contains("TransactionActive") || 
+                stateKey.Contains("WaitingAtRegister") || 
+                stateKey.Contains("MovingToRegister") ||
+                stateKey.Contains("ProcessingCheckout")) 
+                return 0;
+
+            // Priority 1: Occupying Main Queue Spots (Finite resource)
+            if (stateKey.Contains("Queue") && !stateKey.Contains("Secondary")) 
+                return 1;
+
+            // Priority 2: Shopping and outside
+            if (stateKey.Contains("Browse") || 
+                stateKey.Contains("Exiting") || 
+                stateKey.Contains("SecondaryQueue")) 
+                return 2;
+
+            // Priority 3: Looking to Shop
+            if (stateKey.Contains("Entering") || 
+                stateKey.Contains("LookToShop")) 
+                return 3;
+
+            // Priority 4: Default/Other
+            return 4;
         }
     }
 }

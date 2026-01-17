@@ -642,6 +642,51 @@ public class TiNpcStateTransitionHandler : MonoBehaviour
             tiData.isFollowingPathBasic = false;
         }
 
+        // --- Handle activation from BasicExitingStore if Secondary Queue data is present ---
+        else if (savedBasicStateEnum != null && savedBasicStateEnum.Equals(BasicState.BasicExitingStore))
+        {
+             // Check if the NPC was in the Secondary Queue
+             if (tiData.savedQueueType == QueueType.Secondary && tiData.savedQueueIndex != -1)
+             {
+                  Debug.Log($"PROXIMITY {tiData.Id}: Saved Basic state is BasicExitingStore, but has valid Secondary Queue data (Index {tiData.savedQueueIndex}). Restoring to SecondaryQueue state.", runner.gameObject);
+                  
+                  // Get the secondary queue point
+                  Transform spotTransform = customerManager.GetSecondaryQueuePoint(tiData.savedQueueIndex);
+                  
+                  if (spotTransform != null)
+                  {
+                       // Setup the runner and queue handler for the spot
+                       if (runner.QueueHandler != null)
+                       {
+                            runner.QueueHandler.SetupQueueSpot(spotTransform, tiData.savedQueueIndex, QueueType.Secondary);
+                            startingActiveStateEnum = CustomerState.SecondaryQueue;
+                       }
+                       else
+                       {
+                            Debug.LogError($"PROXIMITY {tiData.Id}: QueueHandler missing during SecondaryQueue restoration. Defaulting to Exiting.", runner.gameObject);
+                            startingActiveStateEnum = CustomerState.Exiting;
+                       }
+                  }
+                  else
+                  {
+                       Debug.LogWarning($"PROXIMITY {tiData.Id}: Could not find Secondary Queue Spot {tiData.savedQueueIndex} transform. Defaulting to Exiting.", runner.gameObject);
+                       startingActiveStateEnum = CustomerState.Exiting;
+                  }
+             }
+             else
+             {
+                  // Standard exiting behavior
+                  startingActiveStateEnum = CustomerState.Exiting;
+             }
+             
+             // Clear simulation data
+             tiData.simulatedTargetPosition = null;
+             tiData.simulatedStateTimer = 0f;
+             tiData.simulatedPathID = null;
+             tiData.simulatedWaypointIndex = -1;
+             tiData.simulatedFollowReverse = false;
+             tiData.isFollowingPathBasic = false;
+        }
 
         // --- Handle activation from any other saved BasicState ---
         // This covers BasicPatrol, BasicLookToShop, BasicEnteringStore, BasicExitingStore, BasicIdleAtHome, BasicPathState

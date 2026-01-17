@@ -9701,8 +9701,8 @@ MonoBehaviour:
   npcPrefabs:
   - {fileID: 4394407753789290286, guid: 488534cc76898354d8320c55d1770728, type: 3}
   maxCustomersInStore: 7
-  minSpawnInterval: 50
-  maxSpawnInterval: 51
+  minSpawnInterval: 3
+  maxSpawnInterval: 5
   _busArrivalInterval: 75
   npcsPerBus: 3
   initialBusDelay: 60
@@ -9949,10 +9949,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ee9f089b83ac2124b9193c38e898f348, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  timeManager: {fileID: 0}
+  timeManager: {fileID: 1863998792}
   tiNpcManager: {fileID: 763258582}
   customerManager: {fileID: 763258580}
-  poolingManager: {fileID: 0}
+  poolingManager: {fileID: 1863998793}
   waypointManager: {fileID: 763258586}
   prescriptionGenerator: {fileID: 763258588}
   drugRecipeMapping: {fileID: 11400000, guid: d1d6e0276a73e7044a5254c1a7193ea5, type: 2}
@@ -9961,7 +9961,7 @@ MonoBehaviour:
     startMinute: 0
     endHour: 20
     endMinute: 0
-  ordersToGeneratePerDay: 20
+  ordersToGeneratePerDay: 0
   minOrderGenerationInterval: 5
   maxOrderGenerationInterval: 60
   maxAssignedTransientOrders: 4
