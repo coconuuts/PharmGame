@@ -105,7 +105,7 @@ namespace Game.NPC.States
             if (context.AssignedQueueSpotIndex != -1)
             {
                 // Manually free the spot in the appropriate Manager BEFORE publishing the event.          
-                if (context.CurrentQueueMoveType == QueueType.Main || context.CurrentQueueMoveType == QueueType.Secondary)
+                if (context.CurrentQueueMoveType == QueueType.Main)
                 {
                     if (context.Manager != null)
                     {

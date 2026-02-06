@@ -12,7 +12,7 @@ namespace Game.NPC.Handlers // Placing handlers together
     /// <summary>
     /// Handles the queue-specific logic and data for an NPC.
     /// Manages the NPC's assigned queue spot and communicates queue movement signals.
-    /// Now supports multiple queue types (Main, Secondary, Prescription).
+    /// Now supports multiple queue types (Main, Prescription).
     /// Includes method to clear queue assignment.
     /// </summary>
     [RequireComponent(typeof(NpcStateMachineRunner))]
@@ -101,10 +101,10 @@ namespace Game.NPC.Handlers // Placing handlers together
         /// Clears the NPC's assigned queue spot index and type.
         /// Called when the NPC successfully leaves a queue state.
         /// </summary>
-        public void ClearQueueAssignment() // <-- NEW METHOD Implementation
+        public void ClearQueueAssignment() 
         {
              AssignedQueueSpotIndex = -1;
-             _currentQueueMoveType = QueueType.Main; // Reset to a default/invalid type (Main as default)
+             _currentQueueMoveType = QueueType.Main;
 
              // Sync with TiData if applicable 
              if (runner != null && runner.IsTrueIdentityNpc && runner.TiData != null)
@@ -196,7 +196,7 @@ namespace Game.NPC.Handlers // Placing handlers together
         /// </summary>
         /// <param name="nextSpotTransform">The Transform of the spot to move to.</param>
         /// <param name="newSpotIndex">The index of the spot to move to.</param>
-        /// <param name="queueType">The type of queue (Main, Secondary, or Prescription).</param>
+        /// <param name="queueType">The type of queue (Main, or Prescription).</param>
         public void MoveToQueueSpot(Transform nextSpotTransform, int newSpotIndex, QueueType queueType)
         {
              // Check if required references are valid
@@ -228,7 +228,6 @@ namespace Game.NPC.Handlers // Placing handlers together
              if (currentStateEnum != null)
              {
                  if (queueType == QueueType.Main && currentStateEnum.Equals(CustomerState.Queue)) isInCorrectQueueState = true;
-                 else if (queueType == QueueType.Secondary && currentStateEnum.Equals(CustomerState.SecondaryQueue)) isInCorrectQueueState = true;
                  else if (queueType == QueueType.Prescription && currentStateEnum.Equals(CustomerState.PrescriptionQueue)) isInCorrectQueueState = true;
              }
 
@@ -244,7 +243,7 @@ namespace Game.NPC.Handlers // Placing handlers together
                   bool signaledManager = false;
                   if (_previousQueueSpotIndex != -1) // Only signal if there was a previous spot
                   {
-                       if (queueType == QueueType.Main || queueType == QueueType.Secondary)
+                       if (queueType == QueueType.Main)
                        {
                             if (customerManager != null)
                             {
@@ -341,7 +340,7 @@ namespace Game.NPC.Handlers // Placing handlers together
         /// </summary>
         /// <param name="spotTransform">The Transform of the spot to assign.</param>
         /// <param name="spotIndex">The index of the spot to assign.</param>
-        /// <param name="queueType">The type of queue (Main or Secondary).</param>
+        /// <param name="queueType">The type of queue.</param>
         public void SetupQueueSpot(Transform spotTransform, int spotIndex, QueueType queueType)
         {
              if (runner == null || spotTransform == null)
@@ -374,7 +373,7 @@ namespace Game.NPC.Handlers // Placing handlers together
         /// Updates the internal queue data fields.
         /// </summary>
         /// <param name="index">The index of the assigned spot.</param>
-        /// <param name="type">The type of queue (Main, Secondary, or Prescription).</param>
+        /// <param name="type">The type of queue (Main, or Prescription).</param>
         public void ReceiveQueueAssignment(int index, QueueType type)
         {
             // Basic validation

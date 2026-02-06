@@ -27,8 +27,8 @@ namespace Game.NPC.States
         {
             base.OnEnter(context); // Call base OnEnter (logs entry, enables Agent)
 
-            // The logic is still the same, it just runs after a separate, generic initialization step.
-            context.StartCoroutine(LookToShopRoutine(context)); // <-- Updated coroutine name
+            Debug.Log($"{context.NpcObject.name}: LookToShop state. Transitioning directly to Entering.", context.NpcObject);
+            context.TransitionToState(CustomerState.Entering);
         }
 
         // OnUpdate remains empty or base call
@@ -38,71 +38,6 @@ namespace Game.NPC.States
         {
             base.OnExit(context); // Call base OnExit (logs exit, stops movement/rotation)
             // Logic from CustomerInitializingLogic.OnExit (currently empty)
-        }
-
-        // Coroutine method (Logic from CustomerInitializingLogic.StateCoroutine)
-        private IEnumerator LookToShopRoutine(NpcStateContext context) // <-- Updated coroutine name
-        {
-            Debug.Log($"{context.NpcObject.name}: LookToShopRoutine started in {name}.", context.NpcObject); // <-- Updated log
-
-            // Wait one frame (logic from old StateCoroutine)
-            yield return null;
-            Debug.Log($"{context.NpcObject.name}: LookToShopRoutine finished processing wait.", context.NpcObject); // <-- Updated log
-
-            // --- Decision logic based on Manager state (Migration) ---
-            // This logic remains as it determines the *first customer state* transition.
-            if (context.Manager != null && context.Manager.IsMainQueueFull())
-            {
-                Debug.Log($"{context.NpcObject.name}: Main queue is full. Attempting to join secondary queue.", context.NpcObject);
-                Transform assignedSpot;
-                int spotIndex;
-                // The customerAIComponent is only used for GetComponent<CustomerAI> here.
-                // The TryJoinSecondaryQueue method requires the NpcStateMachineRunner instance now.
-                // context.TryJoinSecondaryQueue already passes context.Runner internally.
-                // We can remove the explicit CustomerAI component lookup here.
-                // CustomerAI customerAIComponent = context.NpcObject.GetComponent<CustomerAI>(); // This line is no longer strictly necessary
-                // if (customerAIComponent != null && context.Manager.TryJoinSecondaryQueue(context.Runner, out assignedSpot, out spotIndex)) // Pass context.Runner
-
-                // Just check if TryJoinSecondaryQueue succeeds, passing context.Runner
-                if (context.TryJoinSecondaryQueue(out assignedSpot, out spotIndex)) // context.TryJoinSecondaryQueue passes context.Runner internally
-                {
-                    Debug.Log($"{context.NpcObject.name}: TryJoinSecondaryQueue succeeded! Assigned spot index {spotIndex} at position {assignedSpot.position}. Transitioning to SecondaryQueue.", context.NpcObject);
-                    context.Runner.CurrentTargetLocation = new BrowseLocation { browsePoint = assignedSpot, inventory = null };
-
-                    // --- UPDATE: Set queue index and type on the QueueHandler ---
-                    if (context.QueueHandler != null)
-                    {
-                        context.QueueHandler.AssignedQueueSpotIndex = spotIndex;
-                        context.QueueHandler._currentQueueMoveType = QueueType.Secondary;
-                        Debug.Log($"{context.NpcObject.name}: Set QueueHandler.AssignedQueueSpotIndex = {spotIndex}, QueueHandler._currentQueueMoveType = {QueueType.Secondary}.", context.NpcObject);
-                    }
-                    else
-                    {
-                        Debug.LogError($"CustomerLookToShopStateSO ({context.NpcObject.name}): QueueHandler is null in context when trying to set queue index/type! Cannot transition.", context.NpcObject);
-                        // Fallback if QueueHandler is missing (shouldn't happen with RequireComponent)
-                        context.TransitionToState(GeneralState.ReturningToPool);
-                        yield break; // Stop coroutine
-                    }
-                    // --- END UPDATE ---
-
-                    // Movement initiated in CustomerSecondaryQueueStateSO.OnEnter now
-                    context.TransitionToState(CustomerState.SecondaryQueue); // Transition via context helper
-                }
-                else
-                {
-                    Debug.LogWarning($"{context.NpcObject.name}: Main queue and secondary queue are full! Exiting to pool (fallback).", context.NpcObject);
-                    context.TransitionToState(GeneralState.ReturningToPool); // Transition via context
-                }
-            }
-            else
-            {
-                // Main queue is not full, proceed normally to enter the store
-                Debug.Log($"{context.NpcObject.name}: Main queue is not full. Transitioning to Entering.", context.NpcObject);
-                context.TransitionToState(CustomerState.Entering); // Transition via context
-            }
-            // ---------------------------------------------------------------
-
-            Debug.Log($"{context.NpcObject.name}: LookToShopRoutine finished.", context.NpcObject); // <-- Updated log
         }
     }
 }

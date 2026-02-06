@@ -694,8 +694,8 @@ namespace Game.NPC
                     queueHandler.ReceiveQueueAssignment(tiData.savedQueueIndex, tiData.savedQueueType);
                     
                     // 2. Restore global manager state (occupy the spot)
-                    // Only do this for Main/Secondary queues handled by CustomerManager
-                    if (tiData.savedQueueType == QueueType.Main || tiData.savedQueueType == QueueType.Secondary)
+                    // Only do this for Main queue handled by CustomerManager
+                    if (tiData.savedQueueType == QueueType.Main)
                     {
                         Manager.RestoreQueueOccupant(this, tiData.savedQueueType, tiData.savedQueueIndex);
                     }
@@ -992,7 +992,7 @@ namespace Game.NPC
                               QueueHandler.ReceiveQueueAssignment(data.QueueIndex, type);
 
                               // 2. Restore global manager state
-                              if (type == QueueType.Main || type == QueueType.Secondary)
+                              if (type == QueueType.Main)
                               {
                                   Manager.RestoreQueueOccupant(this, type, data.QueueIndex);
 
@@ -1001,10 +1001,6 @@ namespace Game.NPC
                                   if (type == QueueType.Main) 
                                   {
                                       spotTransform = Manager.GetQueuePoint(data.QueueIndex);
-                                  }
-                                  else if (type == QueueType.Secondary) 
-                                  {
-                                      spotTransform = Manager.GetSecondaryQueuePoint(data.QueueIndex);
                                   }
 
                                   if (spotTransform != null)

@@ -243,8 +243,6 @@ namespace Game.NPC.States // Context is closely related to states
         public Transform GetRegisterPoint() => Manager?.GetRegisterPoint();
         public Transform GetRandomExitPoint() => Manager?.GetRandomExitPoint();
         public Transform GetQueuePoint(int index) => Manager?.GetQueuePoint(index);
-        public Transform GetSecondaryQueuePoint(int index) => Manager?.GetSecondaryQueuePoint(index);
-
         public bool IsRegisterOccupied() => Manager != null && Manager.IsRegisterOccupied();
 
         public bool TryJoinQueue(NpcStateMachineRunner Runner, out Transform assignedSpot, out int spotIndex)
@@ -263,20 +261,6 @@ namespace Game.NPC.States // Context is closely related to states
             }
         }
 
-        public bool TryJoinSecondaryQueue(out Transform assignedSpot, out int spotIndex) // REMOVED NpcStateMachineRunner parameter
-        {
-             if (Manager != null)
-             {
-                  return Manager.TryJoinSecondaryQueue(Runner, out assignedSpot, out spotIndex); // Pass context.Runner
-             }
-             else
-             {
-                  Debug.LogWarning($"NpcStateContext: Manager reference is null when calling TryJoinSecondaryQueue!", NpcObject);
-                  assignedSpot = null;
-                  spotIndex = -1;
-                  return false;
-             }
-        }
         public void SignalCustomerAtRegister()
         {
              Manager?.SignalCustomerAtRegister(Runner); // Pass context.Runner

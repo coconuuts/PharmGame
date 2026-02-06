@@ -12,7 +12,6 @@ namespace Game.NPC
         MovingToRegister,
         WaitingAtRegister,
         Queue,
-        SecondaryQueue,
         WaitingInLine,
         TransactionActive,
         Exiting,

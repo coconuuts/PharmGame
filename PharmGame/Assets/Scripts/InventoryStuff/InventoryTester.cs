@@ -47,7 +47,7 @@ public class InventoryTester : MonoBehaviour
             {
                 // Create a new runtime Item instance from the ScriptableObject details
                 // We create a quantity of 1 for simplicity in this basic test
-                Item newItemInstance = testItem1Details.Create(1);
+                Item newItemInstance = testItem1Details.Create(10);
 
                 // Attempt to add the item instance to the inventory using the public AddItem method on Inventory
                 // Inventory.AddItem will internally handle if it's stackable or non-stackable

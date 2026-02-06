@@ -296,48 +296,7 @@ namespace Game.NPC.Handlers // Placing handlers together
                                   }
                             }
                        }
-                       // Case 3: Interrupted while in Secondary Queue
-                       else if (poppedStateEnum.Equals(CustomerState.SecondaryQueue))
-                       {
-                           Debug.Log($"{runner.gameObject.name}: Interruption ended. Previous state was Secondary Queue. Checking if Secondary Queue is full.", runner.gameObject);
-                            if (runner.Manager.IsSecondaryQueueFull()) 
-                           {
-                                // Secondary queue is now full, cannot rejoin their spot. Give up and exit.
-                                Debug.LogWarning($"{runner.gameObject.name}: Secondary Queue is now full! Cannot rejoin after interruption from Secondary Queue. Transitioning to Exiting.", runner.gameObject);
-                                runner.TransitionToState(runner.GetStateSO(CustomerState.Exiting));
-                           }
-                           else
-                           {
-                                // Secondary queue is NOT full. Attempt to rejoin.
-                                Debug.Log($"{runner.gameObject.name}: Secondary Queue is not full. Attempting to rejoin Secondary Queue.", runner.gameObject);
-                                Transform assignedSpot;
-                                int spotIndex;
-                                if (runner.Manager.TryJoinSecondaryQueue(runner, out assignedSpot, out spotIndex))
-                                {
-                                     // Successfully rejoined the queue, transition to Secondary Queue state
-                                     // --- UPDATE: Set queue index and type on QueueHandler ---
-                                     if (runner.QueueHandler != null)
-                                     {
-                                         runner.QueueHandler.AssignedQueueSpotIndex = spotIndex;
-                                         runner.QueueHandler._currentQueueMoveType = QueueType.Secondary;
-                                     } else { Debug.LogError($"InterruptionHandler ({gameObject.name}): Runner's QueueHandler is null when trying to set queue index/type after rejoining secondary queue!", this); }
-                                     // --- END UPDATE ---
-                                     Debug.Log($"{runner.gameObject.name}: Successfully rejoined secondary queue at spot {spotIndex}. Transitioning to Secondary Queue.", runner.gameObject);
-                                     runner.CurrentTargetLocation = new BrowseLocation { browsePoint = assignedSpot, inventory = null };
-                                      runner._hasReachedCurrentDestination = false; // Set flag to indicate movement is needed
-                                      runner.SetCurrentDestinationPosition(assignedSpot.position); // Update last set destination
-                                      Debug.Log($"InterruptionHandler ({runner.gameObject.name}): Updated Runner's target to secondary queue spot {spotIndex} ({assignedSpot.position}) before transitioning to Secondary Queue.", runner.gameObject);
-                                     runner.TransitionToState(runner.GetStateSO(CustomerState.SecondaryQueue));
-                                }
-                                else
-                                {
-                                     // Should theoretically not happen if IsSecondaryQueueFull is false, but defensive.
-                                     Debug.LogError($"{runner.gameObject.name}: Manager.TryJoinSecondaryQueue failed unexpectedly when Secondary Queue reported not full! Transitioning to Exiting.", runner.gameObject);
-                                     runner.TransitionToState(runner.GetStateSO(CustomerState.Exiting));
-                                }
-                           }
-                       }
-                       // Case 4: Any other state - just return to it
+                       // Case 3: Any other state - just return to it
                        else
                        {
                            Debug.Log($"{runner.gameObject.name}: Interruption ended. Returning to previous state '{poppedState.name}'.", runner.gameObject);
