@@ -18,6 +18,8 @@ using Game.Navigation; // Needed for WaypointManager (needed by BasicPathStateSO
 using Game.Utilities; // Needed for TimeRange
 using Game.NPC.Decisions; // Needed for DecisionOption, SerializableDecisionOptionDictionary
 using Game.Prescriptions; // Needed for PrescriptionOrder, PrescriptionManager
+using Systems.Persistence;
+using Systems.Inventory;
 
 
 namespace Game.NPC.TI // Keep in the TI namespace
@@ -564,6 +566,23 @@ namespace Game.NPC.TI // Keep in the TI namespace
                          Debug.LogWarning($"TiNpcManager: Activated NPC '{tiData.Id}' but the GameObject is missing a 'TiNpcSavableComponent'. Saving will not work for this active NPC.", npcObject);
                     }
 
+                    // --- INVENTORY RESTORATION ---
+                    Inventory inventory = npcObject.GetComponent<Inventory>();
+                    if (inventory != null && tiData.savedInventoryItems != null && tiData.savedInventoryItems.Count > 0)
+                    {
+                         // Create a temporary data wrapper to satisfy Inventory.Bind
+                         InventoryData tempInvData = new InventoryData();
+                         tempInvData.items = new List<ItemData>(tiData.savedInventoryItems);
+                         
+                         // Preserve the prefab's filtering settings (Bind overwrites them otherwise)
+                         tempInvData.allowedLabels = inventory.AllowedLabels;
+                         tempInvData.allowAllIfListEmpty = inventory.AllowAllIfListEmpty;
+                         tempInvData.Id = inventory.Id; 
+
+                         inventory.Bind(tempInvData);
+                         // Debug.Log($"[TiNpcManager] Restored {tiData.savedInventoryItems.Count} items to '{tiData.Id}'.");
+                    }
+
                     if (runner != null)
                     {
                          // Check position right before activation logic starts
@@ -711,6 +730,20 @@ namespace Game.NPC.TI // Keep in the TI namespace
                if (deactivatedTiData != null)
                {
                     Debug.Log($"POOL TiNpcManager: Found TiNpcData for '{deactivatedTiData.Id}' linked to GameObject '{npcObject.name}'. Unlinking data and flags.");
+
+                    // --- START INVENTORY SAVING ---
+                    Inventory inventory = npcObject.GetComponent<Inventory>();
+                    if (inventory != null)
+                    {
+                         // Create data from the current component state
+                         ISaveable saveable = inventory.CreateSaveData();
+                         if (saveable is InventoryData invData)
+                         {
+                              // Save the list of items to the persistent data
+                              deactivatedTiData.savedInventoryItems = invData.items;
+                              Debug.Log($"POOL TiNpcManager: Saved {invData.items.Count} items for '{deactivatedTiData.Id}' before pooling.", npcObject);
+                         }
+                    }
 
                     // --- Clear the data link and flags ---
                     deactivatedTiData.UnlinkGameObject(); // Use helper to set NpcGameObject=null and isActiveGameObject=false-

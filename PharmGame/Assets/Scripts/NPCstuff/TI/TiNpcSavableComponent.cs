@@ -1,7 +1,7 @@
 using UnityEngine;
 using System;
 using Systems.Persistence;
-using Systems.Inventory; // Needed for SerializableGuid if referenced
+using Systems.Inventory; 
 using Game.NPC.TI;
 using Game.NPC;
 using CustomerManagement;
@@ -86,9 +86,21 @@ namespace Game.NPC.TI
                   return null;
              }
 
-             // 4. FLUSH STATE: Update the Master Record with current Active values
+             // FLUSH STATE: Update the Master Record with current Active values
              data.CurrentWorldPosition = transform.position;
              data.CurrentWorldRotation = transform.rotation;
+
+             // INVENTORY FLUSH ---
+             Inventory inventory = GetComponent<Inventory>();
+             if (inventory != null)
+             {
+                 ISaveable saveable = inventory.CreateSaveData();
+                 if (saveable is InventoryData invData)
+                 {
+                     data.savedInventoryItems = invData.items;
+                     // Debug.Log($"[TiNpcSavableComponent] Flushed Inventory ({invData.items.Count} items) for '{data.Id}'.");
+                 }
+             }
              
              // Save the current Active State Enum
              if (runner != null)

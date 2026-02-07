@@ -14,6 +14,7 @@ using Game.NPC.Decisions; // Needed for DecisionOption
 using System.Linq; // Needed for accessing PathState enum
 using Game.Prescriptions; // Needed for PrescriptionOrder
 using Game.Events;
+using Systems.Persistence;
 
 namespace Game.NPC.TI // Keep in the TI namespace
 {
@@ -54,6 +55,11 @@ namespace Game.NPC.TI // Keep in the TI namespace
         [SerializeField] private string currentStateEnumKey;
         [Tooltip("The assembly qualified name of the NPC's current state enum type (can be Active or Basic).")]
         [SerializeField] private string currentStateEnumType;
+
+        // --- Inventory Data ---
+        [Header("Inventory Data")]
+        [Tooltip("The persistent list of items carried by this NPC.")]
+        [SerializeField] public List<ItemData> savedInventoryItems; 
 
         // --- Schedule Settings ---
         [Header("Schedule Settings")]
@@ -259,6 +265,8 @@ namespace Game.NPC.TI // Keep in the TI namespace
 
             this.currentStateEnumKey = null; // Set on load/simulation/activation
             this.currentStateEnumType = null; // Set on load/simulation/activation
+
+            this.savedInventoryItems = new List<ItemData>();
 
             // Initialize schedule fields with default (full day)
             this.startDay = new Game.Utilities.TimeRange(0, 0, 23, 59); // Default: available all day
