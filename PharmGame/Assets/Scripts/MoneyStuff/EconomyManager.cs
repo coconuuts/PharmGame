@@ -30,43 +30,30 @@ namespace Systems.Economy
 
         private void Awake()
         {
-            // Implement singleton pattern
-            if (Instance == null)
+            // Singleton pattern: If an instance already exists, destroy this one.
+            if (Instance != null && Instance != this)
             {
-                Instance = this;
-                DontDestroyOnLoad(gameObject); 
-            }
-            else
-            {
-                Instance.FindAndAssignMoneyDisplayTMP();
-                Instance.UpdateMoneyDisplay();
-
                 Debug.LogWarning("EconomyManager: Duplicate instance found. Destroying this one.", this);
                 Destroy(gameObject);
                 return;
             }
 
+            Instance = this;
+            // Removed DontDestroyOnLoad to allow scene lifecycle management
+
             // Ensure the Money Wallet SO is assigned
             if (playerMoneyWallet == null)
             {
                 Debug.LogError("EconomyManager: Player Money Wallet SO is not assigned in the Inspector!", this);
-                enabled = false; // Disable the script if the wallet is missing
-                return; // Exit Awake
+                enabled = false;
+                return;
             }
 
             // --- Find and assign the TextMeshProUGUI component ---
             FindAndAssignMoneyDisplayTMP();
-            // --- End of UI finding ---
-
+            
             Debug.Log($"EconomyManager: Initialized with Player Money Wallet SO: {playerMoneyWallet.name}");
-
-            // Optional: Reset the wallet when the manager awakes (e.g., for a new game start in this scene)
-            // playerMoneyWallet.ResetWallet(); // Decide if you want this behavior
-
-            // Initial balance will be whatever is set in the SO asset or reset by ResetWallet()
-            // No float currency event to trigger here anymore.
         }
-
         private void Start()
         {
             // Update the UI with the initial money amount

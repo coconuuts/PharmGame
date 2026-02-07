@@ -113,9 +113,16 @@ namespace Systems.GameStates
                  Debug.LogError($"MenuManager: Crafting Minigame Manager reference is not assigned in the inspector!", this);
                   // Do NOT disable
              }
-             // ------------------------------------------------------
         }
 
+        public void RegisterPlayerToolbar(InventorySelector selector)
+        {
+            if (selector != null)
+            {
+                playerToolbarInventorySelector = selector;
+                Debug.Log($"MenuManager: Player Toolbar registered manually by '{selector.gameObject.name}'.");
+            }
+        }
 
         private void Start()
         {

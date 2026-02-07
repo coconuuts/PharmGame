@@ -71,8 +71,6 @@ namespace VisualStorage // You might create a new namespace for this system
 
             IsOccupied = false;
             CurrentItemPrefab = null; // Clear the reference
-             // The StorageObjectVisualizer is responsible for destroying the actual GameObject.
-             Debug.Log($"ShelfSlot ({gameObject.name}): Vacated.");
         }
 
         // Optional: Add validation in OnValidate for row/column values if you have max limits per shelf.

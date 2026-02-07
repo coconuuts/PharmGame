@@ -113,7 +113,12 @@ namespace Systems.Inventory // Or a more specific namespace if preferred, but In
 
             Inventory playerInventory = menuManager.PlayerToolbarInventorySelector?.parentInventory;
 
-            // Determine the other open inventory based on the current game state
+            // --- Add warning if player inventory is missing ---
+            if (playerInventory == null)
+            {
+                Debug.LogWarning("ItemTransferHandler: Player Inventory reference in MenuManager is missing. Quick transfer involving player inventory may fail.");
+            }
+
             switch (menuManager.currentState)
             {
                 case MenuManager.GameState.InInventory:

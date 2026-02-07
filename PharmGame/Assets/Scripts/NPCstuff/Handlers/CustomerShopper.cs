@@ -28,8 +28,6 @@ public class CustomerShopper : MonoBehaviour
 
         private float _gaussianStoredVariate;
         private bool _hasStoredVariate = false;
-
-        // Now these should probably reflect the contents of inventoryNPC
         public int TotalQuantityToBuy
         {
             get
@@ -61,7 +59,6 @@ public class CustomerShopper : MonoBehaviour
             }
         }
 
-        // Check if the shopper has items in their inventoryNPC
         public bool HasItems => TotalQuantityToBuy > 0;
 
 
@@ -70,7 +67,6 @@ public class CustomerShopper : MonoBehaviour
         void Awake()
         {
             // --- Finding the Inventory Component for the NPC itself ---
-            // Ensure inventoryNPC reference is set.
             if (inventoryNPC == null)
             {
                 // Try to find the Inventory component on this same GameObject
@@ -79,7 +75,7 @@ public class CustomerShopper : MonoBehaviour
                 if (inventoryNPC == null)
                 {
                     Debug.LogError($"CustomerShopper on {gameObject.name}: Inventory component for the NPC's shopping cart is not assigned and not found on the GameObject!", this);
-                    enabled = false; // Cannot function without the NPC's own inventory
+                    enabled = false; 
                     return;
                 }
             }
@@ -364,24 +360,29 @@ public class CustomerShopper : MonoBehaviour
             // 2. Re-add items
             foreach (var itemData in dataList)
             {
-                // TODO: YOU MUST IMPLEMENT THIS LOOKUP
-                // Example: ItemDetails details = InventoryManager.Instance.GetItemDetails(itemData.ItemId);
+                // Parse the string ID back to a SerializableGuid
+                SerializableGuid guid = SerializableGuid.FromHexString(itemData.ItemId);
+
+                // Lookup the ItemDetails from the database
+                ItemDetails details = ItemDatabase.GetDetailsById(guid);
                 
-                // ItemDetails details = ... // Find details by itemData.ItemId
-                
-                /* if (details != null)
+                if (details != null)
                 {
                     // Create the item instance
                     Item item = details.Create(itemData.Quantity);
                     
                     // Add directly to inventory
-                    inventoryNPC.AddItem(item);
+                    bool success = inventoryNPC.AddItem(item);
+
+                    if (!success)
+                    {
+                        Debug.LogWarning($"CustomerShopper: Failed to add restored item '{details.Name}' (Qty: {itemData.Quantity}) to inventory.");
+                    }
                 }
                 else
                 {
                     Debug.LogWarning($"CustomerShopper: Could not find ItemDetails for ID '{itemData.ItemId}' during restoration.");
                 }
-                */
             }
             
             Debug.Log($"CustomerShopper: Restored {dataList.Count} item entries from save.");

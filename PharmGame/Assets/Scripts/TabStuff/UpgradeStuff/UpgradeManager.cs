@@ -66,39 +66,28 @@ using Systems.Inventory;
         public event Action<UpgradeDetailsSO> OnUpgradePurchasedSuccessfully;
 
 
-        // --- Singleton Implementation ---
         private void Awake()
         {
-            if (Instance == null)
+            if (Instance != null && Instance != this)
             {
-                Instance = this;
-                // Optional: Keep this object alive across scene changes if needed
-                DontDestroyOnLoad(gameObject); // UNCOMMENTED THIS LINE
-                Debug.Log($"UpgradeManager: Singleton instance created on GameObject '{gameObject.name}'.", this);
-
-                // Initialize the purchased upgrades set
-                purchasedUpgrades = new HashSet<UpgradeDetailsSO>();
-
-                 // --- Future: Load purchased upgrades from save data here ---
-                 // Example (placeholder):
-                 // LoadGameData();
-                 // purchasedUpgrades = loadedData.purchasedUpgradeIDs.Select(id => FindUpgradeDetailsByID(id)).Where(so => so != null).ToHashSet();
-                 // Debug.Log($"UpgradeManager: Loaded {purchasableItems.Count} purchased upgrades."); // Corrected a typo here, should be purchasedUpgrades.Count
-                 // --- End Future Load ---
-
-                 // --- Cache specific upgrade SOs for performance ---
-                 musicLicenseSO = GetUpgradeDetailsByName("Music License");
-                 if (musicLicenseSO == null)
-                 {
-                     Debug.LogWarning("UpgradeManager: 'Music License' SO not found in the AllAvailableUpgrades list. The upgrade effect will not work.", this);
-                 }
-
-            }
-            else
-            {
-                // If an instance already exists, destroy this duplicate
-                Debug.LogWarning($"UpgradeManager: Duplicate instance found on GameObject '{gameObject.name}'. Destroying it. Existing instance is on GameObject '{Instance.gameObject.name}'.", this);
+                Debug.LogWarning($"UpgradeManager: Duplicate instance found on GameObject '{gameObject.name}'. Destroying it.", this);
                 Destroy(gameObject);
+                return;
+            }
+
+            Instance = this;
+            // Removed DontDestroyOnLoad to allow scene lifecycle management
+            
+            Debug.Log($"UpgradeManager: Singleton instance created on GameObject '{gameObject.name}'.", this);
+
+            // Initialize the purchased upgrades set
+            purchasedUpgrades = new HashSet<UpgradeDetailsSO>();
+
+            // Cache specific upgrade SOs
+            musicLicenseSO = GetUpgradeDetailsByName("Music License");
+            if (musicLicenseSO == null)
+            {
+                Debug.LogWarning("UpgradeManager: 'Music License' SO not found in the AllAvailableUpgrades list.", this);
             }
         }
 

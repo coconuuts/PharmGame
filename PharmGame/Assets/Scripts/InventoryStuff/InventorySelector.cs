@@ -104,6 +104,12 @@ namespace Systems.Inventory
                     return; // Exit Start if MenuManager is missing
                 }
 
+                // --- Register this toolbar with MenuManager manually ---
+                if (gameObject.CompareTag("PlayerToolbarInventory"))
+                {
+                    MenuManager.Instance.RegisterPlayerToolbar(this);
+                }
+
                 // --- Subscribe to state changes ---
                 MenuManager.OnStateChanged += HandleGameStateChanged;
                 Debug.Log("InventorySelector: Subscribed to MenuManager.OnStateChanged.");
