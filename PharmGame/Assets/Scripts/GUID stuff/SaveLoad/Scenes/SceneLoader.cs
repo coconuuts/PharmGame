@@ -17,7 +17,6 @@ namespace Systems.SceneManagement {
         public readonly SceneGroupManager manager = new SceneGroupManager();
         
         void Awake() {
-            // TODO can remove
             manager.OnSceneLoaded += sceneName => Debug.Log("Loaded: " + sceneName);
             manager.OnSceneUnloaded += sceneName => Debug.Log("Unloaded: " + sceneName);
             manager.OnSceneGroupLoaded += () => Debug.Log("Scene group loaded");
@@ -59,6 +58,22 @@ namespace Systems.SceneManagement {
             isLoading = enable;
             loadingCanvas.gameObject.SetActive(enable);
             loadingCamera.gameObject.SetActive(enable);
+        }
+
+        public async void LoadSceneGroup(string sceneName) {
+            // iterate through groups to find the one containing this scene
+            for (int i = 0; i < sceneGroups.Length; i++) {
+                // We assume the saved level name corresponds to the 'ActiveScene' in the group
+                string activeSceneName = sceneGroups[i].FindSceneNameByType(SceneType.ActiveScene);
+                
+                if (activeSceneName == sceneName) {
+                    await LoadSceneGroup(i);
+                    return;
+                }
+            }
+            
+            Debug.LogWarning($"SceneLoader: Could not find a Scene Group containing '{sceneName}'. Falling back to standard load.");
+            UnityEngine.SceneManagement.SceneManager.LoadScene(sceneName);
         }
         
     }

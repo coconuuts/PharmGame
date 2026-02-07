@@ -73,14 +73,10 @@ namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interact
         public void DeactivatePrompt()
         {
             // Ask the singleton to deactivate the screen-space prompt and CLEAR ITS TEXT
-            if (PromptEditor.Instance != null)
+            if (PromptEditor.HasInstance)
             {
                 Debug.Log($"{gameObject.name}: Deactivating screen-space NPC prompt.", this);
                 PromptEditor.Instance.SetScreenSpaceNPCPromptActive(false, ""); // Clear the message when hiding
-            }
-            else
-            {
-                Debug.LogError("PromptEditor.Instance is null! Cannot deactivate NPC prompt.");
             }
         }
 

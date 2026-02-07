@@ -39,7 +39,6 @@ namespace Systems.Economy
             }
 
             Instance = this;
-            // Removed DontDestroyOnLoad to allow scene lifecycle management
 
             // Ensure the Money Wallet SO is assigned
             if (playerMoneyWallet == null)
@@ -84,7 +83,6 @@ namespace Systems.Economy
             {
                 Instance = null;
             }
-            // Note: Unsubscribe from OnCurrencyChanged by any listeners if DontDestroyOnLoad is not used
         }
 
         /// <summary>

@@ -32,7 +32,6 @@ namespace Systems.SceneManagement {
             }
 
             var totalScenesToLoad = ActiveSceneGroup.Scenes.Count;
-
             var operationGroup = new AsyncOperationGroup(totalScenesToLoad);
 
             for (var i = 0; i < totalScenesToLoad; i++) {
@@ -79,7 +78,7 @@ namespace Systems.SceneManagement {
                 if (!sceneAt.isLoaded) continue;
                 
                 var sceneName = sceneAt.name;
-                if (sceneName.Equals(activeScene) || sceneName == "Bootstrapper") continue;
+                if (sceneName == "Bootstrapper") continue;
                 if (handleGroup.Handles.Any(h => h.IsValid() && h.Result.Scene.name == sceneName)) continue;
                 
                 scenes.Add(sceneName);

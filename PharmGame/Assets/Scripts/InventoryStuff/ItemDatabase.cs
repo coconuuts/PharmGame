@@ -5,8 +5,9 @@ namespace Systems.Inventory {
     public static class ItemDatabase {
         static Dictionary<SerializableGuid, ItemDetails> itemDetailsDictionary;
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
-        static void Initialize() {
+        public static void Initialize() {
+            if (itemDetailsDictionary != null) return;
+
             itemDetailsDictionary = new Dictionary<SerializableGuid, ItemDetails>();
 
             var itemDetails = Resources.LoadAll<ItemDetails>("");
@@ -23,6 +24,8 @@ namespace Systems.Inventory {
         }
 
         public static ItemDetails GetDetailsById(SerializableGuid id) {
+            if (itemDetailsDictionary == null) Initialize();
+            
             if (itemDetailsDictionary.TryGetValue(id, out ItemDetails details)) {
                 return details;
             }

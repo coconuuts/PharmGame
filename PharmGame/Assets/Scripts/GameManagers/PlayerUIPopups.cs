@@ -53,7 +53,6 @@ public class PlayerUIPopups : MonoBehaviour
         if (Instance == null)
         {
             Instance = this;
-            // Optional: DontDestroyOnLoad(gameObject); // Uncomment if you need this object across scenes
         }
         else if (Instance != this)
         {

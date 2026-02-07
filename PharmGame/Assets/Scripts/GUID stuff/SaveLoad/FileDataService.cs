@@ -53,9 +53,12 @@ namespace Systems.Persistence {
             }
         }
 
-        public IEnumerable<string> ListSaves() {
-            foreach (string path in Directory.EnumerateFiles(dataPath)) {
-                if (Path.GetExtension(path) == fileExtension) {
+        public IEnumerable<string> ListSaves() 
+        {
+            if (Directory.Exists(dataPath)) 
+            {
+                foreach (string path in Directory.EnumerateFiles(dataPath, "*." + fileExtension)) 
+                {
                     yield return Path.GetFileNameWithoutExtension(path);
                 }
             }

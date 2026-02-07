@@ -8,6 +8,7 @@ using Systems.SaveLoad;
 using Game.NPC.TI; 
 using Game.NPC;    
 using Systems.Economy;
+using Systems.SceneManagement;
 
 namespace Systems.Persistence {
     [Serializable] public class GameData : ISaveable
@@ -84,6 +85,9 @@ namespace Systems.Persistence {
 
         protected override void Awake() {
             base.Awake();
+
+            ItemDatabase.Initialize();
+
             dataService = new FileDataService(new JsonSerializer());
 
             if (gameData == null) gameData = new GameData();
@@ -187,19 +191,19 @@ namespace Systems.Persistence {
             Debug.Log("SaveLoadSystem: Data binding sequence complete.");
         }
 
-        public void NewGame() {
-            Debug.Log("SaveLoadSystem: Initializing New Game...");
+        public void ResetGameData() {
+            Debug.Log("SaveLoadSystem: Resetting Game Data...");
             
             // 1. Create Fresh Data
             gameData = new GameData {
                 Name = "New Game",
-                CurrentLevelName = "SampleScene", // Ensure this matches your actual gameplay scene name
+                CurrentLevelName = "SampleScene", 
                 
                 // Defaults
-                PlayerCleanMoney = 50f, // Give player some starting cash?
+                PlayerCleanMoney = 50f, 
                 PlayerDirtyMoney = 0f,
                 CurrentDay = 1,
-                TimeTicks = 0, // TimeManager will see 0 and likely use its default "Start Hour"
+                TimeTicks = 0, 
                 
                 // Empty Lists
                 UnlockedUpgradeIds = new List<string>(),
@@ -208,10 +212,11 @@ namespace Systems.Persistence {
                 inventories = new List<InventoryData>(),
                 tiNpcDataList = new List<TiNpcData>(),
             };
+        }
 
-            // 2. Load the Scene
-            // This triggers OnSceneLoaded, which will Bind() this fresh data to all managers,
-            // effectively resetting them (e.g. EconomyManager will set Wallet to 50).
+        public void NewGame() {
+            ResetGameData();
+            // This direct load is fine for debug buttons, but MainMenu will use SceneLoader instead
             SceneManager.LoadScene(gameData.CurrentLevelName);
         }
         
@@ -315,9 +320,25 @@ namespace Systems.Persistence {
             // Ensure lists exist
             if (gameData.tiNpcDataList == null) gameData.tiNpcDataList = new List<TiNpcData>();
 
-            SceneManager.LoadScene(gameData.CurrentLevelName);
+            // Try to find the SceneLoader (which lives in the Bootstrapper scene)
+            SceneLoader loader = FindFirstObjectByType<SceneLoader>();
+
+            if (loader != null) {
+                // Use the SceneLoader to load the group associated with this level
+                // This preserves the Bootstrapper and shows the loading screen
+                loader.LoadSceneGroup(gameData.CurrentLevelName);
+            }
+            else {
+                // Fallback if SceneLoader isn't found (e.g. testing in isolation)
+                // NOTE: This will unload the Bootstrapper if it exists but wasn't found
+                SceneManager.LoadScene(gameData.CurrentLevelName);
+            }
         }
-        
+
+        public IEnumerable<string> GetAllSaves() 
+        {
+        return dataService.ListSaves();
+        }
         public void ReloadGame() => LoadGame(gameData.Name);
         public void DeleteGame(string gameName) => dataService.Delete(gameName);
     }

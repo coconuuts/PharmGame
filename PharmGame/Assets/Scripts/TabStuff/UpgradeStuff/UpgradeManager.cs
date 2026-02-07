@@ -76,7 +76,6 @@ using Systems.Inventory;
             }
 
             Instance = this;
-            // Removed DontDestroyOnLoad to allow scene lifecycle management
             
             Debug.Log($"UpgradeManager: Singleton instance created on GameObject '{gameObject.name}'.", this);
 

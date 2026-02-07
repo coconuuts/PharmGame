@@ -25,8 +25,6 @@ namespace Systems.Interaction // Place in the Interaction namespace
             if (Instance == null)
             {
                 Instance = this;
-                // Optional: Make persistent if needed across scenes
-                // DontDestroyOnLoad(gameObject);
             }
             else
             {
