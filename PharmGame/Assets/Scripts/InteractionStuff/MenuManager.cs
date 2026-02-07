@@ -74,12 +74,8 @@ namespace Systems.GameStates
         // Reference to the Simple Action Dispatcher
         private SimpleActionDispatcher simpleActionDispatcher = new SimpleActionDispatcher();
 
-        [Header("Manager References")]
-        [Tooltip("Drag the General MinigameManager GameObject here.")]
-        [SerializeField] private MinigameManager generalMinigameManagerInstance; // Reference to the general MinigameManager
-
-        [Tooltip("Drag the CraftingMinigameManager GameObject here.")]
-        [SerializeField] private CraftingMinigameManager craftingMinigameManagerInstance; // Reference to the CraftingMinigameManager
+        public MinigameManager generalMinigameManagerInstance { get; private set; }
+        public CraftingMinigameManager craftingMinigameManagerInstance { get; private set; }
 
         private void Awake()
         {
@@ -100,18 +96,6 @@ namespace Systems.GameStates
              else
              {
                   Debug.LogWarning($"MenuManager: Player Toolbar Inventory GameObject with tag 'PlayerToolbarInventory' not found. Cannot manage toolbar highlights.", this);
-             }
-
-             // --- Check if serialized manager references are assigned ---
-             if (generalMinigameManagerInstance == null)
-             {
-                 Debug.LogError($"MenuManager: General Minigame Manager reference is not assigned in the inspector!", this);
-                 // Do NOT disable, let other systems potentially work, but minigames won't
-             }
-             if (craftingMinigameManagerInstance == null)
-             {
-                 Debug.LogError($"MenuManager: Crafting Minigame Manager reference is not assigned in the inspector!", this);
-                  // Do NOT disable
              }
         }
 
@@ -198,6 +182,36 @@ namespace Systems.GameStates
                  {
                      OpenPauseMenu();
                  }
+            }
+        }
+
+        public void RegisterCraftingManager(CraftingMinigameManager manager)
+        {
+            craftingMinigameManagerInstance = manager;
+            Debug.Log("MenuManager: CraftingMinigameManager registered.");
+        }
+
+        public void UnregisterCraftingManager(CraftingMinigameManager manager)
+        {
+            if (craftingMinigameManagerInstance == manager)
+            {
+                craftingMinigameManagerInstance = null;
+                Debug.Log("MenuManager: CraftingMinigameManager unregistered.");
+            }
+        }
+
+        public void RegisterGeneralMinigameManager(MinigameManager manager)
+        {
+            generalMinigameManagerInstance = manager;
+            Debug.Log("MenuManager: General MinigameManager registered.");
+        }
+
+        public void UnregisterGeneralMinigameManager(MinigameManager manager)
+        {
+            if (generalMinigameManagerInstance == manager)
+            {
+                generalMinigameManagerInstance = null;
+                Debug.Log("MenuManager: General MinigameManager unregistered.");
             }
         }
 

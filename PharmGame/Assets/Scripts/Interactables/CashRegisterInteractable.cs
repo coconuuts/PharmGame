@@ -37,22 +37,12 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
     public Vector3 registerTextPromptOffset = Vector3.zero;
     public Vector3 registerTextPromptRotationOffset = Vector3.zero;
 
-
     // --- Customer Management ---
     private Game.NPC.NpcStateMachineRunner currentWaitingCustomerRunner = null; // Reference to the NPC currently waiting at the register
-    // ---------------------------
 
-    public EconomyManager economyManager;
-
-    // --- REMOVED: Flag to control player interaction ---
-    // private bool isPlayerInteractionEnabled = false; // This is now controlled by the component's `enabled` property
-    // --- END REMOVED ---
-
-    // --- NEW: Flag to track if a Cashier is staffing the register ---
+    // --- Flag to track if a Cashier is staffing the register ---
     private bool isStaffedByCashier = false;
     public bool IsStaffedByCashier => isStaffedByCashier; // Public getter for CustomerManager
-    // --- END NEW ---
-
 
     public string InteractionPrompt => interactionPrompt;
 
@@ -61,7 +51,7 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
 
     private void Awake()
     {
-         // --- NEW: Register with the singleton InteractionManager ---
+         // --- Register with the singleton InteractionManager ---
          if (Systems.Interaction.InteractionManager.Instance != null) // Use full namespace if needed
          {
              Systems.Interaction.InteractionManager.Instance.RegisterInteractable(this);
@@ -70,7 +60,6 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
          {
              Debug.LogError($"CashRegisterInteractable on {gameObject.name}: InteractionManager.Instance is null in Awake! Cannot register.", this);
          }
-         // --- END NEW ---
 
          if (interactionTriggerCollider == null)
          {
@@ -81,14 +70,6 @@ public class CashRegisterInteractable : MonoBehaviour, IInteractable
              }
          }
 
-            if (economyManager == null)
-         {
-             economyManager = GetComponent<EconomyManager>();
-             if (economyManager == null)
-             {
-                 Debug.LogError($"EconomyManager ({gameObject.name}): EconomyManager is not assigned!", this);;
-             }
-         }
          if (interactionTriggerCollider != null && !interactionTriggerCollider.isTrigger)
          {
               Debug.LogError($"CashRegisterInteractable ({gameObject.name}): Assigned Interaction Trigger Collider is not marked as a trigger!", this);

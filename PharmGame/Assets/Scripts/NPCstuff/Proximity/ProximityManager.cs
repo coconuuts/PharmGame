@@ -214,11 +214,21 @@ namespace Game.Proximity
 
             while (true) // Loop indefinitely
             {
+                // --- Dynamic Player Lookup ---
                 if (playerTransform == null)
                 {
-                    Debug.LogWarning("ProximityManager: Player Transform is null, skipping proximity checks.");
-                    yield return new WaitForSeconds(proximityCheckInterval); 
-                    continue; // Skip check logic
+                    GameObject playerGO = GameObject.FindGameObjectWithTag("Player");
+                    if (playerGO != null) 
+                    {
+                        playerTransform = playerGO.transform;
+                        Debug.Log("ProximityManager: Player found by tag and assigned.");
+                    }
+                    else
+                    {
+                        // Still null, wait and skip
+                        yield return new WaitForSeconds(proximityCheckInterval); 
+                        continue; // Skip check logic
+                    }
                 }
                  if (tiNpcManager == null)
                  {

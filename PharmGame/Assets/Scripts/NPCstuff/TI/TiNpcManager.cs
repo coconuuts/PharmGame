@@ -39,6 +39,19 @@ namespace Game.NPC.TI // Keep in the TI namespace
           [SerializeField] private PoolingManager poolingManager; // Assign PoolingManager directly
           [Tooltip("Reference to the Player's Transform for simulation logic that might need player position.")] // Updated tooltip
           [SerializeField] private Transform playerTransform;
+          public Transform PlayerTransform 
+          {
+               get 
+               {
+                    if (playerTransform == null)
+                    {
+                         GameObject playerGO = GameObject.FindGameObjectWithTag("Player");
+                         if (playerGO != null) playerTransform = playerGO.transform;
+                    }
+                    return playerTransform;
+               }
+          }
+
           // Reference to BasicNpcStateManager (will be obtained in Awake/Start)
           private BasicNpcStateManager basicNpcStateManager;
           // Reference to GridManager (needed for updating position during simulation)
@@ -236,13 +249,19 @@ namespace Game.NPC.TI // Keep in the TI namespace
                }
 
 
-               // Validate Player Transform - Still needed for simulation logic that might use player position
+               // Validate Player Transform 
                if (playerTransform == null)
                {
-                    // Attempt to find Player by tag if not assigned
-                    GameObject playerGO = GameObject.FindGameObjectWithTag("Player"); // Assumes Player has "Player" tag
-                    if (playerGO != null) playerTransform = playerGO.transform;
-                    else Debug.LogWarning("TiNpcManager: Player Transform not assigned and GameObject with tag 'Player' not found! Simulation logic that depends on player position may fail.", this); // Changed to Warning
+                    GameObject playerGO = GameObject.FindGameObjectWithTag("Player"); 
+                    if (playerGO != null) 
+                    {
+                         playerTransform = playerGO.transform;
+                    }
+                    else 
+                    {
+                         Debug.LogWarning("TiNpcManager: Player Transform not assigned and 'Player' tag not found yet! Starting monitor routine.", this);
+                         StartCoroutine(MonitorPlayerTransform());
+                    }
                }
 
 
@@ -300,6 +319,27 @@ namespace Game.NPC.TI // Keep in the TI namespace
                     tiNpcSimulationManager.StartSimulation();
                } else {
                     Debug.LogError("TiNpcManager: TiNpcSimulationManager is null after instantiation! Simulation will not run.", this);
+               }
+          }
+
+          /// <summary>
+          /// Coroutine to keep looking for the player if it wasn't found in Start (e.g. loaded in a different scene later).
+          /// </summary>
+          private IEnumerator MonitorPlayerTransform()
+          {
+               while (playerTransform == null)
+               {
+                    GameObject p = GameObject.FindGameObjectWithTag("Player");
+                    if (p != null)
+                    {
+                         playerTransform = p.transform;
+                         Debug.Log("TiNpcManager: Player Transform found and assigned via monitor routine.", this);
+                         // Note: If TiNpcSimulationManager needs the player, it might need to be notified or 
+                         // it should check TiNpcManager.Instance.PlayerTransform dynamically.
+                         // If you have access to TiNpcSimulationManager, consider adding a public SetPlayer(Transform t) method and calling it here:
+                         // if (tiNpcSimulationManager != null) tiNpcSimulationManager.SetPlayer(playerTransform);
+                    }
+                    yield return new WaitForSeconds(1.0f); // Check every second
                }
           }
 

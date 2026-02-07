@@ -86,6 +86,18 @@ namespace Systems.Minigame // Your Minigame namespace
             }
         }
 
+        private void Start()
+        {
+            if (MenuManager.Instance != null)
+            {
+                MenuManager.Instance.RegisterGeneralMinigameManager(this);
+            }
+            else
+            {
+                Debug.LogError("MinigameManager: MenuManager Instance is null! Could not register.");
+            }
+        }
+
         private void OnEnable()
         {
             // MinigameManager does NOT subscribe to MenuManager.OnStateChanged.
@@ -106,6 +118,11 @@ namespace Systems.Minigame // Your Minigame namespace
 
         private void OnDestroy()
         {
+            if (MenuManager.Instance != null)
+            {
+                MenuManager.Instance.UnregisterGeneralMinigameManager(this);
+            }
+            
             if (Instance == this) Instance = null;
 
             // Ensure event handlers are removed from any active minigame if manager is destroyed

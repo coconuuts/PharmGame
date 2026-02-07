@@ -85,8 +85,25 @@ namespace Systems.CraftingMinigames // Use the same namespace
             }
         }
 
+        private void Start()
+        {
+            if (MenuManager.Instance != null)
+            {
+                MenuManager.Instance.RegisterCraftingManager(this);
+            }
+            else
+            {
+                Debug.LogError("CraftingMinigameManager: MenuManager Instance is null! Could not register.");
+            }
+        }   
+
         private void OnDestroy()
         {
+            if (MenuManager.Instance != null)
+            {
+                MenuManager.Instance.UnregisterCraftingManager(this);
+            }
+
             // Ensure the event is cleared on destruction
             OnMinigameSessionCompleted = null;
 
