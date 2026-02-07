@@ -396,6 +396,10 @@ MonoBehaviour:
   - GroupName: Game
     Scenes:
     - Reference:
+        asset: {fileID: 102900000, guid: 0ceec1762a41eb44ba2a36ae1cdbd960, type: 3}
+        guid: 0ceec1762a41eb44ba2a36ae1cdbd960
+      SceneType: 3
+    - Reference:
         asset: {fileID: 102900000, guid: 99c9720ab356a0642a771bea13969a05, type: 3}
         guid: 99c9720ab356a0642a771bea13969a05
       SceneType: 0

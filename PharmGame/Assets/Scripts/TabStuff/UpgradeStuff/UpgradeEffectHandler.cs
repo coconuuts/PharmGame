@@ -3,11 +3,7 @@
 using UnityEngine;
 using System; // Needed for Action
 using CustomerManagement; // Needed for CustomerManager
-// Make sure UpgradeManager and UpgradeDetailsSO are accessible
-// If they are in a specific namespace (e.g., Systems.Upgrades), add:
-// using Systems.Upgrades;
-
-// --- NEW: Add using for TimeManager ---
+using System.Collections;
 using Game.Utilities; // Assuming TimeManager might be in a utilities namespace, adjust if needed
 // If TimeManager is in the global namespace, you don't need a 'using' directive for it,
 // but you still need the reference field and checks.
@@ -31,10 +27,9 @@ public class UpgradeEffectHandler : MonoBehaviour
     private CustomerManager customerManager; // For customer-specific effects
     // Add references to other managers for other effect types (e.g., InventoryManager, PlayerStatsManager)
 
-    // --- NEW: Reference to TimeManager ---
+    // --- Reference to TimeManager ---
     private TimeManager timeManager;
-    // --- END NEW ---
-
+    private Coroutine timeManagerSearchCoroutine;
 
     // --- Specific NPC Unlocks ---
     [Header("Specific NPC Unlocks")]
@@ -69,17 +64,6 @@ public class UpgradeEffectHandler : MonoBehaviour
             // but it means customer upgrades won't work.
         }
 
-        // --- NEW: Get TimeManager instance ---
-        timeManager = TimeManager.Instance;
-         if (timeManager == null)
-         {
-             Debug.LogError($"UpgradeEffectHandler on {gameObject.name}: TimeManager.Instance not found in Awake! Cannot handle delayed time-based effects like 'Hire Cashier'.", this);
-              // This is critical for the Hire Cashier upgrade, but not necessarily for others.
-              // We won't disable the script entirely, but log the issue.
-         }
-        // --- END NEW ---
-
-
         Debug.Log($"UpgradeEffectHandler on {gameObject.name}: Initialized. UpgradeManager found: {upgradeManager != null}, CustomerManager found: {customerManager != null}, TimeManager found: {timeManager != null}");
     }
 
@@ -92,31 +76,71 @@ public class UpgradeEffectHandler : MonoBehaviour
             Debug.Log($"UpgradeEffectHandler on {gameObject.name}: Subscribed to UpgradeManager.OnUpgradePurchaseAttempt.");
         }
 
-        // --- NEW: Subscribe to Day Changed event ---
+        // --- Subscribe to Day Changed event ---
         if (timeManager != null)
         {
-            timeManager.OnDayChanged += HandleDayChanged;
-            Debug.Log($"UpgradeEffectHandler on {gameObject.name}: Subscribed to TimeManager.OnDayChanged.");
+            SubscribeToTimeManagerEvents();
         }
-        // --- END NEW ---
+        else
+        {
+            // Otherwise, start searching for it (it might be in Scene 2 loading right now)
+            if (timeManagerSearchCoroutine != null) StopCoroutine(timeManagerSearchCoroutine);
+            timeManagerSearchCoroutine = StartCoroutine(WaitForTimeManager());
+        }
     }
 
     private void OnDisable()
     {
-        // Unsubscribe from the event to prevent memory leaks
+        // Unsubscribe from events
         if (upgradeManager != null)
         {
             upgradeManager.OnUpgradePurchaseAttempt -= HandleUpgradePurchaseAttempt;
-            Debug.Log($"UpgradeEffectHandler on {gameObject.name}: Unsubscribed from UpgradeManager.OnUpgradePurchaseAttempt.");
         }
 
-        // --- NEW: Unsubscribe from Day Changed event ---
+        // Unsubscribe from TimeManager if we have it
         if (timeManager != null)
         {
             timeManager.OnDayChanged -= HandleDayChanged;
-            Debug.Log($"UpgradeEffectHandler on {gameObject.name}: Unsubscribed from TimeManager.OnDayChanged.");
         }
-        // --- END NEW ---
+
+        // Stop searching if we are disabled
+        if (timeManagerSearchCoroutine != null)
+        {
+            StopCoroutine(timeManagerSearchCoroutine);
+            timeManagerSearchCoroutine = null;
+        }
+    }
+
+    /// <summary>
+    /// Coroutine that waits until TimeManager.Instance becomes valid.
+    /// This handles the case where Scene 2 loads after Scene 1.
+    /// </summary>
+    private IEnumerator WaitForTimeManager()
+    {
+        // Wait until the instance exists
+        while (TimeManager.Instance == null)
+        {
+            yield return null; // Wait for the next frame
+        }
+
+        // Found it!
+        timeManager = TimeManager.Instance;
+        Debug.Log($"UpgradeEffectHandler on {gameObject.name}: Found TimeManager in newly loaded scene.");
+
+        // Connect
+        SubscribeToTimeManagerEvents();
+        
+        timeManagerSearchCoroutine = null;
+    }
+
+    private void SubscribeToTimeManagerEvents()
+    {
+        if (timeManager != null)
+        {
+            // Unsubscribe first to ensure no duplicates (defensive)
+            timeManager.OnDayChanged -= HandleDayChanged;
+            timeManager.OnDayChanged += HandleDayChanged;
+        }
     }
 
     /// <summary>

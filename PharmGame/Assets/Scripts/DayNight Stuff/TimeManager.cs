@@ -175,7 +175,7 @@ public class TimeManager : MonoBehaviour , IBind<GameData>
         if (timeText != null) {
             // Format the time as hh:mm tt (12-hour with AM/PM)
             // Using "HH:mm" for 24-hour format as in the original code
-            timeText.text = service.CurrentTime.ToString("h:mm tt") + $" - Day {currentDay}"; // Added Day display
+            timeText.text = service.CurrentTime.ToString("h:mm tt"); // Added Day display
         }
     }
 
