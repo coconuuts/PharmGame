@@ -66,7 +66,6 @@ public class TimeManager : MonoBehaviour , IBind<GameData>
         if (Instance == null)
         {
             Instance = this;
-            DontDestroyOnLoad(gameObject);
             
             if (timeSettings == null) 
             {

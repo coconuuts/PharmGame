@@ -1283,6 +1283,7 @@ GameObject:
   - component: {fileID: 99645960}
   - component: {fileID: 99645961}
   - component: {fileID: 99645962}
+  - component: {fileID: 99645963}
   m_Layer: 0
   m_Name: SceneManagers
   m_TagString: Untagged
@@ -1471,6 +1472,67 @@ MonoBehaviour:
   playerMoneyWallet: {fileID: 11400000, guid: 0da4e5bcdbaba62458dd35bf846772e6, type: 2}
   playerUITag: PlayerUI
   moneyDisplayTMP: {fileID: 644033412}
+--- !u!114 &99645963
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 99645949}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f3f0e0e3d09f9444fafe01872f5a7b50, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  <Id>k__BackingField:
+    Part1: 1961571362
+    Part2: 1240574986
+    Part3: 2480864907
+    Part4: 1890327986
+  timeText: {fileID: 1574710582}
+  sun: {fileID: 410087040}
+  moon: {fileID: 945536118}
+  lightIntensityCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 2
+      outSlope: 2
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 0.18461145
+      value: 0.9993302
+      inSlope: 0.0039469907
+      outSlope: 0.0039469907
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.18754926
+    - serializedVersion: 3
+      time: 1
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  maxSunIntensity: 1.5
+  maxMoonIntensity: 0.75
+  dayAmbientLight: {r: 1, g: 1, b: 1, a: 0}
+  nightAmbientLight: {r: 0.46942863, g: 0.66861147, b: 0.7264151, a: 0}
+  volume: {fileID: 986335654}
+  skyboxMaterial: {fileID: 2100000, guid: d7e0b043f024cb842a15ecfd51fbe487, type: 2}
+  timeSettings: {fileID: 11400000, guid: 809dc195db61d5e478860b1b2b7c313a, type: 2}
+  currentDay: 1
 --- !u!1 &101631595
 GameObject:
   m_ObjectHideFlags: 0
@@ -9722,8 +9784,8 @@ MonoBehaviour:
   npcPrefabs:
   - {fileID: 4394407753789290286, guid: 488534cc76898354d8320c55d1770728, type: 3}
   maxCustomersInStore: 7
-  minSpawnInterval: 3
-  maxSpawnInterval: 5
+  minSpawnInterval: 30
+  maxSpawnInterval: 50
   _busArrivalInterval: 75
   npcsPerBus: 3
   initialBusDelay: 60
@@ -9966,7 +10028,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ee9f089b83ac2124b9193c38e898f348, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  timeManager: {fileID: 1863998792}
+  timeManager: {fileID: 0}
   tiNpcManager: {fileID: 763258582}
   customerManager: {fileID: 763258580}
   poolingManager: {fileID: 1863998793}
@@ -23868,8 +23930,8 @@ GameObject:
   m_Component:
   - component: {fileID: 1863998789}
   - component: {fileID: 1863998788}
-  - component: {fileID: 1863998792}
   - component: {fileID: 1863998793}
+  - component: {fileID: 1863998794}
   m_Layer: 0
   m_Name: GlobalBootstrapper
   m_TagString: Untagged
@@ -23925,67 +23987,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1863998792
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1863998787}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f3f0e0e3d09f9444fafe01872f5a7b50, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  <Id>k__BackingField:
-    Part1: 201908271
-    Part2: 1183895657
-    Part3: 3505310096
-    Part4: 1201235309
-  timeText: {fileID: 1574710582}
-  sun: {fileID: 410087040}
-  moon: {fileID: 945536118}
-  lightIntensityCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0.000000404194
-      value: -0.051239986
-      inSlope: 2
-      outSlope: 2
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 0.22249705
-      value: 0.99978304
-      inSlope: -0.009664806
-      outSlope: -0.009664806
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 1
-      outWeight: 0.23739335
-    - serializedVersion: 3
-      time: 1
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  maxSunIntensity: 1.5
-  maxMoonIntensity: 0.75
-  dayAmbientLight: {r: 0.8784314, g: 0.8235294, b: 0.827451, a: 0}
-  nightAmbientLight: {r: 0.3529412, g: 0.5686275, b: 0.6431373, a: 0}
-  volume: {fileID: 986335654}
-  skyboxMaterial: {fileID: 2100000, guid: d7e0b043f024cb842a15ecfd51fbe487, type: 2}
-  timeSettings: {fileID: 11400000, guid: 809dc195db61d5e478860b1b2b7c313a, type: 2}
-  currentDay: 1
 --- !u!114 &1863998793
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -23999,6 +24000,19 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   poolingConfig: {fileID: 11400000, guid: 1e3ad343288ee824fafad7d4b4872914, type: 2}
+--- !u!114 &1863998794
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1863998787}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 023723683f67c5d44b7f38c0afb8ffc8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  UnparentOnAwake: 1
 --- !u!1 &1869059065
 GameObject:
   m_ObjectHideFlags: 0
