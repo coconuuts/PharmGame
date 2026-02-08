@@ -27,6 +27,12 @@ namespace Systems.UI
         private string currentSelectedSaveId;
         private List<SaveSlotUI> instantiatedSlots = new List<SaveSlotUI>();
 
+        private void Awake()
+        {
+            if (loadButton != null) loadButton.interactable = false;
+            if (deleteButton != null) deleteButton.interactable = false;
+        }
+
         private void Start()
         {
             if (loadButton != null) loadButton.onClick.AddListener(OnLoadClicked);
@@ -34,6 +40,11 @@ namespace Systems.UI
             if (closeButton != null) closeButton.onClick.AddListener(CloseMenu);
 
             UpdateButtonsState();
+        }
+
+        private void OnEnable()
+        {
+             UpdateButtonsState();
         }
 
         public void OpenMenu()

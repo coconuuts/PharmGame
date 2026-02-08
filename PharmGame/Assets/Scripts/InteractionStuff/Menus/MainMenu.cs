@@ -22,30 +22,50 @@ public class MainMenu : MonoBehaviour
     [Header("Scene Configuration")] 
     [SerializeField] private int gameSceneGroupIndex = 1; 
 
+    private void Awake()
+    {
+        if (continueButton != null) continueButton.gameObject.SetActive(false);
+        if (loadGameButton != null) loadGameButton.interactable = false;
+    }
     private void Start()
     {
-        // 1. Hook up button events
-        newGameButton.onClick.AddListener(OnNewGameClicked);
-        continueButton.onClick.AddListener(OnContinueClicked);
-        loadGameButton.onClick.AddListener(OnLoadGameClicked);
-        quitButton.onClick.AddListener(OnQuitClicked);
+        if (newGameButton != null) newGameButton.onClick.AddListener(OnNewGameClicked);
+        if (continueButton != null) continueButton.onClick.AddListener(OnContinueClicked);
+        if (loadGameButton != null) loadGameButton.onClick.AddListener(OnLoadGameClicked);
+        if (quitButton != null) quitButton.onClick.AddListener(OnQuitClicked);
 
-        // 2. check for saves to enable/disable the Continue button
-        // We use a small delay or check in Start to ensure SaveLoadSystem is ready
+        RefreshMenuState();
+    }
+
+    private void OnEnable()
+    {
+        // Ensure state is correct if we return to this menu from a sub-menu
+        RefreshMenuState();
+    }
+
+    private void RefreshMenuState()
+    {
+        bool hasSaves = false;
+
+        // Use HasInstance to avoid creating the singleton if it doesn't exist yet (though it should)
         if (SaveLoadSystem.HasInstance)
         {
             var saves = SaveLoadSystem.Instance.GetAllSaves();
-            continueButton.interactable = saves.Any();
-            loadGameButton.interactable = saves.Any();
+            hasSaves = saves.Any();
         }
-        else
+
+        // Apply state: Enable/Show only if we found saves
+        if (continueButton != null && hasSaves) 
         {
-            // If the system isn't found (e.g. testing menu scene alone), disable continue
-            continueButton.interactable = false;
-            loadGameButton.interactable = false;
+            continueButton.gameObject.SetActive(true);
+        }
+
+        if (loadGameButton != null && hasSaves)
+        {
+            loadGameButton.interactable = true;
         }
     }
-
+    
     private void Update()
     {
         // Check for Escape key press

@@ -8,11 +8,12 @@ using InventoryClass = Systems.Inventory.Inventory;
 using Systems.Interaction;
 using System.Collections;
 using Systems.CameraControl;
-using Systems.Minigame; // Ensure this is included
+using Systems.Minigame;
 using Systems.Inventory;
 using Systems.UI;
 using Systems.Player;
-using Systems.CraftingMinigames; // Ensure this is included
+using Systems.CraftingMinigames; 
+using Systems.Persistence;
 
 
 namespace Systems.GameStates
@@ -172,6 +173,33 @@ namespace Systems.GameStates
 
         private void Update()
         {
+            // Handle Quicksave (F5)
+            if (Input.GetKeyDown(KeyCode.F5))
+            {
+                // Only allow quicksave while in normal Playing state
+                if (currentState == GameState.Playing && SaveLoadSystem.HasInstance)
+                {
+                    // Ensure we generate a new ID so we don't overwrite the file we loaded if we want a new history entry
+                    // (Remove this line if you WANT to overwrite the current loaded file, but typical quicksaves are new entries in your system)
+                    SaveLoadSystem.Instance.gameData.Id = SerializableGuid.NewGuid();
+                    
+                    SaveLoadSystem.Instance.SaveGame("Quicksave");
+                    // Optional: You could add a UI notification here
+                    Debug.Log("MenuManager: Quicksave Triggered.");
+                }
+            }
+
+            // Handle Quickload (F7)
+            if (Input.GetKeyDown(KeyCode.F7))
+            {
+                 // Allow quickload in Playing state. 
+                 // (Be careful allowing it in other states as it forces a scene reload)
+                if (currentState == GameState.Playing && SaveLoadSystem.HasInstance)
+                {
+                    SaveLoadSystem.Instance.QuickLoad();
+                }
+            }
+            
             // Handle Escape key
             if (Input.GetKeyDown(KeyCode.Escape))
             {

@@ -33,6 +33,11 @@ namespace Systems.UI
         private string currentSelectedSaveName;
         private List<SaveSlotUI> instantiatedSlots = new List<SaveSlotUI>();
 
+        private void Awake()
+        {
+            if (deleteButton != null) deleteButton.interactable = false;
+        }
+        
         private void Start()
         {
             // Setup Listeners
@@ -41,6 +46,13 @@ namespace Systems.UI
             
             if (closeButton != null) 
                 closeButton.onClick.AddListener(CloseMenu);
+
+            UpdateDeleteButtonState();
+        }
+
+        private void OnEnable()
+        {
+            UpdateDeleteButtonState();
         }
 
         public void OpenMenu()
@@ -144,21 +156,11 @@ namespace Systems.UI
         {
             if (!SaveLoadSystem.HasInstance) return;
 
-            // We enforce the name to be the Total Playtime, ignoring user input for now.
-            // SaveLoadSystem.SaveGame() handles setting the name to GetFormattedRealPlaytime()
-            // but we can also set it here for clarity or if we want to change logic later.
-            string nameToSave = SaveLoadSystem.Instance.GetFormattedRealPlaytime();
-
-            // 1. Set the Display Name
-            SaveLoadSystem.Instance.gameData.Name = nameToSave;
-            
-            // 2. Generate a unique ID (Always new file for now, or handle overwrite logic if desired)
-            // If you want to overwrite the selected slot, you would reuse the ID.
-            // For now, let's treat every save as a new file (standard for this type of system unless explicit overwrite UI exists)
+            // 1. Generate a unique ID (Always new file for now)
             SaveLoadSystem.Instance.gameData.Id = SerializableGuid.NewGuid();
 
-            // 3. Save
-            SaveLoadSystem.Instance.SaveGame();
+            // 2. Save using the "Save" prefix to get "Save - HH:mm"
+            SaveLoadSystem.Instance.SaveGame("Save");
 
             CloseMenu(); 
             if (MenuManager.Instance != null)

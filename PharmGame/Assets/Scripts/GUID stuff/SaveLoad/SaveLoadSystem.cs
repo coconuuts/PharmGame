@@ -259,10 +259,9 @@ namespace Systems.Persistence {
             }
         }
         
-        public void SaveGame() 
+        public void SaveGame(string saveType = "Save")
         {
-            // Force the name to be the playtime
-            gameData.Name = GetFormattedRealPlaytime();
+            gameData.Name = $"{saveType} - {GetFormattedRealPlaytime()}";
 
             Debug.Log($"SaveLoadSystem: Saving game '{gameData.Name}'...");
             
@@ -328,6 +327,26 @@ namespace Systems.Persistence {
             // 7. Write to Disk
             dataService.Save(gameData);
             Debug.Log("SaveLoadSystem: Save Complete.");
+        }
+
+        /// <summary>
+        /// Loads the most recent save file based on modification date.
+        /// </summary>
+        public void QuickLoad()
+        {
+            // ListSaves returns saves sorted by date (newest first)
+            var saves = GetAllSaves();
+            var mostRecentSave = saves.FirstOrDefault();
+
+            if (!string.IsNullOrEmpty(mostRecentSave))
+            {
+                Debug.Log($"SaveLoadSystem: Quickloading most recent save: {mostRecentSave}");
+                LoadGame(mostRecentSave);
+            }
+            else
+            {
+                Debug.LogWarning("SaveLoadSystem: QuickLoad failed. No save files found.");
+            }
         }
 
         public void LoadGame(string gameName) {
