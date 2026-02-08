@@ -29,6 +29,7 @@ namespace Systems.Persistence {
         public long TimeTicks;
 
         // Progression 
+        public float TotalPlayTimeSeconds;
         public List<string> UnlockedUpgradeIds; 
 
         // Constructor to ensure defaults
@@ -40,6 +41,7 @@ namespace Systems.Persistence {
             PlayerDirtyMoney = 0;
             CurrentDay = 1;
             TimeTicks = 0; 
+            TotalPlayTimeSeconds = 0;
             worldInteractables = new List<InteractableObjectData>();
             
             UnlockedUpgradeIds = new List<string>();
@@ -82,6 +84,7 @@ namespace Systems.Persistence {
         [SerializeField] public GameData gameData;
 
         IDataService dataService;
+        bool isGameplayActive = false;
 
         protected override void Awake() {
             base.Awake();
@@ -100,8 +103,19 @@ namespace Systems.Persistence {
             // If we have no data (first run), ensure we have a valid empty container.
             // We do NOT call NewGame() here because it reloads the scene and breaks references.
             if (gameData == null) gameData = new GameData();
+
+            // Check if we started in a gameplay scene (useful for development/testing directly in scene)
+            string currentScene = SceneManager.GetActiveScene().name;
+            isGameplayActive = (currentScene != "MainMenu" && currentScene != "Bootstrapper");
             
             // In a real build, you would call NewGame() from a Main Menu button.
+        }
+
+        void Update() {
+            // Track real-time played while in gameplay scenes (not Menu)
+            if (isGameplayActive && gameData != null) {
+                gameData.TotalPlayTimeSeconds += Time.unscaledDeltaTime;
+            }
         }
 
         void OnEnable() => SceneManager.sceneLoaded += OnSceneLoaded;
@@ -109,7 +123,9 @@ namespace Systems.Persistence {
 
         void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
-            if (scene.name == "Menu") return;
+            isGameplayActive = (scene.name != "MainMenu" && scene.name != "Bootstrapper");
+
+            if (scene.name == "MainMenu") return;
 
             Debug.Log($"SaveLoadSystem: Scene '{scene.name}' loaded. Starting Data Binding Sequence...");
 
@@ -204,6 +220,7 @@ namespace Systems.Persistence {
                 PlayerDirtyMoney = 0f,
                 CurrentDay = 1,
                 TimeTicks = 0, 
+                TotalPlayTimeSeconds = 0,
                 
                 // Empty Lists
                 UnlockedUpgradeIds = new List<string>(),
@@ -244,6 +261,9 @@ namespace Systems.Persistence {
         
         public void SaveGame() 
         {
+            // Force the name to be the playtime
+            gameData.Name = GetFormattedRealPlaytime();
+
             Debug.Log($"SaveLoadSystem: Saving game '{gameData.Name}'...");
             
             // 1. Clear generic lists
@@ -294,7 +314,7 @@ namespace Systems.Persistence {
             }
             else
             {
-                 // FIX: Use FindFirstObjectByType
+                 // Use FindFirstObjectByType
                  var bridge = FindFirstObjectByType<TiNpcPersistenceBridge>();
                  if (bridge != null) gameData.tiNpcDataList = bridge.GetAllTiNpcData();
             }
@@ -333,6 +353,19 @@ namespace Systems.Persistence {
                 // NOTE: This will unload the Bootstrapper if it exists but wasn't found
                 SceneManager.LoadScene(gameData.CurrentLevelName);
             }
+        }
+
+        // Reads a save file and returns the data without making it the active game.
+        // Useful for getting the Display Name for UI lists.
+        public GameData GetSaveDataReadOnly(string saveId)
+        {
+            return dataService.Load(saveId);
+        }
+
+        public string GetFormattedRealPlaytime()
+        {
+            TimeSpan t = TimeSpan.FromSeconds(gameData.TotalPlayTimeSeconds);
+            return $"{(int)t.TotalHours:D2}:{t.Minutes:D2}";
         }
 
         public IEnumerable<string> GetAllSaves() 

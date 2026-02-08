@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
+using System.Linq;
 
 namespace Systems.Persistence {
     public class FileDataService : IDataService {
@@ -20,7 +21,7 @@ namespace Systems.Persistence {
         }
         
         public void Save(GameData data, bool overwrite = true) {
-            string fileLocation = GetPathToFile(data.Name);
+            string fileLocation = GetPathToFile(data.Id.ToHexString());
 
             if (!overwrite && File.Exists(fileLocation)) {
                 throw new IOException($"The file '{data.Name}.{fileExtension}' already exists and cannot be overwritten.");
@@ -57,11 +58,19 @@ namespace Systems.Persistence {
         {
             if (Directory.Exists(dataPath)) 
             {
-                foreach (string path in Directory.EnumerateFiles(dataPath, "*." + fileExtension)) 
-                {
-                    yield return Path.GetFileNameWithoutExtension(path);
-                }
+                // Create a DirectoryInfo object to access file metadata
+                DirectoryInfo d = new DirectoryInfo(dataPath);
+                
+                // Get all files matching the extension
+                FileInfo[] files = d.GetFiles("*." + fileExtension);
+                
+                // Sort the files by LastWriteTime in Descending order (Newest -> Oldest)
+                // Then select just the file name without extension to return
+                return files.OrderByDescending(f => f.LastWriteTime)
+                            .Select(f => Path.GetFileNameWithoutExtension(f.Name));
             }
+            
+            return new List<string>();
         }
     }
 }

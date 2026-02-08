@@ -5,6 +5,7 @@ using UnityEngine.UI;
 
 namespace Systems.SceneManagement {
     public class SceneLoader : MonoBehaviour { 
+        public static SceneLoader Instance { get; private set; }
         [SerializeField] Image loadingBar;
         [SerializeField] float fillSpeed = 0.5f;
         [SerializeField] Canvas loadingCanvas;
@@ -17,13 +18,21 @@ namespace Systems.SceneManagement {
         public readonly SceneGroupManager manager = new SceneGroupManager();
         
         void Awake() {
+            if (Instance != null && Instance != this) {
+                Destroy(gameObject);
+                return;
+            }
+            Instance = this;
+
             manager.OnSceneLoaded += sceneName => Debug.Log("Loaded: " + sceneName);
             manager.OnSceneUnloaded += sceneName => Debug.Log("Unloaded: " + sceneName);
             manager.OnSceneGroupLoaded += () => Debug.Log("Scene group loaded");
         }
 
         async void Start() {
-            await LoadSceneGroup(0);
+            if (Instance == this) {
+                await LoadSceneGroup(0);
+            }
         }
         
         void Update() {

@@ -3,13 +3,21 @@ using UnityEngine.UI;
 using Systems.Persistence;
 using System.Linq;
 using Systems.SceneManagement;
+using Systems.UI;
 
 public class MainMenu : MonoBehaviour
 {
+    [Header("UI Panels")]
+    [SerializeField] private GameObject mainButtonsPanel;
+    
     [Header("Buttons")]
     [SerializeField] private Button newGameButton;
-    [SerializeField] private Button continueButton; // "Load Game"
+    [SerializeField] private Button continueButton; 
+    [SerializeField] private Button loadGameButton;
     [SerializeField] private Button quitButton;
+
+    [Header("Controllers")]
+    [SerializeField] private LoadGameMenuController loadMenuController;
 
     [Header("Scene Configuration")] 
     [SerializeField] private int gameSceneGroupIndex = 1; 
@@ -19,6 +27,7 @@ public class MainMenu : MonoBehaviour
         // 1. Hook up button events
         newGameButton.onClick.AddListener(OnNewGameClicked);
         continueButton.onClick.AddListener(OnContinueClicked);
+        loadGameButton.onClick.AddListener(OnLoadGameClicked);
         quitButton.onClick.AddListener(OnQuitClicked);
 
         // 2. check for saves to enable/disable the Continue button
@@ -27,11 +36,31 @@ public class MainMenu : MonoBehaviour
         {
             var saves = SaveLoadSystem.Instance.GetAllSaves();
             continueButton.interactable = saves.Any();
+            loadGameButton.interactable = saves.Any();
         }
         else
         {
             // If the system isn't found (e.g. testing menu scene alone), disable continue
             continueButton.interactable = false;
+            loadGameButton.interactable = false;
+        }
+    }
+
+    private void Update()
+    {
+        // Check for Escape key press
+        if (Input.GetKeyDown(KeyCode.Escape))
+        {
+            // If the Main Buttons are hidden, it means we are in a sub-menu (like Load Game)
+            if (mainButtonsPanel != null && !mainButtonsPanel.activeSelf)
+            {
+                // If the Load Menu controller is assigned, tell it to close.
+                // This will re-enable the mainButtonsPanel automatically via its CloseMenu logic.
+                if (loadMenuController != null)
+                {
+                    loadMenuController.CloseMenu();
+                }
+            }
         }
     }
 
@@ -67,10 +96,16 @@ public class MainMenu : MonoBehaviour
         
         if (saves.Any())
         {
-            // For a foundational menu, we just load the most recent (or first found) save.
-            // Later, you can build a save slot selector UI here.
             string saveToLoad = saves.First(); 
             SaveLoadSystem.Instance.LoadGame(saveToLoad);
+        }
+    }
+
+    private void OnLoadGameClicked()
+    {
+        if (loadMenuController != null)
+        {
+            loadMenuController.OpenMenu();
         }
     }
 

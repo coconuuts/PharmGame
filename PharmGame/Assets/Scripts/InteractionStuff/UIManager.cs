@@ -22,7 +22,6 @@ namespace Systems.UI
         [Tooltip("The GameObject root for the Player Toolbar UI. Will find by tag if null.")]
         [SerializeField] private GameObject playerToolbarUIRoot;
 
-        // TODO: Add a reference for the Pause Menu UI
         [Header("Specific UI References")]
         [Tooltip("The GameObject root for the Pause Menu UI.")]
         [SerializeField] private GameObject pauseMenuUIRoot;

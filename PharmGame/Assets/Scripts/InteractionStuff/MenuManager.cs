@@ -38,6 +38,9 @@ namespace Systems.GameStates
         public delegate void StateChangedHandler(GameState newState, GameState oldState, InteractionResponse response);
         public static event StateChangedHandler OnStateChanged;
 
+        // --- Event to allow sub-menus to intercept the Escape key ---
+        public event Func<bool> OnProcessEscape;
+
         [Header("Player Settings")]
         public GameObject player;
         public string cameraTag = "MainCamera";
@@ -172,6 +175,25 @@ namespace Systems.GameStates
             // Handle Escape key
             if (Input.GetKeyDown(KeyCode.Escape))
             {
+                // --- Check if any sub-menus want to handle Escape first ---
+                bool isHandled = false;
+                if (OnProcessEscape != null)
+                {
+                    // Iterate backwards so the most recently opened menu gets first dibs (stack-like behavior)
+                    Delegate[] invocationList = OnProcessEscape.GetInvocationList();
+                    for (int i = invocationList.Length - 1; i >= 0; i--)
+                    {
+                        var handler = (Func<bool>)invocationList[i];
+                        if (handler.Invoke()) 
+                        {
+                            isHandled = true;
+                            break; // Stop checking, input consumed
+                        }
+                    }
+                }
+
+                if (isHandled) return; // Do not proceed to default state change
+
                 // Allow Escape from any state except Playing to return to Playing
                  if (currentState != GameState.Playing)
                 {
