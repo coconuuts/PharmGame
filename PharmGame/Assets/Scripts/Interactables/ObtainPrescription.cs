@@ -169,7 +169,6 @@ namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interact
                 // Order not found or Runner/data issue
                 activePrescriptionOrder = false; // Ensure flag is false
                 Debug.LogWarning($"{gameObject.name}: Interact called, but no active prescription order was found or data was invalid. Returning null response.", this);
-                // Optional: Provide feedback? PlayerUIPopups.Instance?.ShowPopup("No Order", "This customer doesn't have a prescription order right now.");
                 return null; // Or return a specific "NoOrderFoundResponse" if needed, but null is simpler for now.
             }
         }

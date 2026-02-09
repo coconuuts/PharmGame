@@ -438,8 +438,7 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
         }
 
         bool isPurchased = _upgradeManager.IsUpgradePurchased(upgradeToCheck);
-        Debug.Log($"ComputerInteractable: Checking unlock status for item '{item.Name}' (Tier {item.itemTier}). Required upgrade: '{upgradeNameDebug}' (ID: {upgradeToCheck.uniqueID}). Is purchased: {isPurchased}.");
-
+        
         return isPurchased;
     }
 
@@ -510,23 +509,13 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
         if (targetDeliveryInventory == null)
         {
             Debug.LogError("ComputerInteractable: Target Delivery Inventory is not assigned! Cannot deliver items.", this);
-            PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Delivery inventory not set up!");
             return;
         }
         if (targetDeliveryInventory.Combiner == null)
          {
              Debug.LogError("ComputerInteractable: Target Delivery Inventory is missing its Combiner component! Cannot deliver items.", this);
-             PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Delivery inventory misconfigured!");
              return;
          }
-
-
-        if (shoppingCart.Count == 0)
-        {
-             Debug.Log("ComputerInteractable: Shopping cart is empty. Nothing to purchase.");
-             PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Your cart is empty!");
-             return;
-        }
 
         List<Item> itemsToDeliver = new List<Item>();
 
@@ -541,17 +530,6 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
                  Debug.LogWarning("ComputerInteractable: Skipping purchase of item with null ItemDetails in cart.");
                  continue;
             }
-            
-            // This check is already in AddItemToCart, but having it here provides a second layer of defense.
-            if (!IsItemTierUnlocked(details))
-            {
-                Debug.LogWarning($"ComputerInteractable: Attempted to purchase locked item '{details.Name}' (Tier {details.itemTier}) found in cart. Skipping this item from purchase and removing from cart.");
-                PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", $"Cannot purchase locked item: {details.Name}!");
-                // Remove the locked item from the cart to prevent it from showing up again if the purchase fails
-                shoppingCart.Remove(details);
-                continue; // Skip this item from the purchase process
-            }
-
 
             Debug.Log($"ComputerInteractable: Preparing to purchase {totalQuantityToCreate}x {details.Name} (Max Stack: {details.maxStack}).");
 
@@ -584,15 +562,6 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
             }
         }
 
-        if (itemsToDeliver.Count == 0)
-        {
-            Debug.Log("ComputerInteractable: No valid (unlocked) items left in cart after filtering for purchase.");
-            PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "No unlocked items left in cart to purchase!");
-            // shoppingCart.Clear(); // Already done above if items were removed
-            UpdateShoppingCartUI();
-            return;
-        }
-
         Debug.Log($"ComputerInteractable: Delivering {itemsToDeliver.Count} item instances to inventory.");
 
         bool anyFailedToAdd = false;
@@ -615,12 +584,11 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
          if (!anyFailedToAdd)
          {
              Debug.Log("ComputerInteractable: All purchased item instances successfully delivered.");
-             PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Your order has been placed!"); // Changed text for success
          }
          else
          {
              Debug.LogWarning("ComputerInteractable: Some purchased item instances could not be delivered.", this);
-             PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Some items could not be delivered! Inventory might be full."); // Changed text for partial success
+             PlayerUIPopups.Instance?.ShowPopup("ToolbarPopup", "Some items could not be delivered! Inventory might be full."); // Changed text for partial success
          }
 
         shoppingCart.Clear();
@@ -660,7 +628,7 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
             // This is equivalent to calling OnPanelDeactivated() then OnPanelActivated()
             OnPanelActivated(); 
             
-            PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", $"New {unlockedUpgrade.upgradeName} items are now available!");
+            PlayerUIPopups.Instance?.ShowPopup("ToolbarPopup", $"New {unlockedUpgrade.upgradeName} items are now available!");
         }
     }
 

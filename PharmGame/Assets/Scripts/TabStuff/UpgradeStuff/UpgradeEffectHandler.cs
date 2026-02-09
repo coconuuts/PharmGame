@@ -166,21 +166,17 @@ public class UpgradeEffectHandler : MonoBehaviour
         // {
         //     Debug.Log($"UpgradeEffectHandler: Cannot afford '{upgradeDetails.upgradeName}'. Cost: {upgradeDetails.cost}");
         //     // Show player feedback (e.g., "Not enough money!")
-        //     // PlayerUIPopups.Instance?.ShowPopup("Purchase Failed", "Not enough money!");
+        //     // PlayerUIPopups.Instance?.ShowPopup("ToolbarPopup", "Not enough money!");
         //     return; // Abort purchase
         // }
         // if (upgradeManager.IsUpgradePurchased(upgradeDetails)) // Check if already purchased (for one-time upgrades)
         // {
         //      Debug.Log($"UpgradeEffectHandler: Upgrade '{upgradeDetails.upgradeName}' already purchased.");
-        //      // Show player feedback (e.g., "Already owned!")
-        //      // PlayerUIPopups.Instance?.ShowPopup("Purchase Failed", "Already owned!");
         //      return; // Abort purchase
         // }
         // if (!DeductCurrency(upgradeDetails.cost)) // Implement your currency deduction logic
         // {
         //      Debug.LogError("UpgradeEffectHandler: Failed to deduct currency after CanAfford check passed. Logic error?");
-        //      // Show player feedback (e.g., "An error occurred!")
-        //      // PlayerUIPopups.Instance?.ShowPopup("Purchase Failed", "An error occurred!");
         //      return; // Abort purchase
         // }
 
@@ -240,15 +236,10 @@ public class UpgradeEffectHandler : MonoBehaviour
         if (effectHandledOrPending)
         {
             // Show success popup (optional, depends on your UI flow)
-            // Systems.UI.PlayerUIPopups.Instance?.ShowPopup("Upgrade Purchased!", $"'{upgradeDetails.upgradeName}' purchased!"); // Text might change depending on immediate/delayed effect
+            // PlayerUIPopups.Instance?.ShowPopup("ToolbarPopup", $"'{upgradeDetails.upgradeName}' purchased!");
 
             // Call the UpgradeManager to mark this upgrade as purchased
             upgradeManager.MarkUpgradeAsPurchased(upgradeDetails); // This still happens immediately
-        }
-        else
-        {
-             // Show failure popup if no effect handler was found (optional)
-             // Systems.UI.PlayerUIPopups.Instance?.ShowPopup("Purchase Failed", $"Could not find effect handler for '{upgradeDetails.upgradeName}'.");
         }
     }
 
@@ -292,8 +283,7 @@ public class UpgradeEffectHandler : MonoBehaviour
             isHireCashierEffectPending = false;
             Debug.Log($"UpgradeEffectHandler on {gameObject.name}: 'Hire Cashier' effect applied and pending flag reset.");
 
-            // Optional: Show player feedback that the hired cashier is now available
-             // Systems.UI.PlayerUIPopups.Instance?.ShowPopup("New Employee!", "Your new cashier is ready to start work!");
+            PlayerUIPopups.Instance?.ShowPopup("ToolbarPopup", "Your new cashier is ready to start work!");
         }
 
         // Add checks for other potential delayed effects here if needed in the future

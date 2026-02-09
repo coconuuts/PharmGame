@@ -407,8 +407,6 @@ public class UpgradePanelHandler : MonoBehaviour, IPanelActivatable
         if (currentDetailUpgrade == null)
         {
             Debug.LogWarning($"UpgradePanelHandler on {gameObject.name}: 'Buy' clicked, but no upgrade is currently displayed in the detail area.", this);
-            // Optionally provide player feedback here (e.g., a popup)
-             // Systems.UI.PlayerUIPopups.Instance?.ShowPopup("Purchase Failed", "No upgrade selected!");
             return;
         }
 
@@ -423,8 +421,6 @@ public class UpgradePanelHandler : MonoBehaviour, IPanelActivatable
         else
         {
             Debug.LogError($"UpgradePanelHandler on {gameObject.name}: UpgradeManager reference is null! Cannot trigger purchase event.", this);
-            // Optionally provide player feedback here (e.g., a popup)
-             // Systems.UI.PlayerUIPopups.Instance?.ShowPopup("Purchase Failed", "Upgrade system error!");
         }
 
         // IMPORTANT: Update button states immediately after the attempt.

@@ -434,7 +434,6 @@ public class PrescOrdersPanelHandler : MonoBehaviour, IPanelActivatable
         }
         if (!currentDetailOrder.HasValue)
         {
-            PlayerUIPopups.Instance?.ShowPopup("Cannot Set Task", "No order selected.");
             return;
         }
         playerPrescriptionTracker.SetActiveOrder(currentDetailOrder.Value);
@@ -452,7 +451,6 @@ public class PrescOrdersPanelHandler : MonoBehaviour, IPanelActivatable
         }
         if (!playerPrescriptionTracker.ActivePrescriptionOrder.HasValue)
         {
-            PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "No active order to mark ready.");
             return;
         }
 
@@ -460,7 +458,6 @@ public class PrescOrdersPanelHandler : MonoBehaviour, IPanelActivatable
         ItemDetails expectedItemDetails = prescriptionManager?.GetExpectedOutputItemDetails(activeOrder);
         if (expectedItemDetails == null)
         {
-            PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Could not validate item.");
             return;
         }
 
@@ -468,7 +465,6 @@ public class PrescOrdersPanelHandler : MonoBehaviour, IPanelActivatable
         Inventory playerInventory = playerToolbarGO?.GetComponent<Inventory>();
         if (playerInventory?.Combiner?.InventoryState == null)
         {
-            PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "Player inventory not accessible.");
             return;
         }
 
@@ -491,11 +487,11 @@ public class PrescOrdersPanelHandler : MonoBehaviour, IPanelActivatable
         {
             prescriptionManager.MarkOrderReady(activeOrder);
             playerPrescriptionTracker.ClearActiveOrder();
-            PlayerUIPopups.Instance?.ShowPopup("Order Ready", $"Prescription for {activeOrder.patientName} is ready for delivery!");
+            Debug.Log($"Prescription for {activeOrder.patientName} is ready for delivery!");
         }
         else
         {
-            PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", $"I don't have the crafted prescription for {activeOrder.patientName}!");
+            PlayerUIPopups.Instance?.ShowPopup("ToolbarPopup", $"I don't have the prescription for {activeOrder.patientName}!");
         }
     }
 

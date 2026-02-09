@@ -308,7 +308,7 @@ namespace Systems.Inventory
                         Debug.Log($"DragAndDropManager: Item '{itemBeingDragged.details?.Name ?? "Unknown"}' is not allowed in target inventory '{targetInventory.Id}' due to filtering. Returning to source.");
                         ReturnItemToSource(); // Item returned to its original spot
                         dropSuccessfullyProcessed = true; // Drop process handled (by returning to source)
-                        PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", "This item cannot go in that inventory.");
+                        PlayerUIPopups.Instance?.ShowPopup("ToolbarPopup", "This item cannot go in that inventory.");
                     }
                     else
                     {
@@ -383,7 +383,6 @@ namespace Systems.Inventory
                                      Debug.Log($"DragAndDropManager: Cannot swap. Target item '{targetItemInSlot.details?.Name ?? "Unknown"}' is not allowed in source inventory '{sourceInventory.Id}' due to filtering. Returning dragged item to source.");
                                      ReturnItemToSource(); // Dragged item goes back
                                      dropSuccessfullyProcessed = true; // Drop process handled
-                                     PlayerUIPopups.Instance?.ShowPopup("Cannot Swap", "Item in target won't fit in source."); // Refined message
                                      goto EndDragCleanup; // Skip further processing for this drop attempt
                                 }
                                 // --- Filtering check for swap passed ---
@@ -443,7 +442,6 @@ namespace Systems.Inventory
                                 {
                                     // itemBeingDragged.quantity reflects the remainder that couldn't be added back.
                                     Debug.LogError($"DragAndDropManager: Failed to return remaining quantity ({itemBeingDragged.quantity}) of '{itemBeingDragged.details.Name}' to source inventory '{sourceInventory.Id}'. Source inventory is likely full. Item is LOST!", this);
-                                    PlayerUIPopups.Instance?.ShowPopup("Return Failed", "Could not return item to source!");
                                     // The item instance with the remaining quantity is effectively lost from the UI/data.
                                 }
 
@@ -616,7 +614,6 @@ namespace Systems.Inventory
                   {
                       // itemBeingDragged.quantity reflects the remainder that couldn't be added back.
                       Debug.LogError($"DragAndDropManager: Failed to return remaining quantity ({itemBeingDragged.quantity}) of '{itemBeingDragged.details.Name}' to source inventory '{sourceInventory.Id}'. Source inventory is likely full. Item is LOST!", this);
-                      PlayerUIPopups.Instance?.ShowPopup("Return Failed", "Could not return item to source!");
                       // The item instance with the remaining quantity is effectively lost from the UI/data.
                   }
              }

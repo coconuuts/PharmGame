@@ -694,6 +694,10 @@ PrefabInstance:
       propertyPath: m_AnchoredPosition.y
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 2506893108741231547, guid: 8202459e60c16e64a96afbd191a02aa8, type: 3}
+      propertyPath: m_Name
+      value: ToolbarPopup
+      objectReference: {fileID: 0}
     - target: {fileID: 2561829468947394361, guid: 8202459e60c16e64a96afbd191a02aa8, type: 3}
       propertyPath: m_AnchorMax.y
       value: 0
@@ -1780,6 +1784,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 478766663832196224, guid: 0e600044bae2d5d42ba4d89d7781d783, type: 3}
+      propertyPath: popups.Array.data[1].popupName
+      value: ToolbarPopup
+      objectReference: {fileID: 0}
     - target: {fileID: 478766663832196224, guid: 0e600044bae2d5d42ba4d89d7781d783, type: 3}
       propertyPath: popups.Array.data[0].rootObject
       value: 

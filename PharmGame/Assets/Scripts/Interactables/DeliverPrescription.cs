@@ -122,19 +122,16 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
                       npcHasOrder = runner.hasPendingPrescriptionTransient; // Check the flag
                  } else {
                      Debug.LogWarning($"{gameObject.name}: Interact: Runner is TI but TiData is null or Runner is null! Cannot access assigned order data.", this);
-                     PlayerUIPopups.Instance?.ShowPopup("Delivery Failed", "NPC data error."); // Provide feedback
                      return null;
                  }
             } else {
                  Debug.LogError($"{gameObject.name}: Interact: Runner component is null! Cannot access assigned order data.", this);
-                 PlayerUIPopups.Instance?.ShowPopup("Delivery Failed", "NPC data error."); // Provide feedback
                  return null;
             }
 
             if (!npcHasOrder)
             {
                  Debug.LogWarning($"{gameObject.name}: Interact called, but NPC does not have a pending prescription flag! Cannot deliver.", this);
-                 PlayerUIPopups.Instance?.ShowPopup("Delivery Failed", "This customer has no order."); // Provide feedback
                  return null;
             }
             Debug.Log($"{gameObject.name}: NPC has assigned order for '{npcAssignedOrder.prescribedDrug}' (Patient: '{npcAssignedOrder.patientName}').", this);
@@ -151,7 +148,6 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
             if (playerTracker == null)
             {
                  Debug.LogError($"{gameObject.name}: PlayerPrescriptionTracker not found! Cannot check player's active order.", this);
-                 PlayerUIPopups.Instance?.ShowPopup("Delivery Failed", "Player data error."); // Provide feedback
                  return null;
             }
 
@@ -162,7 +158,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
             if (!playerActiveOrder.HasValue || !playerActiveOrder.Value.Equals(npcAssignedOrder)) // Assuming PrescriptionOrder.Equals or == override
             {
                  Debug.LogWarning($"{gameObject.name}: Player's active order does not match NPC's assigned order. Player Active: {(playerActiveOrder.HasValue ? playerActiveOrder.Value.patientName : "None")}, NPC Assigned: {npcAssignedOrder.patientName}.", this);
-                 PlayerUIPopups.Instance?.ShowPopup("Cannot Deliver", $"This isn't the order I asked for!"); // Provide feedback
+                 PlayerUIPopups.Instance?.ShowPopup("ToolbarPopup", $"This isn't the order I asked for!"); // Provide feedback
                  return null;
             }
             Debug.Log($"{gameObject.name}: Player's active order matches NPC's assigned order ({npcAssignedOrder.patientName}). Proceeding with delivery check.", this);
@@ -173,7 +169,6 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
             if (prescriptionManager == null)
             {
                  Debug.LogError($"{gameObject.name}: PrescriptionManager.Instance is null! Cannot validate delivery item or check ready status.", this);
-                 PlayerUIPopups.Instance?.ShowPopup("Error", "Prescription manager not found."); // Provide feedback
                  return null;
             }
 
@@ -208,7 +203,6 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
                 if (npcInventory == null)
                 {
                     Debug.LogError($"DeliverPrescription ({gameObject.name}): NPC GameObject is missing an Inventory component! Cannot transfer item.", this);
-                    PlayerUIPopups.Instance?.ShowPopup("Delivery Failed", "NPC cannot receive items."); // Provide feedback
                     return null; // Cannot proceed without NPC inventory
                 }
                 Debug.Log($"DeliverPrescription ({gameObject.name}): Found NPC Inventory component.", this);
@@ -219,7 +213,6 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
                 if (expectedItemDetails == null)
                 {
                      Debug.LogError($"{gameObject.name}: Could not get expected ItemDetails from PrescriptionManager for drug '{npcAssignedOrder.prescribedDrug}'. Mapping missing or invalid?", this);
-                     PlayerUIPopups.Instance?.ShowPopup("Delivery Failed", "Could not validate item."); // Provide feedback
                      return null; // Cannot validate, interaction fails
                 }
                 Debug.Log($"{gameObject.name}: Expected delivery item: '{expectedItemDetails.Name}' with label '{expectedItemDetails.itemLabel}'.");
@@ -237,7 +230,6 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
                 if (playerInventory?.Combiner?.InventoryState == null)
                 {
                      Debug.LogError($"{gameObject.name}: Player Toolbar Inventory or its Combiner/State not found! Cannot check inventory.", this);
-                     PlayerUIPopups.Instance?.ShowPopup("Delivery Failed", "Player inventory not accessible."); // Provide feedback
                      return null; // Cannot check inventory, interaction fails
                 }
                 Debug.Log($"{gameObject.name}: Found Player Toolbar Inventory.");
@@ -310,25 +302,23 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
                     if (npcInventory.Combiner?.InventoryState == null)
                     {
                         Debug.LogError($"DeliverPrescription ({gameObject.name}): NPC Inventory Combiner or State is null! Cannot transfer item.", this);
-                        PlayerUIPopups.Instance?.ShowPopup("Delivery Failed", "NPC cannot receive items."); // Provide feedback
                         return null; // Cannot proceed
                     }
 
                     // --- Remove Specific Instance from Player ---
-                    Debug.Log($"DeliverPrescription ({gameObject.name}): Attempting to remove specific item instance (ID: {deliveredItemInstance.Id}, Tag: '{deliveredItemInstance.patientNameTag ?? "NULL"}') from player inventory.", this); // <-- MODIFIED LOG
+                    Debug.Log($"DeliverPrescription ({gameObject.name}): Attempting to remove specific item instance (ID: {deliveredItemInstance.Id}, Tag: '{deliveredItemInstance.patientNameTag ?? "NULL"}') from player inventory.", this); 
                     // Replace TryRemoveQuantity with TryRemove on the ObservableArray
                     bool removedFromPlayer = playerInventory.Combiner.InventoryState.TryRemove(deliveredItemInstance);
 
                     if (!removedFromPlayer)
                     {
                         // This should ideally not happen if we just found the item, but defensive check.
-                        Debug.LogError($"{gameObject.name}: CRITICAL ERROR: Failed to remove specific item instance (ID: {deliveredItemInstance.Id}, Tag: '{deliveredItemInstance.patientNameTag ?? "NULL"}') from player inventory after finding it! Item may be duplicated or state corrupted.", this); // <-- MODIFIED LOG
-                        PlayerUIPopups.Instance?.ShowPopup("Delivery Failed", "Inventory error."); // Provide feedback
+                        Debug.LogError($"{gameObject.name}: CRITICAL ERROR: Failed to remove specific item instance (ID: {deliveredItemInstance.Id}, Tag: '{deliveredItemInstance.patientNameTag ?? "NULL"}') from player inventory after finding it! Item may be duplicated or state corrupted.", this); 
                         return null; // Indicate critical failure
                     }
 
                     // --- Add Specific Instance to NPC ---
-                    Debug.Log($"DeliverPrescription ({gameObject.name}): Attempting to add specific item instance (ID: {deliveredItemInstance.Id}, Tag: '{deliveredItemInstance.patientNameTag ?? "NULL"}') to NPC inventory '{npcInventory.Id}'.", this); // <-- MODIFIED LOG
+                    Debug.Log($"DeliverPrescription ({gameObject.name}): Attempting to add specific item instance (ID: {deliveredItemInstance.Id}, Tag: '{deliveredItemInstance.patientNameTag ?? "NULL"}') to NPC inventory '{npcInventory.Id}'.", this); 
                     // Use AddItem on the NPC inventory. For non-stackable, this calls AddSingleInstance.
                     bool addedToNPC = npcInventory.AddItem(deliveredItemInstance);
 
@@ -336,8 +326,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
                     if (!addedToNPC) // <--- Handle the case where addedToNPC is FALSE
                     {
                         // Handle the critical failure: item removed from player but not added to NPC
-                        Debug.LogError($"DeliverPrescription ({gameObject.name}): Failed to add item instance (ID: {deliveredItemInstance.Id}, Tag: '{deliveredItemInstance.patientNameTag ?? "NULL"}') to NPC inventory '{npcInventory.Id}' after removing it from player! Item might be lost.", this); // <-- MODIFIED LOG
-                        PlayerUIPopups.Instance?.ShowPopup("Delivery Failed", "NPC inventory full."); // Provide feedback
+                        Debug.LogError($"DeliverPrescription ({gameObject.name}): Failed to add item instance (ID: {deliveredItemInstance.Id}, Tag: '{deliveredItemInstance.patientNameTag ?? "NULL"}') to NPC inventory '{npcInventory.Id}' after removing it from player! Item might be lost.", this); 
                         // Optionally re-add item to player here if possible? Or trigger a more serious error state.
                         return null;
                     }
@@ -347,7 +336,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
                     {
                         // Apply penalty
                         payout *= imperfectDeliveryPayoutMultiplier;
-                        PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", $"Prescription not accurate! Payout reduced."); // Provide feedback
+                        PlayerUIPopups.Instance?.ShowPopup("ToolbarPopup", $"Prescription not accurate! Payout reduced."); // Provide feedback
                         Debug.Log($"Imperfect delivery to {npcAssignedOrder.patientName}. Payout: ${payout:F2} (Reduced).");
                     }
                 }
@@ -356,7 +345,7 @@ namespace Game.Interaction // Place in a suitable namespace, e.Interaction
                     // Item type/label/patient tag not found in inventory (deliveredItemInstance is null)
                     Debug.LogWarning($"{gameObject.name}: Correct delivery item type, label, OR patient tag not found in player inventory for patient '{requiredPatientName}'.", this); // <-- MODIFIED LOG
                     // Provide negative player feedback.
-                    PlayerUIPopups.Instance?.ShowPopup("Cannot Transfer", $"I don't have the prescription yet!"); // <-- MODIFIED POPUP MESSAGE
+                    PlayerUIPopups.Instance?.ShowPopup("ToolbarPopup", $"I don't have the prescription yet!"); 
 
                     // Return a failure InteractionResponse (null indicates no state change or complex action)
                     return null; // Interaction failed, do not proceed with delivery completion steps
