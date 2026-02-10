@@ -35,6 +35,13 @@ namespace Systems.UI
 
         private void OnEnable()
         {
+            // NEW: If we are returning from a Modal (like the Delete Confirmation), 
+            // do NOT reset the UI. This keeps the Save or Load menu open.
+            if (MenuManager.Instance != null && MenuManager.Instance.previousState == MenuManager.GameState.InModal)
+            {
+                return;
+            }
+
             ShowMainButtons();
         }
 

@@ -55,8 +55,18 @@ namespace Systems.UI
             UpdateDeleteButtonState();
         }
 
+        private void OnDisable()
+        {
+            if (MenuManager.Instance != null)
+            {
+                MenuManager.Instance.OnProcessEscape -= HandleEscapeInput;
+            }
+        }
+
         public void OpenMenu()
         {
+            UpdateDeleteButtonState();
+
             // 1. Swap Visibility: Show Save Menu, Hide Pause Menu
             menuRootObject.SetActive(true);
             if (pauseMenuPanel != null) pauseMenuPanel.SetActive(false);
@@ -172,10 +182,33 @@ namespace Systems.UI
         {
             if (string.IsNullOrEmpty(currentSelectedSaveName)) return;
             if (!SaveLoadSystem.HasInstance) return;
+            if (MenuManager.Instance == null) return;
 
-            SaveLoadSystem.Instance.DeleteGame(currentSelectedSaveName);
-            RefreshSaveList();
-            DeselectAll();
+            string saveIdToDelete = currentSelectedSaveName;
+            string displayName = "this save";
+
+            // Try to get a friendly name for the modal
+            var data = SaveLoadSystem.Instance.GetSaveDataReadOnly(saveIdToDelete);
+            if (data != null) displayName = $"'{data.Name}'";
+
+            // Open Confirmation Modal
+            MenuManager.Instance.ShowConfirmationModal(
+                $"Are you sure you want to delete {displayName}?",
+                () => 
+                {
+                    // YES Callback: Perform the delete
+                    if (SaveLoadSystem.HasInstance)
+                    {
+                        SaveLoadSystem.Instance.DeleteGame(saveIdToDelete);
+                        RefreshSaveList();
+                        DeselectAll();
+                    }
+                },
+                () => 
+                {
+                    DeselectAll();
+                }
+            );
         }
 
         private void DeselectAll()

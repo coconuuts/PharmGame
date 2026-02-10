@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using System.Collections.Generic;
 using Systems.Persistence;
 using Systems.GameStates; 
+using System; // Added for Action
 
 namespace Systems.UI
 {
@@ -23,6 +24,9 @@ namespace Systems.UI
         [SerializeField] private Button loadButton;
         [SerializeField] private Button deleteButton;
         [SerializeField] private Button closeButton; 
+
+        // New Event to notify listeners (like MainMenu) that we are done
+        public event Action OnMenuClosed;
 
         private string currentSelectedSaveId;
         private List<SaveSlotUI> instantiatedSlots = new List<SaveSlotUI>();
@@ -78,6 +82,9 @@ namespace Systems.UI
             }
 
             DeselectAll();
+
+            // Notify listeners that the menu has closed so they can refresh their state
+            OnMenuClosed?.Invoke();
         }
 
         private bool HandleEscapeInput()
@@ -127,10 +134,8 @@ namespace Systems.UI
             if (string.IsNullOrEmpty(currentSelectedSaveId)) return;
             if (!SaveLoadSystem.HasInstance) return;
 
-            // Loading initiates a scene change, so we don't strictly need to manage UI states after this
             SaveLoadSystem.Instance.LoadGame(currentSelectedSaveId);
 
-            // Cleanup if we are in the gameplay scene
             if (MenuManager.Instance != null)
             {
                 MenuManager.Instance.ClosePauseMenu();
@@ -142,9 +147,45 @@ namespace Systems.UI
             if (string.IsNullOrEmpty(currentSelectedSaveId)) return;
             if (!SaveLoadSystem.HasInstance) return;
 
-            SaveLoadSystem.Instance.DeleteGame(currentSelectedSaveId);
-            RefreshSaveList();
-            DeselectAll();
+            IModalManager modalManager = null;
+
+            if (MenuManager.Instance != null) 
+            {
+                modalManager = MenuManager.Instance;
+            }
+            else if (SimpleModalManager.Instance != null)
+            {
+                modalManager = SimpleModalManager.Instance;
+            }
+
+            if (modalManager == null) 
+            {
+                Debug.LogError("LoadGameMenuController: No IModalManager found.");
+                return;
+            }
+            
+            string saveIdToDelete = currentSelectedSaveId;
+            string displayName = "this save";
+
+            var data = SaveLoadSystem.Instance.GetSaveDataReadOnly(saveIdToDelete);
+            if (data != null) displayName = $"'{data.Name}'";
+
+            modalManager.ShowConfirmationModal(
+                $"Are you sure you want to delete {displayName}?",
+                () => 
+                {
+                    if (SaveLoadSystem.HasInstance)
+                    {
+                        SaveLoadSystem.Instance.DeleteGame(saveIdToDelete);
+                        RefreshSaveList();
+                        DeselectAll();
+                    }
+                },
+                () =>
+                {
+                    DeselectAll();
+                } 
+            );
         }
 
         private void DeselectAll()

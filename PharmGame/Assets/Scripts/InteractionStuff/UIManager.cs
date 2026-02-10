@@ -25,6 +25,9 @@ namespace Systems.UI
         [Header("Specific UI References")]
         [Tooltip("The GameObject root for the Pause Menu UI.")]
         [SerializeField] private GameObject pauseMenuUIRoot;
+        [Tooltip("The Modal Window UI Controller")]
+        [SerializeField] private ModalWindowUI modalWindowController; // <--- ADD THIS
+        [SerializeField] private GameObject modalUIRoot;
 
 
         private void Awake()
@@ -69,6 +72,7 @@ namespace Systems.UI
             if (playerUIRoot != null) playerUIRoot.SetActive(false);
             if (playerToolbarUIRoot != null) playerToolbarUIRoot.SetActive(false);
             if (pauseMenuUIRoot != null) pauseMenuUIRoot.SetActive(false);
+            if (modalUIRoot != null) modalUIRoot.SetActive(false);
             // Dynamic UIs should ideally be handled by exiting their state
         }
 
@@ -132,14 +136,20 @@ namespace Systems.UI
                     }
                     else Debug.LogWarning($"UIManager: Cannot process Crafting UI exit for {oldState} - no stored station or manager instance.");
                     break;
+                case MenuManager.GameState.InModal:
+                if (modalUIRoot != null) modalUIRoot.SetActive(false);
+                break;
 
                 case MenuManager.GameState.InPauseMenu:
                     // Deactivate Pause Menu UI
-                     if (pauseMenuUIRoot != null)
-                     {
-                         pauseMenuUIRoot.SetActive(false);
-                         Debug.Log("UIManager: Deactivated Pause Menu UI.");
-                     }
+                    if (newState != MenuManager.GameState.InModal) 
+                    {
+                        if (pauseMenuUIRoot != null)
+                        {
+                            pauseMenuUIRoot.SetActive(false);
+                            Debug.Log("UIManager: Deactivated Pause Menu UI.");
+                        }
+                    }
                     break;
 
                 case MenuManager.GameState.InMinigame:
@@ -200,6 +210,25 @@ namespace Systems.UI
                          }
                     }
                     break;
+                case MenuManager.GameState.InModal:
+            // Hide static UIs
+            if (playerUIRoot != null) playerUIRoot.SetActive(false);
+            if (playerToolbarUIRoot != null) playerToolbarUIRoot.SetActive(false);
+            
+            // Activate Modal
+            if (modalUIRoot != null && modalWindowController != null)
+            {
+                modalUIRoot.SetActive(true);
+                
+                // FIX: Use the 'response' parameter directly. 
+                // The MenuManager.Instance.CurrentModalResponse hasn't been set yet when this event fires.
+                if (response is ModalResponse modalResp)
+                {
+                    modalWindowController.Configure(modalResp);
+                }
+            }
+            Debug.Log("UIManager: Activated Modal UI.");
+            break;
 
                 case MenuManager.GameState.InMinigame:
                     Debug.Log($"UIManager: Entering InMinigame state.");

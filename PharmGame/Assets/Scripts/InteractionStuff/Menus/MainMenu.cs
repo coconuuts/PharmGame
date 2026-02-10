@@ -27,6 +27,7 @@ public class MainMenu : MonoBehaviour
         if (continueButton != null) continueButton.gameObject.SetActive(false);
         if (loadGameButton != null) loadGameButton.interactable = false;
     }
+
     private void Start()
     {
         if (newGameButton != null) newGameButton.onClick.AddListener(OnNewGameClicked);
@@ -34,12 +35,26 @@ public class MainMenu : MonoBehaviour
         if (loadGameButton != null) loadGameButton.onClick.AddListener(OnLoadGameClicked);
         if (quitButton != null) quitButton.onClick.AddListener(OnQuitClicked);
 
+        // Subscribe to the event so we refresh when coming back from the Load/Delete menu
+        if (loadMenuController != null)
+        {
+            loadMenuController.OnMenuClosed += RefreshMenuState;
+        }
+
         RefreshMenuState();
+    }
+
+    // Good practice to unsubscribe to prevent memory leaks or errors on scene destroy
+    private void OnDestroy()
+    {
+        if (loadMenuController != null)
+        {
+            loadMenuController.OnMenuClosed -= RefreshMenuState;
+        }
     }
 
     private void OnEnable()
     {
-        // Ensure state is correct if we return to this menu from a sub-menu
         RefreshMenuState();
     }
 
@@ -47,22 +62,21 @@ public class MainMenu : MonoBehaviour
     {
         bool hasSaves = false;
 
-        // Use HasInstance to avoid creating the singleton if it doesn't exist yet (though it should)
         if (SaveLoadSystem.HasInstance)
         {
             var saves = SaveLoadSystem.Instance.GetAllSaves();
             hasSaves = saves.Any();
         }
 
-        // Apply state: Enable/Show only if we found saves
-        if (continueButton != null && hasSaves) 
+        // Apply state: Set visibility/interactivity based on hasSaves (True OR False)
+        if (continueButton != null) 
         {
-            continueButton.gameObject.SetActive(true);
+            continueButton.gameObject.SetActive(hasSaves);
         }
 
-        if (loadGameButton != null && hasSaves)
+        if (loadGameButton != null)
         {
-            loadGameButton.interactable = true;
+            loadGameButton.interactable = hasSaves;
         }
     }
     
@@ -71,13 +85,21 @@ public class MainMenu : MonoBehaviour
         // Check for Escape key press
         if (Input.GetKeyDown(KeyCode.Escape))
         {
+            // 1. Priority Check: Is the Modal Open?
+            // If a modal is active (like the Delete Confirmation), we let the ModalWindowUI handle the input.
+            // We do NOT want to close the Load Menu underneath it.
+            if (SimpleModalManager.Instance != null && SimpleModalManager.Instance.IsModalActive)
+            {
+                return;
+            }
+
+            // 2. Sub-menu Check
             // If the Main Buttons are hidden, it means we are in a sub-menu (like Load Game)
             if (mainButtonsPanel != null && !mainButtonsPanel.activeSelf)
             {
-                // If the Load Menu controller is assigned, tell it to close.
-                // This will re-enable the mainButtonsPanel automatically via its CloseMenu logic.
                 if (loadMenuController != null)
                 {
+                    // This calls CloseMenu(), which fires OnMenuClosed, which triggers RefreshMenuState()
                     loadMenuController.CloseMenu();
                 }
             }
@@ -86,15 +108,12 @@ public class MainMenu : MonoBehaviour
 
     private void OnNewGameClicked()
     {
-        // 1. Reset the data ONLY (Do not load scene yet)
         SaveLoadSystem.Instance.ResetGameData();
 
-        // 2. Find the SceneLoader and use it to load the group with the loading screen
         SceneLoader loader = FindFirstObjectByType<SceneLoader>();
         
         if (loader != null)
         {
-            // We use an async wrapper or just fire-and-forget here
             LoadGameScene(loader);
         }
         else
@@ -106,7 +125,6 @@ public class MainMenu : MonoBehaviour
 
     private async void LoadGameScene(SceneLoader loader)
     {
-        // This triggers the loading screen, progress bar, and additive loading
         await loader.LoadSceneGroup(gameSceneGroupIndex);
     }
 

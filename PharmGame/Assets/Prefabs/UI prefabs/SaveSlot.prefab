@@ -274,4 +274,4 @@ MonoBehaviour:
   button: {fileID: 5703331127065136298}
   backgroundImage: {fileID: 0}
   normalColor: {r: 1, g: 1, b: 1, a: 0.5}
-  selectedColor: {r: 0.5, g: 1, b: 0.5, a: 1}
+  selectedColor: {r: 0.5683072, g: 0.9339623, b: 0.6686073, a: 1}

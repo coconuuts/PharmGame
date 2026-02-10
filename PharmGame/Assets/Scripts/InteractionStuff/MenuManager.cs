@@ -1,6 +1,3 @@
-// Systems/GameStates/MenuManager.cs
-// Keep existing usings and namespace
-
 using UnityEngine;
 using System;
 using System.Collections.Generic;
@@ -18,7 +15,7 @@ using Systems.Persistence;
 
 namespace Systems.GameStates
 {
-    public class MenuManager : MonoBehaviour
+    public class MenuManager : MonoBehaviour, IModalManager
     {
         public static MenuManager Instance;
 
@@ -29,7 +26,8 @@ namespace Systems.GameStates
             InPauseMenu,
             InComputer,
             InMinigame, // This state is generic for ALL minigames 
-            InCrafting  // This state represents the crafting *UI* state, NOT the crafting minigame
+            InCrafting,  // This state represents the crafting *UI* state, NOT the crafting minigame
+            InModal
         }
 
         public GameState currentState = GameState.Playing;
@@ -69,6 +67,8 @@ namespace Systems.GameStates
         public CraftingStation CurrentCraftingStation => currentCraftingStation_internal;
         public CraftingMinigameBase CurrentActiveCraftingMinigame => currentActiveCraftingMinigame_internal;
         public IMinigame CurrentActiveGeneralMinigame => currentActiveGeneralMinigame_internal;
+        private ModalResponse currentModalResponse_internal;
+        public ModalResponse CurrentModalResponse => currentModalResponse_internal;
 
 
         [Header("Game State Configuration")]
@@ -339,15 +339,19 @@ namespace Systems.GameStates
                 currentActiveGeneralMinigame_internal = null;
             }
 
-            // --- Trigger the OnStateChanged event AFTER exit actions and specific exit logic ---
+
+            // --- UPDATE STATE VARIABLES *BEFORE* INVOKING EVENT ---
+            // This ensures that listeners (like PauseMenuController) checking 'previousState' 
+            // inside the event handler see the correct, up-to-date values.
+            previousState = oldState;
+            currentState = newState;
+            Debug.Log($"Menu State: Transitioning from {oldState} to {currentState}.");
+
+            // --- Trigger the OnStateChanged event ---
             OnStateChanged?.Invoke(newState, oldState, response);
 
 
-            // --- NOW Update the internal state and references for the NEW state ---
-            previousState = oldState;
-            currentState = newState; // Change the current state here
-            Debug.Log($"Menu State: Transitioning from {oldState} to {currentState}.");
-
+            // --- NOW Update the internal dynamic references for the NEW state ---
             // Clear old dynamic references and set new ones based on the response or previous state context.
             // Note: Some references (like CraftingStation) persist across certain state changes (Crafting <-> Minigame <-> Pause).
             // They are cleared explicitly when exiting the whole flow (e.g., Crafting -> Playing).
@@ -408,6 +412,18 @@ namespace Systems.GameStates
                  currentActiveCraftingMinigame_internal = null;
                  currentActiveGeneralMinigame_internal = null;
              }
+             else if (response is ModalResponse modalResponse)
+            {
+                currentModalResponse_internal = modalResponse;
+                // Clear other refs
+                currentActiveUIRoot_internal = null;
+                currentOpenInventoryComponent_internal = null; 
+                currentComputerInteractable_internal = null;
+                currentCashRegisterInteractable_internal = null;
+                currentCraftingStation_internal = null;
+                currentActiveCraftingMinigame_internal = null;
+                currentActiveGeneralMinigame_internal = null;
+            }
              else // Response is null or a type that doesn't set a modal reference
              {
                  // Explicitly clear references based on the NEW state we are entering,
@@ -572,9 +588,61 @@ namespace Systems.GameStates
         public void ClosePauseMenu()
         {
              // When exiting PauseMenu via a dedicated button, return to the state it was in BEFORE PauseMenu.
-             // Use previousState, but prevent infinite loops or returning to states that shouldn't be returned to directly.
-             GameState stateAfterPause = (previousState == GameState.InPauseMenu || previousState == GameState.Playing) ? GameState.Playing : previousState;
+             
+             // FIX: We need to handle the case where a Modal (like Delete Confirmation) updated 'previousState'.
+             // If previousState is InModal, we should not return to it, but default to Playing.
+             // Since OpenPauseMenu currently restricts entry to only from 'Playing', defaulting to Playing is safe.
+             
+             GameState stateAfterPause;
+
+             if (previousState == GameState.InModal || previousState == GameState.InPauseMenu)
+             {
+                 stateAfterPause = GameState.Playing;
+             }
+             else
+             {
+                 stateAfterPause = (previousState == GameState.InPauseMenu || previousState == GameState.Playing) ? GameState.Playing : previousState;
+             }
+
              SetState(stateAfterPause, null);
         }
+
+        public void ShowInfoModal(string text, Action onOkay = null)
+{
+    Action wrappedAction = () => {
+        onOkay?.Invoke();
+        CloseModal();
+    };
+    
+    var response = new ModalResponse(text, wrappedAction);
+    SetState(GameState.InModal, response);
+}
+
+public void ShowConfirmationModal(string text, Action onYes, Action onCancel = null)
+{
+    Action wrappedYes = () => {
+        onYes?.Invoke();
+        CloseModal();
+    };
+
+    Action wrappedCancel = () => {
+        onCancel?.Invoke();
+        CloseModal();
+    };
+
+    var response = new ModalResponse(text, wrappedYes, wrappedCancel);
+    SetState(GameState.InModal, response);
+}
+
+public void CloseModal()
+{
+    if (currentState == GameState.InModal)
+    {
+        // Return to the previous state.
+        // Logic to ensure we don't go back to a broken state
+        GameState returnState = (previousState == GameState.InModal) ? GameState.Playing : previousState;
+        SetState(returnState, null);
+    }
+}
     }
 }

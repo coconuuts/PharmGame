@@ -187,6 +187,7 @@ GameObject:
   - component: {fileID: 4674390208216646519}
   - component: {fileID: 2743681112559031145}
   - component: {fileID: 6721249625813550792}
+  - component: {fileID: 6841589758017874309}
   m_Layer: 0
   m_Name: GameManagers
   m_TagString: Untagged
@@ -202,7 +203,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 6922680644787167554}
   serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
@@ -268,7 +269,7 @@ MonoBehaviour:
     textComponent: {fileID: 0}
     isTimed: 0
     duration: 0
-  - popupName: Cannot Transfer
+  - popupName: ToolbarPopup
     rootObject: {fileID: 0}
     textComponent: {fileID: 0}
     isTimed: 1
@@ -358,3 +359,19 @@ MonoBehaviour:
   playerMoneyWallet: {fileID: 11400000, guid: 0da4e5bcdbaba62458dd35bf846772e6, type: 2}
   playerUITag: PlayerUI
   moneyDisplayTMP: {fileID: 0}
+--- !u!114 &6841589758017874309
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6922680644787167554}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3c16e40de0cb07443aa7957c8a8af33d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  defaultTextPromptOffset: {x: 0, y: 0, z: 0}
+  defaultTextPromptRotationOffset: {x: 0, y: 0, z: 0}
+  screenSpaceNPCPrompt: {fileID: 0}
+  screenSpaceNPCText: {fileID: 0}
