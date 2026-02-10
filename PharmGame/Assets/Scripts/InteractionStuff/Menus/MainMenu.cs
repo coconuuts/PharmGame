@@ -9,6 +9,9 @@ public class MainMenu : MonoBehaviour
 {
     [Header("UI Panels")]
     [SerializeField] private GameObject mainButtonsPanel;
+
+    [Header("New Game Setup")]
+    [SerializeField] private NameInputWindowUI nameInputWindow;
     
     [Header("Buttons")]
     [SerializeField] private Button newGameButton;
@@ -86,20 +89,25 @@ public class MainMenu : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.Escape))
         {
             // 1. Priority Check: Is the Modal Open?
-            // If a modal is active (like the Delete Confirmation), we let the ModalWindowUI handle the input.
-            // We do NOT want to close the Load Menu underneath it.
             if (SimpleModalManager.Instance != null && SimpleModalManager.Instance.IsModalActive)
             {
                 return;
             }
 
-            // 2. Sub-menu Check
+            // 2. Name Input Check
+            // If the Name Input window is open, let IT handle the input (via its own Update loop).
+            // We return here to prevent the Main Menu from processing the key press.
+            if (nameInputWindow != null && nameInputWindow.IsActive)
+            {
+                return;
+            }
+
+            // 3. Sub-menu Check
             // If the Main Buttons are hidden, it means we are in a sub-menu (like Load Game)
             if (mainButtonsPanel != null && !mainButtonsPanel.activeSelf)
             {
                 if (loadMenuController != null)
                 {
-                    // This calls CloseMenu(), which fires OnMenuClosed, which triggers RefreshMenuState()
                     loadMenuController.CloseMenu();
                 }
             }
@@ -108,8 +116,43 @@ public class MainMenu : MonoBehaviour
 
     private void OnNewGameClicked()
     {
+        // Check if we have the window assigned
+        if (nameInputWindow != null)
+        {
+            // Hide main buttons so UI isn't cluttered
+            if (mainButtonsPanel != null) mainButtonsPanel.SetActive(false);
+
+            // Open the Name Input Window
+            nameInputWindow.Show(
+                onConfirm: (characterName) => 
+                {
+                    // User confirmed name -> Start the game
+                    StartNewGameProcess(characterName);
+                },
+                onCancel: () => 
+                {
+                    // User cancelled -> Show main buttons again
+                    if (mainButtonsPanel != null) mainButtonsPanel.SetActive(true);
+                }
+            );
+        }
+        else
+        {
+            // Fallback if UI isn't assigned
+            Debug.LogWarning("MainMenu: NameInputWindowUI not assigned! using default.");
+            StartNewGameProcess("Player"); 
+        }
+    }
+
+    private void StartNewGameProcess(string characterName)
+    {
+        // 1. Reset Data
         SaveLoadSystem.Instance.ResetGameData();
 
+        // 2. Set the custom name
+        SaveLoadSystem.Instance.gameData.CharacterName = characterName;
+
+        // 3. Load the Scene
         SceneLoader loader = FindFirstObjectByType<SceneLoader>();
         
         if (loader != null)
@@ -121,6 +164,9 @@ public class MainMenu : MonoBehaviour
             Debug.LogError("SceneLoader not found! Falling back to instant load.");
             SaveLoadSystem.Instance.NewGame();
         }
+
+        // 4. Create the initial Autosave immediately
+        SaveLoadSystem.Instance.AutosaveGame();
     }
 
     private async void LoadGameScene(SceneLoader loader)

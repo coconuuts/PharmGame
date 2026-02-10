@@ -84,7 +84,7 @@ namespace Systems.UI
                 if (saveNameInput != null) 
                 {
                     saveNameInput.text = SaveLoadSystem.Instance.GetFormattedRealPlaytime();
-                    saveNameInput.interactable = false; 
+                    saveNameInput.readOnly = true;
                 }
             }
 

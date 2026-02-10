@@ -15,6 +15,7 @@ namespace Systems.Persistence {
     { 
         public SerializableGuid Id { get; set; } = SerializableGuid.Empty;
         public string Name;
+        public string CharacterName;
         public string CurrentLevelName;
         public PlayerData playerData;
         public List<InventoryData> inventories;
@@ -36,6 +37,7 @@ namespace Systems.Persistence {
         public GameData()
         {
             Name = "New Game";
+            CharacterName = "Player";
             CurrentLevelName = "SampleScene";
             PlayerCleanMoney = 0;
             PlayerDirtyMoney = 0;
@@ -213,6 +215,7 @@ namespace Systems.Persistence {
             // 1. Create Fresh Data
             gameData = new GameData {
                 Name = "New Game",
+                CharacterName = "Player",
                 CurrentLevelName = "SampleScene", 
                 
                 // Defaults
@@ -257,6 +260,16 @@ namespace Systems.Persistence {
                 }
                 entity.Bind(data);
             }
+        }
+
+        /// <summary>
+        /// Creates a new save file with the "Autosave" prefix.
+        /// Generates a new ID to ensure it creates a separate entry in the history.
+        /// </summary>
+        public void AutosaveGame()
+        {
+            gameData.Id = SerializableGuid.NewGuid();
+            SaveGame("Autosave");
         }
         
         public void SaveGame(string saveType = "Save")
