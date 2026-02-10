@@ -1,156 +1,107 @@
 using UnityEngine;
 using UnityEngine.UI;
 using Systems.Persistence;
-using System.Linq;
 using Systems.SceneManagement;
 using Systems.UI;
+using System.Linq; // Added for sanity checks
 
 public class MainMenu : MonoBehaviour
 {
     [Header("UI Panels")]
     [SerializeField] private GameObject mainButtonsPanel;
 
-    [Header("New Game Setup")]
+    [Header("Sub Menus")]
     [SerializeField] private NameInputWindowUI nameInputWindow;
-    
+    [SerializeField] private ProfileSelectionMenuController profileSelectionMenu; // NEW
+
     [Header("Buttons")]
-    [SerializeField] private Button newGameButton;
-    [SerializeField] private Button continueButton; 
-    [SerializeField] private Button loadGameButton;
+    [SerializeField] private Button playButton; // Replaces New/Continue/Load
     [SerializeField] private Button quitButton;
 
-    [Header("Controllers")]
-    [SerializeField] private LoadGameMenuController loadMenuController;
+    // Remove old LoadMenuController reference if it's only used for the old Load button
+    // [SerializeField] private LoadGameMenuController loadMenuController; 
 
     [Header("Scene Configuration")] 
     [SerializeField] private int gameSceneGroupIndex = 1; 
 
-    private void Awake()
-    {
-        if (continueButton != null) continueButton.gameObject.SetActive(false);
-        if (loadGameButton != null) loadGameButton.interactable = false;
-    }
-
     private void Start()
     {
-        if (newGameButton != null) newGameButton.onClick.AddListener(OnNewGameClicked);
-        if (continueButton != null) continueButton.onClick.AddListener(OnContinueClicked);
-        if (loadGameButton != null) loadGameButton.onClick.AddListener(OnLoadGameClicked);
+        if (playButton != null) playButton.onClick.AddListener(OnPlayClicked);
         if (quitButton != null) quitButton.onClick.AddListener(OnQuitClicked);
 
-        // Subscribe to the event so we refresh when coming back from the Load/Delete menu
-        if (loadMenuController != null)
+        // Setup Profile Selection Events
+        if (profileSelectionMenu != null)
         {
-            loadMenuController.OnMenuClosed += RefreshMenuState;
+            profileSelectionMenu.OnProfileSelected += HandleProfileSelection;
+            profileSelectionMenu.OnBackClicked += OnBackFromProfileMenu;
+            profileSelectionMenu.CloseMenu(); // Ensure closed at start
         }
 
-        RefreshMenuState();
+        // Initially show main buttons
+        if (mainButtonsPanel != null) mainButtonsPanel.SetActive(true);
     }
 
-    // Good practice to unsubscribe to prevent memory leaks or errors on scene destroy
     private void OnDestroy()
     {
-        if (loadMenuController != null)
+        if (profileSelectionMenu != null)
         {
-            loadMenuController.OnMenuClosed -= RefreshMenuState;
+            profileSelectionMenu.OnProfileSelected -= HandleProfileSelection;
+            profileSelectionMenu.OnBackClicked -= OnBackFromProfileMenu;
         }
     }
 
-    private void OnEnable()
+    private void OnPlayClicked()
     {
-        RefreshMenuState();
+        if (mainButtonsPanel != null) mainButtonsPanel.SetActive(false);
+        if (profileSelectionMenu != null) profileSelectionMenu.OpenMenu();
     }
 
-    private void RefreshMenuState()
+    private void OnBackFromProfileMenu()
     {
-        bool hasSaves = false;
-
-        if (SaveLoadSystem.HasInstance)
-        {
-            var saves = SaveLoadSystem.Instance.GetAllSaves();
-            hasSaves = saves.Any();
-        }
-
-        // Apply state: Set visibility/interactivity based on hasSaves (True OR False)
-        if (continueButton != null) 
-        {
-            continueButton.gameObject.SetActive(hasSaves);
-        }
-
-        if (loadGameButton != null)
-        {
-            loadGameButton.interactable = hasSaves;
-        }
+        if (profileSelectionMenu != null) profileSelectionMenu.CloseMenu();
+        if (mainButtonsPanel != null) mainButtonsPanel.SetActive(true);
     }
-    
-    private void Update()
+
+    private void HandleProfileSelection(int slotIndex, bool isNewGame, string saveId)
     {
-        // Check for Escape key press
-        if (Input.GetKeyDown(KeyCode.Escape))
+        if (isNewGame)
         {
-            // 1. Priority Check: Is the Modal Open?
-            if (SimpleModalManager.Instance != null && SimpleModalManager.Instance.IsModalActive)
+            // Flow: Slot Selected (Empty) -> Close Slot Menu -> Open Name Input -> Start Game
+            if (profileSelectionMenu != null) profileSelectionMenu.CloseMenu();
+            
+            // Open Name Input
+            if (nameInputWindow != null)
             {
-                return;
+                nameInputWindow.Show(
+                    onConfirm: (characterName) => StartNewGameProcess(slotIndex, characterName),
+                    onCancel: () => 
+                    {
+                        // Cancelled Name Input -> Return to Profile Menu
+                        if (profileSelectionMenu != null) profileSelectionMenu.OpenMenu();
+                    }
+                );
             }
-
-            // 2. Name Input Check
-            // If the Name Input window is open, let IT handle the input (via its own Update loop).
-            // We return here to prevent the Main Menu from processing the key press.
-            if (nameInputWindow != null && nameInputWindow.IsActive)
+            else
             {
-                return;
+                // Fallback
+                StartNewGameProcess(slotIndex, "Player");
             }
-
-            // 3. Sub-menu Check
-            // If the Main Buttons are hidden, it means we are in a sub-menu (like Load Game)
-            if (mainButtonsPanel != null && !mainButtonsPanel.activeSelf)
-            {
-                if (loadMenuController != null)
-                {
-                    loadMenuController.CloseMenu();
-                }
-            }
-        }
-    }
-
-    private void OnNewGameClicked()
-    {
-        // Check if we have the window assigned
-        if (nameInputWindow != null)
-        {
-            // Hide main buttons so UI isn't cluttered
-            if (mainButtonsPanel != null) mainButtonsPanel.SetActive(false);
-
-            // Open the Name Input Window
-            nameInputWindow.Show(
-                onConfirm: (characterName) => 
-                {
-                    // User confirmed name -> Start the game
-                    StartNewGameProcess(characterName);
-                },
-                onCancel: () => 
-                {
-                    // User cancelled -> Show main buttons again
-                    if (mainButtonsPanel != null) mainButtonsPanel.SetActive(true);
-                }
-            );
         }
         else
         {
-            // Fallback if UI isn't assigned
-            Debug.LogWarning("MainMenu: NameInputWindowUI not assigned! using default.");
-            StartNewGameProcess("Player"); 
+            // Flow: Slot Selected (Occupied) -> Load Game
+            SaveLoadSystem.Instance.LoadGame(saveId);
         }
     }
 
-    private void StartNewGameProcess(string characterName)
+    private void StartNewGameProcess(int slotIndex, string characterName)
     {
         // 1. Reset Data
         SaveLoadSystem.Instance.ResetGameData();
 
-        // 2. Set the custom name
+        // 2. Set the custom name and SLOT INDEX
         SaveLoadSystem.Instance.gameData.CharacterName = characterName;
+        SaveLoadSystem.Instance.gameData.SaveSlotIndex = slotIndex; // Important!
 
         // 3. Load the Scene
         SceneLoader loader = FindFirstObjectByType<SceneLoader>();
@@ -161,36 +112,16 @@ public class MainMenu : MonoBehaviour
         }
         else
         {
-            Debug.LogError("SceneLoader not found! Falling back to instant load.");
             SaveLoadSystem.Instance.NewGame();
         }
 
-        // 4. Create the initial Autosave immediately
+        // 4. Create the initial Autosave
         SaveLoadSystem.Instance.AutosaveGame();
     }
 
     private async void LoadGameScene(SceneLoader loader)
     {
         await loader.LoadSceneGroup(gameSceneGroupIndex);
-    }
-
-    private void OnContinueClicked()
-    {
-        var saves = SaveLoadSystem.Instance.GetAllSaves();
-        
-        if (saves.Any())
-        {
-            string saveToLoad = saves.First(); 
-            SaveLoadSystem.Instance.LoadGame(saveToLoad);
-        }
-    }
-
-    private void OnLoadGameClicked()
-    {
-        if (loadMenuController != null)
-        {
-            loadMenuController.OpenMenu();
-        }
     }
 
     private void OnQuitClicked()

@@ -17,6 +17,7 @@ namespace Systems.Persistence {
         public string Name;
         public string CharacterName;
         public string CurrentLevelName;
+        public int SaveSlotIndex = 0;
         public PlayerData playerData;
         public List<InventoryData> inventories;
         public List<TiNpcData> tiNpcDataList;
@@ -39,6 +40,7 @@ namespace Systems.Persistence {
             Name = "New Game";
             CharacterName = "Player";
             CurrentLevelName = "SampleScene";
+            SaveSlotIndex = 0;
             PlayerCleanMoney = 0;
             PlayerDirtyMoney = 0;
             CurrentDay = 1;
@@ -217,6 +219,7 @@ namespace Systems.Persistence {
                 Name = "New Game",
                 CharacterName = "Player",
                 CurrentLevelName = "SampleScene", 
+                SaveSlotIndex = 0,
                 
                 // Defaults
                 PlayerCleanMoney = 50f, 
@@ -348,17 +351,16 @@ namespace Systems.Persistence {
         public void QuickLoad()
         {
             // ListSaves returns saves sorted by date (newest first)
-            var saves = GetAllSaves();
-            var mostRecentSave = saves.FirstOrDefault();
+            var mostRecentSave = GetLatestSaveIdForSlot(gameData.SaveSlotIndex);
 
             if (!string.IsNullOrEmpty(mostRecentSave))
             {
-                Debug.Log($"SaveLoadSystem: Quickloading most recent save: {mostRecentSave}");
+                Debug.Log($"SaveLoadSystem: Quickloading most recent save for Slot {gameData.SaveSlotIndex}: {mostRecentSave}");
                 LoadGame(mostRecentSave);
             }
             else
             {
-                Debug.LogWarning("SaveLoadSystem: QuickLoad failed. No save files found.");
+                Debug.LogWarning($"SaveLoadSystem: QuickLoad failed. No save files found for Slot {gameData.SaveSlotIndex}.");
             }
         }
 
@@ -404,6 +406,45 @@ namespace Systems.Persistence {
         {
         return dataService.ListSaves();
         }
+
+        /// <summary>
+        /// Finds the ID of the most recent save file associated with a specific slot index.
+        /// Returns null if no save exists for that slot.
+        /// </summary>
+        public string GetLatestSaveIdForSlot(int slotIndex) {
+            var allSaves = GetAllSaves();
+            foreach (var saveId in allSaves) {
+                GameData header = GetSaveDataReadOnly(saveId);
+                if (header != null && header.SaveSlotIndex == slotIndex) {
+                    return saveId;
+                }
+            }
+            return null;
+        }
+
+        public void DeleteAllSavesForSlot(int slotIndex)
+        {
+            var allSaves = GetAllSaves();
+            List<string> savesToDelete = new List<string>();
+
+            // 1. Identify files to delete
+            foreach (var saveId in allSaves)
+            {
+                GameData header = GetSaveDataReadOnly(saveId);
+                if (header != null && header.SaveSlotIndex == slotIndex)
+                {
+                    savesToDelete.Add(saveId);
+                }
+            }
+
+            // 2. Delete them
+            foreach (string id in savesToDelete)
+            {
+                Debug.Log($"SaveLoadSystem: Deleting save {id} for slot {slotIndex}");
+                dataService.Delete(id);
+            }
+        }
+
         public void ReloadGame() => LoadGame(gameData.Name);
         public void DeleteGame(string gameName) => dataService.Delete(gameName);
     }

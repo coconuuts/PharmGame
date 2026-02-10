@@ -105,10 +105,13 @@ namespace Systems.UI
 
             IEnumerable<string> saveIds = SaveLoadSystem.Instance.GetAllSaves();
 
+            // --- Filter by Slot Index ---
+            int currentSlot = SaveLoadSystem.Instance.gameData.SaveSlotIndex;
+
             foreach (string id in saveIds)
             {
                 GameData header = SaveLoadSystem.Instance.GetSaveDataReadOnly(id);
-                if (header != null)
+                if (header != null && header.SaveSlotIndex == currentSlot)
                 {
                     SaveSlotUI newSlot = Instantiate(saveSlotPrefab, saveListContent);
                     newSlot.Initialize(header.Name, id, OnSlotClicked);

@@ -127,14 +127,17 @@ namespace Systems.UI
             // GetAllSaves now returns File IDs (filenames)
             IEnumerable<string> saveIds = SaveLoadSystem.Instance.GetAllSaves();
 
+            // --- Filter by Slot Index ---
+            int currentSlot = SaveLoadSystem.Instance.gameData.SaveSlotIndex;
+
             foreach (string id in saveIds)
             {
-                // Peek at the file
                 GameData header = SaveLoadSystem.Instance.GetSaveDataReadOnly(id);
-                if (header != null)
+                // Only show saves that belong to the current slot
+                // NOTE: Old saves (index 0) might appear in Slot 1 (index 0).
+                if (header != null && header.SaveSlotIndex == currentSlot)
                 {
                     SaveSlotUI newSlot = Instantiate(saveSlotPrefab, saveListContent);
-                    // Pass Display Name (header.Name) AND File ID (id)
                     newSlot.Initialize(header.Name, id, OnSlotClicked);
                     instantiatedSlots.Add(newSlot);
                 }
