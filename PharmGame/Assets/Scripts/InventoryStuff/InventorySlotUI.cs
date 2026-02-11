@@ -39,6 +39,18 @@ namespace Systems.Inventory
                 Debug.LogWarning($"InventorySlotUI ({gameObject.name}, Index: {SlotIndex}): Highlight Element is not assigned. Selection/Hover highlight will not be visible.", this);
             }
 
+            if (itemIcon != null)
+            {
+                itemIcon.sprite = null;
+                itemIcon.enabled = false;
+            }
+
+            if (quantityText != null)
+            {
+                quantityText.text = "";
+                quantityText.enabled = false;
+            }
+
             // Ensure state flags are false initially
             isSelected = false;
             isHovered = false;

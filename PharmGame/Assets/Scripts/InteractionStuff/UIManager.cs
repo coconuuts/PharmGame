@@ -28,6 +28,8 @@ namespace Systems.UI
         [Tooltip("The Modal Window UI Controller")]
         [SerializeField] private ModalWindowUI modalWindowController; // <--- ADD THIS
         [SerializeField] private GameObject modalUIRoot;
+        [Tooltip("The full-screen background image that blocks clicks. Does not animate.")]
+        [SerializeField] private GameObject modalBackgroundOverlay;
 
 
         private void Awake()
@@ -47,12 +49,13 @@ namespace Systems.UI
                 playerToolbarUIRoot = GameObject.FindGameObjectWithTag("PlayerToolbar"); // Use your actual tag
                 if (playerToolbarUIRoot == null) Debug.LogWarning("UIManager: Player Toolbar UI Root not assigned and GameObject with tag 'PlayerToolbar' not found. Toolbar visibility may not be managed.", this);
             }
-            // ---------------------------------------------------
-
+            
             // Ensure static and known UIs are off initially
-            if (playerUIRoot != null) playerUIRoot.SetActive(false); // Start off, MenuManager.Start sets initial state which will turn it on
-            if (playerToolbarUIRoot != null) playerToolbarUIRoot.SetActive(false); // Start off
-            if (pauseMenuUIRoot != null) pauseMenuUIRoot.SetActive(false); // Start off
+            if (playerUIRoot != null) playerUIRoot.SetActive(false); 
+            if (playerToolbarUIRoot != null) playerToolbarUIRoot.SetActive(false); 
+            if (pauseMenuUIRoot != null) pauseMenuUIRoot.SetActive(false);
+            if (modalUIRoot != null) modalUIRoot.SetActive(false);
+            if (modalBackgroundOverlay != null) modalBackgroundOverlay.SetActive(false);
         }
 
         private void OnEnable()
@@ -99,7 +102,14 @@ namespace Systems.UI
                 case MenuManager.GameState.InInventory:
                     if (MenuManager.Instance != null && MenuManager.Instance.CurrentActiveUIRoot != null)
                     {
-                        MenuManager.Instance.CurrentActiveUIRoot.SetActive(false);
+                        if (UIAnimationManager.Instance != null)
+                        {
+                            UIAnimationManager.Instance.ClosePanel(MenuManager.Instance.CurrentActiveUIRoot);
+                        }
+                        else
+                        {
+                            MenuManager.Instance.CurrentActiveUIRoot.SetActive(false);
+                        }
                     }
                     break;
                 case MenuManager.GameState.InComputer:
@@ -137,8 +147,19 @@ namespace Systems.UI
                     else Debug.LogWarning($"UIManager: Cannot process Crafting UI exit for {oldState} - no stored station or manager instance.");
                     break;
                 case MenuManager.GameState.InModal:
-                if (modalUIRoot != null) modalUIRoot.SetActive(false);
-                break;
+                    if (modalUIRoot != null) 
+                    {
+                        if (UIAnimationManager.Instance != null)
+                        {
+                            UIAnimationManager.Instance.ClosePanel(modalUIRoot);
+                        }
+                        else
+                        {
+                            modalUIRoot.SetActive(false);
+                        }
+                        if (modalBackgroundOverlay != null) modalBackgroundOverlay.SetActive(false);
+                    }
+                    break;
 
                 case MenuManager.GameState.InPauseMenu:
                     // Deactivate Pause Menu UI
@@ -181,7 +202,17 @@ namespace Systems.UI
                     {
                          if (openInventoryResponse.InventoryUIRoot != null)
                          {
-                             openInventoryResponse.InventoryUIRoot.SetActive(true);
+                             // --- UPDATED: Use UIAnimationManager to fade in ---
+                             if (UIAnimationManager.Instance != null)
+                             {
+                                 // By default, OpenPanel uses both Scale and Fade. 
+                                 // To strictly fade without scaling, use: UIAnimationManager.Instance.OpenPanel(openInventoryResponse.InventoryUIRoot, useScale: false);
+                                 UIAnimationManager.Instance.OpenPanel(openInventoryResponse.InventoryUIRoot);
+                             }
+                             else
+                             {
+                                 openInventoryResponse.InventoryUIRoot.SetActive(true);
+                             }
                              Debug.Log($"UIManager: Activated Inventory UI Root from Response.");
                          }
                     }
@@ -211,24 +242,30 @@ namespace Systems.UI
                     }
                     break;
                 case MenuManager.GameState.InModal:
-            // Hide static UIs
-            if (playerUIRoot != null) playerUIRoot.SetActive(false);
-            if (playerToolbarUIRoot != null) playerToolbarUIRoot.SetActive(false);
-            
-            // Activate Modal
-            if (modalUIRoot != null && modalWindowController != null)
-            {
-                modalUIRoot.SetActive(true);
-                
-                // FIX: Use the 'response' parameter directly. 
-                // The MenuManager.Instance.CurrentModalResponse hasn't been set yet when this event fires.
-                if (response is ModalResponse modalResp)
-                {
-                    modalWindowController.Configure(modalResp);
-                }
-            }
-            Debug.Log("UIManager: Activated Modal UI.");
-            break;
+                    if (playerUIRoot != null) playerUIRoot.SetActive(false);
+                    if (playerToolbarUIRoot != null) playerToolbarUIRoot.SetActive(false);
+                    
+                    if (modalUIRoot != null && modalWindowController != null)
+                    {
+                        if (response is ModalResponse modalResp) modalWindowController.Configure(modalResp);
+
+                        // 1. Activate Background Immediately 
+                        if (modalBackgroundOverlay != null) 
+                        {
+                            modalBackgroundOverlay.SetActive(true);
+                        }
+
+                        // 2. Animate Window
+                        if (UIAnimationManager.Instance != null)
+                        {
+                            UIAnimationManager.Instance.OpenPanel(modalUIRoot);
+                        }
+                        else
+                        {
+                            modalUIRoot.SetActive(true);
+                        }
+                    }
+                    break;
 
                 case MenuManager.GameState.InMinigame:
                     Debug.Log($"UIManager: Entering InMinigame state.");

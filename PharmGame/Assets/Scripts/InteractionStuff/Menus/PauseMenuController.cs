@@ -66,7 +66,18 @@ namespace Systems.UI
 
         private void ShowMainButtons()
         {
-            if (mainButtonsPanel != null) mainButtonsPanel.SetActive(true);
+            if (mainButtonsPanel != null)
+            {
+                // Use UIAnimationManager to animate the opening if available
+                if (UIAnimationManager.Instance != null)
+                {
+                    UIAnimationManager.Instance.OpenPanel(mainButtonsPanel);
+                }
+                else
+                {
+                    mainButtonsPanel.SetActive(true);
+                }
+            }
             if (saveMenuPanel != null) saveMenuPanel.SetActive(false);
             if (loadMenuPanel != null) loadMenuPanel.SetActive(false);
         }

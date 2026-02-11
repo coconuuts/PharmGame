@@ -13,6 +13,8 @@ namespace Systems.UI
     {
         [Header("UI Structure")]
         [SerializeField] private GameObject menuRootObject; // The Save Menu Panel
+        [SerializeField] private SaveDetailsUI saveDetailsPanel;
+
         [Tooltip("The Content object of the ScrollView. Must have FlexibleGridLayout attached.")]
         [SerializeField] private Transform saveListContent; 
         
@@ -45,7 +47,7 @@ namespace Systems.UI
             deleteButton.onClick.AddListener(OnDeleteClicked);
             
             if (closeButton != null) 
-                closeButton.onClick.AddListener(CloseMenu);
+                closeButton.onClick.AddListener(() => CloseMenu(true));
 
             UpdateDeleteButtonState();
         }
@@ -67,8 +69,7 @@ namespace Systems.UI
         {
             UpdateDeleteButtonState();
 
-            // 1. Swap Visibility: Show Save Menu, Hide Pause Menu
-            menuRootObject.SetActive(true);
+            // 1. Swap Visibility: Hide Pause Menu Buttons immediately
             if (pauseMenuPanel != null) pauseMenuPanel.SetActive(false);
             
             // 2. Register to intercept Escape key
@@ -80,7 +81,6 @@ namespace Systems.UI
             // 3. Auto-fill input with the playtime to be saved (User feedback)
             if (SaveLoadSystem.HasInstance)
             {
-                // We show the time that will be used for the name
                 if (saveNameInput != null) 
                 {
                     saveNameInput.text = SaveLoadSystem.Instance.GetFormattedRealPlaytime();
@@ -91,21 +91,54 @@ namespace Systems.UI
             // 4. Populate
             RefreshSaveList();
             DeselectAll();
+
+            // 5. Animate Open
+            if (UIAnimationManager.Instance != null)
+            {
+                UIAnimationManager.Instance.OpenPanel(menuRootObject);
+            }
+            else
+            {
+                menuRootObject.SetActive(true);
+            }
         }
 
-        public void CloseMenu()
+        /// <summary>
+        /// Closes the Save Menu.
+        /// </summary>
+        /// <param name="transitionToParent">If true, shows the PauseMenuPanel after closing. If false, just closes (used when resuming game).</param>
+        public void CloseMenu(bool transitionToParent = true)
         {
-            // 1. Swap Visibility: Hide Save Menu, Show Pause Menu
-            menuRootObject.SetActive(false);
-            if (pauseMenuPanel != null) pauseMenuPanel.SetActive(true);
-
-            // 2. Unregister Escape key interception
+            // 1. Unregister Escape key interception immediately
             if (MenuManager.Instance != null)
             {
                 MenuManager.Instance.OnProcessEscape -= HandleEscapeInput;
             }
 
-            DeselectAll();
+            // 2. Animate Close
+            if (UIAnimationManager.Instance != null)
+            {
+                UIAnimationManager.Instance.ClosePanel(menuRootObject, onComplete: () => 
+                {
+                    DeselectAll();
+                });
+
+                // 3. Animate Parent OPEN (Simultaneously)
+                if (transitionToParent && pauseMenuPanel != null) 
+                {
+                    UIAnimationManager.Instance.OpenPanel(pauseMenuPanel);
+                }
+            }
+            else
+            {
+                // Fallback if no animation manager
+                menuRootObject.SetActive(false);
+                DeselectAll();
+                if (transitionToParent && pauseMenuPanel != null) 
+                {
+                    pauseMenuPanel.SetActive(true);
+                }
+            }
         }
 
         private bool HandleEscapeInput()
@@ -149,13 +182,23 @@ namespace Systems.UI
             }
         }
 
-        private void OnSlotClicked(string saveName, SaveSlotUI clickedSlot)
+        private void OnSlotClicked(string saveId, SaveSlotUI clickedSlot)
         {
-            currentSelectedSaveName = saveName;
+            currentSelectedSaveName = saveId;
             
             foreach (var slot in instantiatedSlots)
             {
                 slot.SetSelected(slot == clickedSlot);
+            }
+
+            if (saveDetailsPanel != null && SaveLoadSystem.HasInstance)
+            {
+                // Load header data
+                GameData data = SaveLoadSystem.Instance.GetSaveDataReadOnly(saveId);
+                // Load screenshot
+                Texture2D screenshot = SaveLoadSystem.Instance.GetScreenshot(saveId);
+                
+                saveDetailsPanel.SetData(data, screenshot);
             }
 
             if (saveNameInput != null && SaveLoadSystem.HasInstance) 
@@ -223,6 +266,8 @@ namespace Systems.UI
             }
             foreach (var slot in instantiatedSlots) slot.SetSelected(false);
             UpdateDeleteButtonState();
+
+            if (saveDetailsPanel != null) saveDetailsPanel.Clear();
         }
 
         private void UpdateDeleteButtonState()

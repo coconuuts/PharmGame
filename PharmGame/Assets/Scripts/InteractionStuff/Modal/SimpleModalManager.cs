@@ -14,8 +14,10 @@ namespace Systems.UI
         [Header("UI References")]
         [SerializeField] private ModalWindowUI modalWindowController;
         [SerializeField] private GameObject modalUIRoot;
+        [Tooltip("The full-screen background image that blocks clicks. Does not animate.")]
+        [SerializeField] private GameObject modalBackgroundOverlay;
 
-        // NEW: Public property to check visibility
+        // Public property to check visibility
         public bool IsModalActive => modalUIRoot != null && modalUIRoot.activeSelf;
 
         private void Awake()
@@ -24,6 +26,7 @@ namespace Systems.UI
             else Destroy(gameObject);
 
             if (modalUIRoot != null) modalUIRoot.SetActive(false);
+            if (modalBackgroundOverlay != null) modalBackgroundOverlay.SetActive(false);
         }
 
         public void ShowInfoModal(string text, Action onOkay = null)
@@ -57,14 +60,44 @@ namespace Systems.UI
         {
             if (modalWindowController != null && modalUIRoot != null)
             {
+                // Configure content first
                 modalWindowController.Configure(response);
-                modalUIRoot.SetActive(true);
+
+                // Activate Overlay Immediately 
+                if (modalBackgroundOverlay != null)
+                {
+                    modalBackgroundOverlay.SetActive(true);
+                }
+
+                // Then animate
+                if (UIAnimationManager.Instance != null)
+                {
+                    UIAnimationManager.Instance.OpenPanel(modalUIRoot);
+                }
+                else
+                {
+                    modalUIRoot.SetActive(true);
+                }
             }
         }
 
         private void CloseModal()
         {
-            if (modalUIRoot != null) modalUIRoot.SetActive(false);
+            if (modalUIRoot != null)
+            {
+                if (UIAnimationManager.Instance != null)
+                {
+                    UIAnimationManager.Instance.ClosePanel(modalUIRoot);
+                }
+                else
+                {
+                    modalUIRoot.SetActive(false);
+                }
+                if (modalBackgroundOverlay != null)
+                        {
+                            modalBackgroundOverlay.SetActive(false);
+                        }
+            }
         }
     }
 }

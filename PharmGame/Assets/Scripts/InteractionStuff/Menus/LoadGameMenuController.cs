@@ -12,6 +12,7 @@ namespace Systems.UI
         [Header("UI Structure")]
         [SerializeField] private GameObject menuRootObject; 
         [SerializeField] private Transform saveListContent; 
+        [SerializeField] private SaveDetailsUI saveDetailsPanel;
         
         [Header("External References")]
         [Tooltip("The menu to show when this one closes (e.g., Pause Menu or Main Menu Buttons).")]
@@ -41,7 +42,8 @@ namespace Systems.UI
         {
             if (loadButton != null) loadButton.onClick.AddListener(OnLoadClicked);
             if (deleteButton != null) deleteButton.onClick.AddListener(OnDeleteClicked);
-            if (closeButton != null) closeButton.onClick.AddListener(CloseMenu);
+            if (closeButton != null) 
+                closeButton.onClick.AddListener(() => CloseMenu(true));
 
             UpdateButtonsState();
         }
@@ -53,12 +55,10 @@ namespace Systems.UI
 
         public void OpenMenu()
         {
-            if (menuRootObject != null) menuRootObject.SetActive(true);
-            
-            // Hide the previous menu (Pause Menu or Main Menu Buttons)
+            // Hide the previous menu immediately
             if (previousMenuPanel != null) previousMenuPanel.SetActive(false);
             
-            // Register Escape key ONLY if MenuManager exists (Gameplay Scene)
+            // Register Escape key ONLY if MenuManager exists
             if (MenuManager.Instance != null)
             {
                 MenuManager.Instance.OnProcessEscape += HandleEscapeInput;
@@ -66,25 +66,51 @@ namespace Systems.UI
 
             RefreshSaveList();
             DeselectAll();
+
+            // Animate Open
+            if (UIAnimationManager.Instance != null)
+            {
+                UIAnimationManager.Instance.OpenPanel(menuRootObject);
+            }
+            else
+            {
+                menuRootObject.SetActive(true);
+            }
         }
 
-        public void CloseMenu()
+        public void CloseMenu(bool transitionToParent = true)
         {
-            if (menuRootObject != null) menuRootObject.SetActive(false);
-            
-            // Show the previous menu again
-            if (previousMenuPanel != null) previousMenuPanel.SetActive(true);
-
-            // Unregister Escape key if we used it
+            // Unregister Escape key
             if (MenuManager.Instance != null)
             {
                 MenuManager.Instance.OnProcessEscape -= HandleEscapeInput;
             }
 
-            DeselectAll();
+            // Animate Close
+            if (UIAnimationManager.Instance != null)
+            {
+                UIAnimationManager.Instance.ClosePanel(menuRootObject, onComplete: () => 
+                {
+                    DeselectAll();
+                    OnMenuClosed?.Invoke();
+                });
 
-            // Notify listeners that the menu has closed so they can refresh their state
-            OnMenuClosed?.Invoke();
+                // Animate Parent OPEN (Simultaneously)
+                if (transitionToParent && previousMenuPanel != null) 
+                {
+                    UIAnimationManager.Instance.OpenPanel(previousMenuPanel);
+                }
+            }
+            else
+            {
+                menuRootObject.SetActive(false);
+                DeselectAll();
+                if (transitionToParent && previousMenuPanel != null) 
+                {
+                    previousMenuPanel.SetActive(true);
+                }
+                OnMenuClosed?.Invoke();
+            }
         }
 
         private bool HandleEscapeInput()
@@ -130,6 +156,13 @@ namespace Systems.UI
             currentSelectedSaveId = saveId;
             foreach (var slot in instantiatedSlots) slot.SetSelected(slot == clickedSlot);
             UpdateButtonsState();
+
+            if (saveDetailsPanel != null && SaveLoadSystem.HasInstance)
+            {
+                GameData data = SaveLoadSystem.Instance.GetSaveDataReadOnly(saveId);
+                Texture2D screenshot = SaveLoadSystem.Instance.GetScreenshot(saveId);
+                saveDetailsPanel.SetData(data, screenshot);
+            }
         }
 
         private void OnLoadClicked()
@@ -196,6 +229,8 @@ namespace Systems.UI
             currentSelectedSaveId = null;
             foreach (var slot in instantiatedSlots) slot.SetSelected(false);
             UpdateButtonsState();
+
+            if (saveDetailsPanel != null) saveDetailsPanel.Clear();
         }
 
         private void UpdateButtonsState()

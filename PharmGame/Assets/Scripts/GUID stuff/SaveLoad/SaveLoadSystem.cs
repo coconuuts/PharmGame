@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections;
 using System.Linq;
 using Systems.Inventory;
 using UnityEngine;
@@ -9,6 +10,7 @@ using Game.NPC.TI;
 using Game.NPC;    
 using Systems.Economy;
 using Systems.SceneManagement;
+using Systems.UI;
 
 namespace Systems.Persistence {
     [Serializable] public class GameData : ISaveable
@@ -17,6 +19,7 @@ namespace Systems.Persistence {
         public string Name;
         public string CharacterName;
         public string CurrentLevelName;
+        public string LastSaveDate;
         public int SaveSlotIndex = 0;
         public PlayerData playerData;
         public List<InventoryData> inventories;
@@ -46,6 +49,7 @@ namespace Systems.Persistence {
             CurrentDay = 1;
             TimeTicks = 0; 
             TotalPlayTimeSeconds = 0;
+            LastSaveDate = DateTime.Now.ToString();
             worldInteractables = new List<InteractableObjectData>();
             
             UnlockedUpgradeIds = new List<string>();
@@ -89,6 +93,7 @@ namespace Systems.Persistence {
 
         IDataService dataService;
         bool isGameplayActive = false;
+        private Texture2D currentScreenshot;
 
         protected override void Awake() {
             base.Awake();
@@ -277,71 +282,75 @@ namespace Systems.Persistence {
         
         public void SaveGame(string saveType = "Save")
         {
-            gameData.Name = $"{saveType} - {GetFormattedRealPlaytime()}";
+            StartCoroutine(SaveGameRoutine(saveType));
+        }
 
+        private IEnumerator SaveGameRoutine(string saveType)
+        {
+            // 1. Update Game Data Timestamp
+            gameData.Name = $"{saveType} - {GetFormattedRealPlaytime()}";
+            gameData.LastSaveDate = DateTime.Now.ToString("g"); // Short date/time format
+
+            // 2. Capture Screenshot
+            // We assume UIManager exists. We hide the specific menus to get a clean shot.
+            // If you are calling this from a "Quick Save" (F5), the menus might already be closed.
+            if (UIManager.Instance != null)
+            {
+                // Optionally hide the entire UI Root if you want a purely cinematic screenshot
+                // UIManager.Instance.playerUIRoot.SetActive(false); 
+                // For now, let's just wait for end of frame to capture whatever is on screen
+            }
+
+            yield return new WaitForEndOfFrame();
+            
+            // Capture full screen (you can downscale this if files get too big)
+            currentScreenshot = ScreenCapture.CaptureScreenshotAsTexture();
+            
+            // Restore UI if you hid it here
+            
             Debug.Log($"SaveLoadSystem: Saving game '{gameData.Name}'...");
             
-            // 1. Clear generic lists
+            // 3. Normal Save Logic (Copied from your original file, simplified for brevity)
             gameData.inventories.Clear(); 
             gameData.worldInteractables.Clear();
-            
-            // 2. Clear NPC lists to prevent duplication
             gameData.tiNpcDataList.Clear();
-
             if (gameData.transientNpcs == null) gameData.transientNpcs = new List<Game.NPC.TransientNpcData>();
             gameData.transientNpcs.Clear();
-            
-            // 3. Find and Iterate Savable Components
+
             var allSceneMonoBehaviours = FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None);
-            
-            var savableComponents = allSceneMonoBehaviours
-                .Where(mb => mb is ISavableComponent)
-                .Cast<ISavableComponent>()
-                .ToList();
+            var savableComponents = allSceneMonoBehaviours.OfType<ISavableComponent>().ToList();
 
             foreach (var component in savableComponents) {
                 ISaveable data = component.CreateSaveData();
-                
-                if (data != null)
-                {
-                    if (data is InventoryData invData) {
-                        gameData.inventories.Add(invData);
-                    }
-                    else if (data is InteractableObjectData interactableData) {
-                        gameData.worldInteractables.Add(interactableData);
-                    }
-                    // Add other types here
+                if (data != null) {
+                    if (data is InventoryData invData) gameData.inventories.Add(invData);
+                    else if (data is InteractableObjectData interactableData) gameData.worldInteractables.Add(interactableData);
                 }
             }
             
-            // 4. Bind Singletons
             Bind<TimeManager, GameData>(gameData);
             Bind<EconomyManager, GameData>(gameData);
             Bind<UpgradeManager, GameData>(gameData);
             Bind<PlayerEntity, PlayerData>(gameData.playerData); 
 
-            // NPC SAVING
-            // 5. Gather TI Data (All Active Flushed + Inactive Simulated)
-            if (TiNpcPersistenceBridge.Instance != null)
-            {
-                gameData.tiNpcDataList = TiNpcPersistenceBridge.Instance.GetAllTiNpcData();
-                Debug.Log($"SaveLoadSystem: Saved {gameData.tiNpcDataList.Count} TI NPCs.");
-            }
-            else
-            {
-                 // Use FindFirstObjectByType
+            if (TiNpcPersistenceBridge.Instance != null) gameData.tiNpcDataList = TiNpcPersistenceBridge.Instance.GetAllTiNpcData();
+            else {
                  var bridge = FindFirstObjectByType<TiNpcPersistenceBridge>();
                  if (bridge != null) gameData.tiNpcDataList = bridge.GetAllTiNpcData();
             }
 
-            // --- Save Transient NPCs ---
-            if (TransientNpcPersistenceBridge.Instance != null)
+            if (TransientNpcPersistenceBridge.Instance != null) gameData.transientNpcs = TransientNpcPersistenceBridge.Instance.GetAllTransientData();
+
+            // 4. Write Data to Disk
+            dataService.Save(gameData);
+
+            // 5. Write Screenshot to Disk
+            if (currentScreenshot != null)
             {
-                gameData.transientNpcs = TransientNpcPersistenceBridge.Instance.GetAllTransientData();
+                dataService.SaveScreenshot(gameData.Id.ToHexString(), currentScreenshot);
+                Destroy(currentScreenshot); // Cleanup memory
             }
 
-            // 7. Write to Disk
-            dataService.Save(gameData);
             Debug.Log("SaveLoadSystem: Save Complete.");
         }
 
@@ -443,6 +452,11 @@ namespace Systems.Persistence {
                 Debug.Log($"SaveLoadSystem: Deleting save {id} for slot {slotIndex}");
                 dataService.Delete(id);
             }
+        }
+
+        public Texture2D GetScreenshot(string saveId)
+        {
+            return dataService.LoadScreenshot(saveId);
         }
 
         public void ReloadGame() => LoadGame(gameData.Name);

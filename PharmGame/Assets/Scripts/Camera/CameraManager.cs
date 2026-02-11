@@ -245,6 +245,8 @@ namespace Systems.CameraControl
              if (playerCameraTransform == null) { Debug.LogError("CameraManager: playerCameraTransform is null in HandleMouseLookInput!"); return; }
              if (playerBodyTransform == null) { Debug.LogError("CameraManager: playerBodyTransform is null in HandleMouseLookInput!"); return; }
 
+             if (cameraMoveCoroutine != null) return;
+
             float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity * Time.deltaTime;
             float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity * Time.deltaTime;
 

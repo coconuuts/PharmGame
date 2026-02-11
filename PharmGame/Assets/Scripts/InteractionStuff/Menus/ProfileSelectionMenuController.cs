@@ -33,13 +33,13 @@ namespace Systems.UI
 
         public void OpenMenu()
         {
-            menuRootObject.SetActive(true);
+            UIAnimationManager.Instance.OpenPanel(menuRootObject);
             RefreshSlots();
         }
 
         public void CloseMenu()
         {
-            menuRootObject.SetActive(false);
+            UIAnimationManager.Instance.ClosePanel(menuRootObject);
         }
 
         private void RefreshSlots()

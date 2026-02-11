@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 9203325543305460874}
   - component: {fileID: 7943445988863463615}
   - component: {fileID: 6596350714429727072}
+  - component: {fileID: 8417236074245674610}
   m_Layer: 0
   m_Name: GlobalBootstrapper
   m_TagString: Untagged
@@ -48,7 +49,10 @@ MonoBehaviour:
   UnparentOnAwake: 1
   gameData:
     Name: New Game
+    CharacterName: Player
     CurrentLevelName: SampleScene
+    LastSaveDate: 2/10/2026 6:03:13 PM
+    SaveSlotIndex: 0
     playerData:
       <Id>k__BackingField:
         Part1: 0
@@ -65,6 +69,7 @@ MonoBehaviour:
     PlayerDirtyMoney: 0
     CurrentDay: 1
     TimeTicks: 0
+    TotalPlayTimeSeconds: 0
     UnlockedUpgradeIds: []
 --- !u!114 &6596350714429727072
 MonoBehaviour:
@@ -79,3 +84,19 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   UnparentOnAwake: 1
+--- !u!114 &8417236074245674610
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3691699376307985000}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1acf45cca2bc63f4bbb8b7b52e0bda60, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  hoverScale: 1.1
+  pressScale: 0.95
+  animationDuration: 0.2
+  scaleEase: 27

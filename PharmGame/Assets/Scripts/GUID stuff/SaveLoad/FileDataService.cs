@@ -19,6 +19,9 @@ namespace Systems.Persistence {
         string GetPathToFile(string fileName) {
             return Path.Combine(dataPath, string.Concat(fileName, ".", fileExtension));
         }
+        string GetPathToImage(string fileName) {
+            return Path.Combine(dataPath, string.Concat(fileName, ".png"));
+        }
         
         public void Save(GameData data, bool overwrite = true) {
             string fileLocation = GetPathToFile(data.Id.ToHexString());
@@ -42,10 +45,14 @@ namespace Systems.Persistence {
 
         public void Delete(string name) {
             string fileLocation = GetPathToFile(name);
+            if (File.Exists(fileLocation)) File.Delete(fileLocation);
+            
+            DeleteScreenshot(name);
+        }
 
-            if (File.Exists(fileLocation)) {
-                File.Delete(fileLocation);
-            }
+        public void DeleteScreenshot(string saveId) {
+            string fileLocation = GetPathToImage(saveId);
+            if (File.Exists(fileLocation)) File.Delete(fileLocation);
         }
 
         public void DeleteAll() {
@@ -71,6 +78,27 @@ namespace Systems.Persistence {
             }
             
             return new List<string>();
+        }
+
+        public void SaveScreenshot(string saveId, Texture2D screenshot) {
+            if (screenshot == null) return;
+            
+            byte[] bytes = screenshot.EncodeToPNG();
+            string fileLocation = GetPathToImage(saveId);
+            File.WriteAllBytes(fileLocation, bytes);
+        }
+
+        public Texture2D LoadScreenshot(string saveId) {
+            string fileLocation = GetPathToImage(saveId);
+            
+            if (File.Exists(fileLocation)) {
+                byte[] bytes = File.ReadAllBytes(fileLocation);
+                // Create a temporary texture; LoadImage will replace size and format
+                Texture2D texture = new Texture2D(2, 2); 
+                texture.LoadImage(bytes); 
+                return texture;
+            }
+            return null; // Return null if no screenshot exists
         }
     }
 }
