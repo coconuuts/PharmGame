@@ -194,8 +194,6 @@ namespace Systems.Inventory
 
             InventoryData invData = new InventoryData {
                 Id = this.Id,
-                allowedLabels = new List<ItemLabel>(this.AllowedLabels), // Copy the list
-                allowAllIfListEmpty = this.AllowAllIfListEmpty,
                 items = new List<ItemData>()
             };
 
@@ -406,16 +404,10 @@ namespace Systems.Inventory
             if (data == null)
             {
                 if (combiner?.InventoryState != null) combiner.InventoryState.Clear();
-                allowedLabels.Clear(); 
-                allowAllIfListEmpty = true; 
                 return;
             }
 
             Debug.Log($"Inventory ({gameObject.name}, ID: {Id}): Binding data...");
-
-            // Apply Filtering Rules
-            allowedLabels = new List<ItemLabel>(data.allowedLabels); 
-            allowAllIfListEmpty = data.allowAllIfListEmpty;
 
             // Populate InventoryState
             if (combiner?.InventoryState == null) return;

@@ -6130,6 +6130,38 @@ PrefabInstance:
       propertyPath: m_Name
       value: PrescriptionTableInventories
       objectReference: {fileID: 0}
+    - target: {fileID: 3703403800771812296, guid: fdad67bcea068c948a512dadf3fd5ebb, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3969503805132986209, guid: fdad67bcea068c948a512dadf3fd5ebb, type: 3}
+      propertyPath: m_AnchorMax.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3969503805132986209, guid: fdad67bcea068c948a512dadf3fd5ebb, type: 3}
+      propertyPath: m_AnchorMin.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3969503805132986209, guid: fdad67bcea068c948a512dadf3fd5ebb, type: 3}
+      propertyPath: m_SizeDelta.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3969503805132986209, guid: fdad67bcea068c948a512dadf3fd5ebb, type: 3}
+      propertyPath: m_SizeDelta.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3969503805132986209, guid: fdad67bcea068c948a512dadf3fd5ebb, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3969503805132986209, guid: fdad67bcea068c948a512dadf3fd5ebb, type: 3}
+      propertyPath: m_AnchoredPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8736417360397543212, guid: fdad67bcea068c948a512dadf3fd5ebb, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -9593,8 +9625,8 @@ MonoBehaviour:
   npcPrefabs:
   - {fileID: 4394407753789290286, guid: 488534cc76898354d8320c55d1770728, type: 3}
   maxCustomersInStore: 7
-  minSpawnInterval: 30
-  maxSpawnInterval: 35
+  minSpawnInterval: 5
+  maxSpawnInterval: 7
   _busArrivalInterval: 75
   npcsPerBus: 3
   initialBusDelay: 60
@@ -9849,9 +9881,9 @@ MonoBehaviour:
     startMinute: 0
     endHour: 20
     endMinute: 0
-  ordersToGeneratePerDay: 5
-  minOrderGenerationInterval: 5
-  maxOrderGenerationInterval: 60
+  ordersToGeneratePerDay: 15
+  minOrderGenerationInterval: 1
+  maxOrderGenerationInterval: 2
   maxAssignedTransientOrders: 4
   tiAssignmentTime:
     startHour: 7
@@ -33962,12 +33994,12 @@ SceneRoots:
   - {fileID: 5837695450172670697}
   - {fileID: 502154637}
   - {fileID: 763258581}
+  - {fileID: 673708012}
   - {fileID: 2564988366592900889}
   - {fileID: 7262349399658645270}
   - {fileID: 1302600659}
   - {fileID: 1977194282}
   - {fileID: 1009796057}
-  - {fileID: 673708012}
   - {fileID: 257548374}
   - {fileID: 7972450836261178367}
   - {fileID: 2138406530}

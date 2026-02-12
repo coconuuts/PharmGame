@@ -17,12 +17,9 @@ namespace Systems.Persistence {
             set => _id = value; 
         }
         public List<ItemData> items; // List of items in this inventory
-        public List<ItemLabel> allowedLabels;
-        public bool allowAllIfListEmpty;
 
         public InventoryData() {
             items = new List<ItemData>();
-            allowedLabels = new List<ItemLabel>();
         }
     }
 

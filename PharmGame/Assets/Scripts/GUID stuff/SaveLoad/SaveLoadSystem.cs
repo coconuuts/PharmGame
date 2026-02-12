@@ -110,14 +110,16 @@ namespace Systems.Persistence {
         void Start() 
         {
             // If we have no data (first run), ensure we have a valid empty container.
-            // We do NOT call NewGame() here because it reloads the scene and breaks references.
             if (gameData == null) gameData = new GameData();
 
-            // Check if we started in a gameplay scene (useful for development/testing directly in scene)
+            // Check if we started in a gameplay scene
             string currentScene = SceneManager.GetActiveScene().name;
             isGameplayActive = (currentScene != "MainMenu" && currentScene != "Bootstrapper");
             
-            // In a real build, you would call NewGame() from a Main Menu button.
+            // Subscribe to SceneLoader events if available
+            if (SceneLoader.Instance != null) {
+                SceneLoader.Instance.manager.OnSceneGroupLoaded += OnSceneGroupLoaded;
+            }
         }
 
         void Update() {
@@ -127,8 +129,23 @@ namespace Systems.Persistence {
             }
         }
 
-        void OnEnable() => SceneManager.sceneLoaded += OnSceneLoaded;
-        void OnDisable() => SceneManager.sceneLoaded -= OnSceneLoaded;
+        void OnEnable() {
+            SceneManager.sceneLoaded += OnSceneLoaded;
+        }
+
+        void OnDisable() {
+            SceneManager.sceneLoaded -= OnSceneLoaded;
+            if (SceneLoader.Instance != null) {
+                SceneLoader.Instance.manager.OnSceneGroupLoaded -= OnSceneGroupLoaded;
+            }
+        }
+
+        // Called when the entire group (Environment + Gameplay) is finished loading
+        void OnSceneGroupLoaded()
+        {
+            Debug.Log("SaveLoadSystem: Scene Group Loaded. Restoring Game State...");
+            RestoreGameState();
+        }
 
         void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
@@ -136,7 +153,19 @@ namespace Systems.Persistence {
 
             if (scene.name == "MainMenu") return;
 
-            Debug.Log($"SaveLoadSystem: Scene '{scene.name}' loaded. Starting Data Binding Sequence...");
+            // If SceneLoader is present, we defer binding until OnSceneGroupLoaded fires.
+            // This prevents binding the Player position before the Environment (Floor) is loaded,
+            // which causes the player to fall and reset to spawn.
+            if (SceneLoader.Instance != null) return;
+
+            // Fallback for direct SceneManager usage (development/testing single scenes)
+            Debug.Log($"SaveLoadSystem: Scene '{scene.name}' loaded (Single). Starting Data Binding Sequence...");
+            RestoreGameState();
+        }
+
+        void RestoreGameState()
+        {
+            Debug.Log("SaveLoadSystem: Restoring Game State...");
 
             // SYSTEM LEVEL BINDINGS 
             // Time must be first to set lighting/skybox before the screen fades in
@@ -150,6 +179,7 @@ namespace Systems.Persistence {
 
             // WORLD STATE BINDINGS
             // Bind the Player's position and stats
+            // NOTE: Since this now runs after the whole group loads, the floor is guaranteed to be there.
             Bind<PlayerEntity, PlayerData>(gameData.playerData);
 
             // Bind Generic World Interactables (Light Switches, Cash Register States)
@@ -160,9 +190,6 @@ namespace Systems.Persistence {
 
             foreach (var component in allSavables)
             {
-                // We handle Inventories specifically below, so skip them here if needed,
-                // OR ensure InteractableObjectData doesn't conflict. 
-                // For now, we only look for InteractableObjectData matches.
                 InteractableObjectData data = gameData.worldInteractables.FirstOrDefault(d => d.Id == component.Id);
                 if (data != null)
                 {
@@ -183,8 +210,6 @@ namespace Systems.Persistence {
                     invData = new InventoryData
                     {
                         Id = invComponent.Id,
-                        allowedLabels = new List<ItemLabel>(invComponent.AllowedLabels),
-                        allowAllIfListEmpty = invComponent.AllowAllIfListEmpty,
                     };
                     gameData.inventories.Add(invData);
                 }
@@ -192,7 +217,6 @@ namespace Systems.Persistence {
             }
 
             // --- Restore TINPCs ---
-            // Restore TI NPCs (Persistent Staff/Unique chars)
             if (TiNpcPersistenceBridge.Instance != null)
             {
                 TiNpcPersistenceBridge.Instance.LoadAllTiNpcData(gameData.tiNpcDataList);
@@ -210,7 +234,8 @@ namespace Systems.Persistence {
             }
             else
             {
-                Debug.LogWarning("SaveLoadSystem: TransientNpcPersistenceBridge not found. Transient NPCs will not be restored.");
+                // Warning suppressed as this is expected in some scenes
+                // Debug.LogWarning("SaveLoadSystem: TransientNpcPersistenceBridge not found. Transient NPCs will not be restored.");
             }
             
             Debug.Log("SaveLoadSystem: Data binding sequence complete.");
@@ -257,7 +282,6 @@ namespace Systems.Persistence {
         }
 
         void Bind<T, TData>(List<TData> datas) where T: MonoBehaviour, IBind<TData> where TData : ISaveable, new() {
-            // FIX: Use FindObjectsByType with SortMode.None
             var entities = FindObjectsByType<T>(FindObjectsSortMode.None);
 
             foreach(var entity in entities) {
@@ -270,10 +294,6 @@ namespace Systems.Persistence {
             }
         }
 
-        /// <summary>
-        /// Creates a new save file with the "Autosave" prefix.
-        /// Generates a new ID to ensure it creates a separate entry in the history.
-        /// </summary>
         public void AutosaveGame()
         {
             gameData.Id = SerializableGuid.NewGuid();
@@ -287,30 +307,15 @@ namespace Systems.Persistence {
 
         private IEnumerator SaveGameRoutine(string saveType)
         {
-            // 1. Update Game Data Timestamp
             gameData.Name = $"{saveType} - {GetFormattedRealPlaytime()}";
-            gameData.LastSaveDate = DateTime.Now.ToString("g"); // Short date/time format
-
-            // 2. Capture Screenshot
-            // We assume UIManager exists. We hide the specific menus to get a clean shot.
-            // If you are calling this from a "Quick Save" (F5), the menus might already be closed.
-            if (UIManager.Instance != null)
-            {
-                // Optionally hide the entire UI Root if you want a purely cinematic screenshot
-                // UIManager.Instance.playerUIRoot.SetActive(false); 
-                // For now, let's just wait for end of frame to capture whatever is on screen
-            }
+            gameData.LastSaveDate = DateTime.Now.ToString("g");
 
             yield return new WaitForEndOfFrame();
             
-            // Capture full screen (you can downscale this if files get too big)
             currentScreenshot = ScreenCapture.CaptureScreenshotAsTexture();
-            
-            // Restore UI if you hid it here
             
             Debug.Log($"SaveLoadSystem: Saving game '{gameData.Name}'...");
             
-            // 3. Normal Save Logic (Copied from your original file, simplified for brevity)
             gameData.inventories.Clear(); 
             gameData.worldInteractables.Clear();
             gameData.tiNpcDataList.Clear();
@@ -341,25 +346,19 @@ namespace Systems.Persistence {
 
             if (TransientNpcPersistenceBridge.Instance != null) gameData.transientNpcs = TransientNpcPersistenceBridge.Instance.GetAllTransientData();
 
-            // 4. Write Data to Disk
             dataService.Save(gameData);
 
-            // 5. Write Screenshot to Disk
             if (currentScreenshot != null)
             {
                 dataService.SaveScreenshot(gameData.Id.ToHexString(), currentScreenshot);
-                Destroy(currentScreenshot); // Cleanup memory
+                Destroy(currentScreenshot); 
             }
 
             Debug.Log("SaveLoadSystem: Save Complete.");
         }
 
-        /// <summary>
-        /// Loads the most recent save file based on modification date.
-        /// </summary>
         public void QuickLoad()
         {
-            // ListSaves returns saves sorted by date (newest first)
             var mostRecentSave = GetLatestSaveIdForSlot(gameData.SaveSlotIndex);
 
             if (!string.IsNullOrEmpty(mostRecentSave))
@@ -380,26 +379,18 @@ namespace Systems.Persistence {
             if (String.IsNullOrWhiteSpace(gameData.CurrentLevelName)) gameData.CurrentLevelName = "SampleScene";
             if (gameData.inventories == null) gameData.inventories = new List<InventoryData>();
             
-            // Ensure lists exist
             if (gameData.tiNpcDataList == null) gameData.tiNpcDataList = new List<TiNpcData>();
 
-            // Try to find the SceneLoader (which lives in the Bootstrapper scene)
             SceneLoader loader = FindFirstObjectByType<SceneLoader>();
 
             if (loader != null) {
-                // Use the SceneLoader to load the group associated with this level
-                // This preserves the Bootstrapper and shows the loading screen
                 loader.LoadSceneGroup(gameData.CurrentLevelName);
             }
             else {
-                // Fallback if SceneLoader isn't found (e.g. testing in isolation)
-                // NOTE: This will unload the Bootstrapper if it exists but wasn't found
                 SceneManager.LoadScene(gameData.CurrentLevelName);
             }
         }
 
-        // Reads a save file and returns the data without making it the active game.
-        // Useful for getting the Display Name for UI lists.
         public GameData GetSaveDataReadOnly(string saveId)
         {
             return dataService.Load(saveId);
@@ -413,13 +404,9 @@ namespace Systems.Persistence {
 
         public IEnumerable<string> GetAllSaves() 
         {
-        return dataService.ListSaves();
+            return dataService.ListSaves();
         }
 
-        /// <summary>
-        /// Finds the ID of the most recent save file associated with a specific slot index.
-        /// Returns null if no save exists for that slot.
-        /// </summary>
         public string GetLatestSaveIdForSlot(int slotIndex) {
             var allSaves = GetAllSaves();
             foreach (var saveId in allSaves) {
@@ -436,7 +423,6 @@ namespace Systems.Persistence {
             var allSaves = GetAllSaves();
             List<string> savesToDelete = new List<string>();
 
-            // 1. Identify files to delete
             foreach (var saveId in allSaves)
             {
                 GameData header = GetSaveDataReadOnly(saveId);
@@ -446,7 +432,6 @@ namespace Systems.Persistence {
                 }
             }
 
-            // 2. Delete them
             foreach (string id in savesToDelete)
             {
                 Debug.Log($"SaveLoadSystem: Deleting save {id} for slot {slotIndex}");

@@ -615,8 +615,6 @@ namespace Game.NPC.TI // Keep in the TI namespace
                          tempInvData.items = new List<ItemData>(tiData.savedInventoryItems);
                          
                          // Preserve the prefab's filtering settings (Bind overwrites them otherwise)
-                         tempInvData.allowedLabels = inventory.AllowedLabels;
-                         tempInvData.allowAllIfListEmpty = inventory.AllowAllIfListEmpty;
                          tempInvData.Id = inventory.Id; 
 
                          inventory.Bind(tempInvData);

@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: Test3
   m_EditorClassIdentifier: 
   Name: Test3
-  maxStack: 15
+  maxStack: 1
   Id:
     Part1: 568358213
     Part2: 1083832071
@@ -24,6 +24,7 @@ MonoBehaviour:
   prefab3D: {fileID: 0}
   shelfArrangement: 0
   itemLabel: 7
+  itemTier: 1
   price: 5
   maxHealth: 50
   usageLogic: 0

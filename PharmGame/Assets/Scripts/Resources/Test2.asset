@@ -26,7 +26,7 @@ MonoBehaviour:
   itemLabel: 13
   itemTier: 1
   price: 10
-  maxHealth: 1
+  maxHealth: 100
   usageLogic: 3
   defaultVariableHealthLoss: 1
   usageEventsPerHealthLoss: 1

@@ -1946,8 +1946,8 @@ MonoBehaviour:
   animationTarget: {fileID: 1089570944}
   useHoverEffect: 1
   usePressEffect: 1
-  overrideGlobalSettings: 0
-  customHoverScale: 1.05
+  overrideGlobalSettings: 1
+  customHoverScale: 1.03
   customPressScale: 0.95
   textMoveTargets: []
   customTextOffset: 10
@@ -2224,8 +2224,8 @@ MonoBehaviour:
   animationTarget: {fileID: 1254903714}
   useHoverEffect: 1
   usePressEffect: 1
-  overrideGlobalSettings: 0
-  customHoverScale: 1.05
+  overrideGlobalSettings: 1
+  customHoverScale: 1.03
   customPressScale: 0.95
   textMoveTargets: []
   customTextOffset: 10
@@ -3192,8 +3192,8 @@ MonoBehaviour:
   animationTarget: {fileID: 2062258427}
   useHoverEffect: 1
   usePressEffect: 1
-  overrideGlobalSettings: 0
-  customHoverScale: 1.05
+  overrideGlobalSettings: 1
+  customHoverScale: 1.03
   customPressScale: 0.95
   textMoveTargets: []
   customTextOffset: 10

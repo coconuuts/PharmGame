@@ -26,7 +26,7 @@ namespace Systems.UI
         [SerializeField] private bool overrideGlobalSettings = false;
         
         [Tooltip("Custom hover multiplier (e.g. 1.2 for bigger).")]
-        [SerializeField] private float customHoverScale = 1.05f;
+        [SerializeField] private float customHoverScale = 1.03f;
         
         [Tooltip("Custom press multiplier (e.g. 0.9 for smaller).")]
         [SerializeField] private float customPressScale = 0.95f;

@@ -65,6 +65,7 @@ namespace Systems.Economy
             {
                 playerMoneyWallet.OnCleanCashChanged += SyncCleanCash;
                 playerMoneyWallet.OnDirtyCashChanged += SyncDirtyCash;
+                playerMoneyWallet.OnAnyCashChanged += UpdateMoneyDisplay;
             }
         }
 
@@ -74,6 +75,7 @@ namespace Systems.Economy
             {
                 playerMoneyWallet.OnCleanCashChanged -= SyncCleanCash;
                 playerMoneyWallet.OnDirtyCashChanged -= SyncDirtyCash;
+                playerMoneyWallet.OnAnyCashChanged -= UpdateMoneyDisplay;
             }
         }
 
@@ -196,14 +198,11 @@ namespace Systems.Economy
 
             FindAndAssignMoneyDisplayTMP();
             
-            // 1. LOAD: Apply saved data to the runtime wallet
-            // This puts the saved numbers INTO the ScriptableObject
+            // This calls SetWallet -> Fires OnAnyCashChanged -> Calls UpdateMoneyDisplay
             if (playerMoneyWallet != null)
             {
                 playerMoneyWallet.SetWallet(data.PlayerCleanMoney, data.PlayerDirtyMoney);
             }
-
-            Debug.Log("EconomyManager: Bound to GameData. Wallet loaded.");
         }
 
         // These run whenever the wallet changes, ensuring 'boundData' is ready for saving at any moment.

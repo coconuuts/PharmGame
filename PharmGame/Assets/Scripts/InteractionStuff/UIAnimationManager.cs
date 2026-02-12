@@ -16,7 +16,7 @@ namespace Systems.UI
 
         [Header("Global Scale Settings (Percentages)")]
         [Tooltip("Scale multiplier when hovering (e.g., 1.1 = 110% size)")]
-        [SerializeField] private float hoverScaleMult = 1.05f; 
+        [SerializeField] private float hoverScaleMult = 1.03f; 
         [Tooltip("Scale multiplier when pressed (e.g., 0.95 = 95% size)")]
         [SerializeField] private float pressScaleMult = 0.95f;
 
