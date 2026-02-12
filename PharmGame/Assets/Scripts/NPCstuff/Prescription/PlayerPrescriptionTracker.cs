@@ -3,14 +3,26 @@
 using UnityEngine;
 using Game.Prescriptions; // Needed for PrescriptionOrder
 using System; // Needed for Action, Nullable
+using Systems.Persistence;
+using Systems.Inventory;
 
 namespace Systems.Player // Place in a suitable namespace for player components
 {
+    [Serializable]
+    public class PlayerPrescriptionData : ISaveable
+    {
+        [SerializeField] private SerializableGuid _id;
+        public SerializableGuid Id { get => _id; set => _id = value; }
+        
+        public bool HasActiveOrder;
+        public PrescriptionOrder ActiveOrder;
+    }
+    
     /// <summary>
     /// Component on the player GameObject to track the currently active prescription order
     /// the player is attempting to fulfill. Now implemented as a singleton for fast access.
     /// </summary>
-    public class PlayerPrescriptionTracker : MonoBehaviour
+    public class PlayerPrescriptionTracker : MonoBehaviour, ISavableComponent, IBind<PlayerPrescriptionData>
     {
         // --- REFACTORED: SINGLETON INSTANCE ---
         /// <summary>
@@ -75,8 +87,66 @@ namespace Systems.Player // Place in a suitable namespace for player components
             activePrescriptionOrder = null;
             Debug.Log($"PlayerPrescriptionTracker ({gameObject.name}): Active prescription order cleared.", this);
 
+            if (PlayerUIPopups.Instance != null)
+            {
+                PlayerUIPopups.Instance.HidePopup("Prescription Order");
+            }
+
             // Publish the event
             OnActiveOrderChanged?.Invoke(activePrescriptionOrder); // Use ?.Invoke for null safety
+        }
+
+        [Header("Save System")]
+        [SerializeField] private SerializableGuid id;
+        public SerializableGuid Id { get => id; set => id = value; }
+
+        public ISaveable CreateSaveData()
+        {
+            var data = new PlayerPrescriptionData();
+            data.Id = this.Id;
+
+            if (activePrescriptionOrder.HasValue)
+            {
+                data.HasActiveOrder = true;
+                data.ActiveOrder = activePrescriptionOrder.Value;
+            }
+            else
+            {
+                data.HasActiveOrder = false;
+            }
+
+            return data;
+        }
+
+        public void Bind(ISaveable data)
+        {
+            if (data is PlayerPrescriptionData saveData)
+            {
+                Bind(saveData);
+            }
+        }
+
+        public void Bind(PlayerPrescriptionData data)
+        {
+            if (data.HasActiveOrder)
+            {
+                SetActiveOrder(data.ActiveOrder);
+
+                // --- RESTORE UI ON LOAD ---
+                if (PlayerUIPopups.Instance != null)
+                {
+                    Debug.Log($"PlayerPrescriptionTracker: Restoring Prescription UI for order: {data.ActiveOrder.patientName}");
+                    PlayerUIPopups.Instance.ShowPopup("Prescription Order", data.ActiveOrder.ToString());
+                }
+                else
+                {
+                    Debug.LogWarning("PlayerPrescriptionTracker: Loaded active order but PlayerUIPopups.Instance was null. UI not shown.");
+                }
+            }
+            else
+            {
+                ClearActiveOrder();
+            }
         }
     }
 }

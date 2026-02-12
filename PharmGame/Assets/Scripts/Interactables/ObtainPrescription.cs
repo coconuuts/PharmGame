@@ -72,6 +72,8 @@ namespace Game.Interaction // Place in a suitable namespace, e.g., Game.Interact
 
         public void DeactivatePrompt()
         {
+            if (this == null || gameObject == null) return;
+            
             // Ask the singleton to deactivate the screen-space prompt and CLEAR ITS TEXT
             if (PromptEditor.HasInstance)
             {

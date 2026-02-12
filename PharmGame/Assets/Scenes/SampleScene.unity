@@ -6969,7 +6969,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 538098026}
-  - component: {fileID: 538098023}
+  - component: {fileID: 538098027}
   - component: {fileID: 538098025}
   - component: {fileID: 538098024}
   m_Layer: 0
@@ -6979,28 +6979,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &538098023
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 538098022}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e36b0eb22a1b3b742ac11c25946037d0, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  id:
-    Part1: 101801029
-    Part2: 1327459080
-    Part3: 2828720028
-    Part4: 1144743205
-  combiner: {fileID: 538098025}
-  flexibleGridLayout: {fileID: 329927439}
-  visualizer: {fileID: 538098024}
-  allowedLabels: 07000000
-  allowAllIfListEmpty: 1
 --- !u!114 &538098024
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7047,6 +7025,28 @@ Transform:
   m_Children: []
   m_Father: {fileID: 673708012}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &538098027
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 538098022}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e36b0eb22a1b3b742ac11c25946037d0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  id:
+    Part1: 2768610604
+    Part2: 1211185685
+    Part3: 1544570293
+    Part4: 1471095932
+  combiner: {fileID: 538098025}
+  flexibleGridLayout: {fileID: 329927439}
+  visualizer: {fileID: 538098024}
+  allowedLabels: 07000000
+  allowAllIfListEmpty: 1
 --- !u!1 &545196497
 GameObject:
   m_ObjectHideFlags: 0
@@ -8604,8 +8604,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   craftingRecipes: {fileID: 11400000, guid: 2ed4e5dcf5deb9245ad0113ef0e5315a, type: 2}
   primaryInputInventory: {fileID: 806063685}
-  secondaryInputInventory: {fileID: 2143481927}
-  outputInventory: {fileID: 538098023}
+  secondaryInputInventory: {fileID: 2143481931}
+  outputInventory: {fileID: 538098027}
   craftingUIRoot: {fileID: 1003770828}
   craftingMinigameManager: {fileID: 1722133799}
   drugRecipeMapping: {fileID: 11400000, guid: d1d6e0276a73e7044a5254c1a7193ea5, type: 2}
@@ -9897,6 +9897,11 @@ MonoBehaviour:
   prescriptionQueuePoints:
   - {fileID: 1101951916}
   - {fileID: 1392961450}
+  id:
+    Part1: 0
+    Part2: 0
+    Part3: 0
+    Part4: 0
 --- !u!114 &763258588
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -27785,7 +27790,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 2143481930}
-  - component: {fileID: 2143481927}
+  - component: {fileID: 2143481931}
   - component: {fileID: 2143481929}
   - component: {fileID: 2143481928}
   m_Layer: 0
@@ -27795,28 +27800,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &2143481927
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2143481926}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e36b0eb22a1b3b742ac11c25946037d0, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  id:
-    Part1: 101801029
-    Part2: 1327459080
-    Part3: 2828720028
-    Part4: 1144743205
-  combiner: {fileID: 2143481929}
-  flexibleGridLayout: {fileID: 945085169}
-  visualizer: {fileID: 2143481928}
-  allowedLabels: 0d0000000e0000000f00000010000000
-  allowAllIfListEmpty: 1
 --- !u!114 &2143481928
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -27863,6 +27846,28 @@ Transform:
   m_Children: []
   m_Father: {fileID: 673708012}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2143481931
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2143481926}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e36b0eb22a1b3b742ac11c25946037d0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  id:
+    Part1: 3439143523
+    Part2: 1262502104
+    Part3: 3910950044
+    Part4: 791831645
+  combiner: {fileID: 2143481929}
+  flexibleGridLayout: {fileID: 945085169}
+  visualizer: {fileID: 2143481928}
+  allowedLabels: 0d0000000e0000000f00000010000000
+  allowAllIfListEmpty: 1
 --- !u!1 &2146437545
 GameObject:
   m_ObjectHideFlags: 0

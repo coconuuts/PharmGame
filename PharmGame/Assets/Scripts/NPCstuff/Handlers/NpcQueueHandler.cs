@@ -189,6 +189,46 @@ namespace Game.NPC.Handlers // Placing handlers together
              }
         }
 
+          /// <summary>
+          /// Called during data restoration to sync this NPC with the PrescriptionManager's queue list.
+          /// </summary>
+          /// <param name="savedIndex">The index loaded from save data.</param>
+          public void RestorePrescriptionQueueState(int savedIndex)
+          {
+          if (prescriptionManager == null) 
+          {
+               prescriptionManager = Game.Prescriptions.PrescriptionManager.Instance;
+          }
+
+          if (prescriptionManager == null)
+          {
+               Debug.LogError($"NpcQueueHandler ({gameObject.name}): Cannot restore prescription queue state. Manager is null.");
+               return;
+          }
+
+          // 1. Tell the Manager we are occupying this spot
+          prescriptionManager.RegisterRestoredQueueOccupant(savedIndex, runner);
+
+          // 2. Setup local movement targets so the NPC doesn't wander off
+          Transform spotTransform = prescriptionManager.GetPrescriptionQueuePoint(savedIndex);
+          
+          if (spotTransform != null)
+          {
+               // Use the existing Setup method to align internal state (indices, target location)
+               SetupQueueSpot(spotTransform, savedIndex, CustomerManagement.QueueType.Prescription);
+               
+               // Ensure the runner knows it has reached the destination so it doesn't try to walk there again 
+               // (assuming the save happened while they were standing still)
+               if (runner != null)
+               {
+                    runner._hasReachedCurrentDestination = true;
+                    // Force position snap if you want to be perfectly safe, 
+                    // though the save system usually handles position.
+                    // transform.position = spotTransform.position; 
+               }
+          }
+          }
+
 
         /// <summary>
         /// Signals this NPC to move to a new spot in a queue line (used for moving up).

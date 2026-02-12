@@ -74,20 +74,18 @@ namespace Game.NPC.TI
             {
                 if (data != null && !string.IsNullOrEmpty(data.Id))
                 {
-                    // Reset Runtime Flags
-                    // Since 'isActiveGameObject' is serialized, it might load as true.
-                    // We must force it to false because the GameObject definitely does not exist yet.
                     data.isActiveGameObject = false; 
                     data.NpcGameObject = null;
-
-                    // CRITICAL: Re-link the Prefab! 
-                    // Save files don't store the Prefab reference. We must find it.
-                    // For Phase 2, we might not have a lookup yet. 
-                    // TODO: Implement a "Prefab Lookup" if not present. 
-                    // For now, if the loaded data has a null prefab, the NPC won't activate visually.
-                    // We will assume TiNpcManager or a Database can restore this later.
                     
                     TiNpcManager.Instance.allTiNpcs[data.Id] = data;
+
+                    if (data.pendingPrescription)
+                    {
+                        if (Game.Prescriptions.PrescriptionManager.Instance != null)
+                        {
+                            Game.Prescriptions.PrescriptionManager.Instance.RegisterLoadedTiOrder(data.Id, data.assignedOrder);
+                        }
+                    }
 
                     // Confirm the position retrieved from disk
                     Debug.Log($"[TiNpcPersistenceBridge] Loaded '{data.Id}'. WorldPos: {data.CurrentWorldPosition}. State: {data.CurrentStateEnumKey}");

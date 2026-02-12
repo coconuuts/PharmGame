@@ -44,6 +44,9 @@ namespace Game.NPC.States // Place alongside other active states
         {
             base.OnEnter(context); // Call base OnEnter (logs entry, enables Agent)
 
+            Debug.Log($"{context.NpcObject.name}: Entering {name}. Re-claiming prescription spot to ensure Manager tracking.", context.NpcObject);
+            context.PublishEvent(new ClaimPrescriptionSpotEvent(context.NpcObject));
+
             // Stop any residual movement from reaching the spot (should already be stopped from previous state)
             context.MovementHandler?.StopMoving();
             context.MovementHandler?.StopRotation();

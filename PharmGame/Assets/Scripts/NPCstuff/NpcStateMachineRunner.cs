@@ -915,6 +915,8 @@ namespace Game.NPC
                          data.InventoryItems = Shopper.GetTransientInventoryData();
                     }
                     
+                    data.HasPendingPrescription = this.hasPendingPrescriptionTransient;
+                    data.AssignedOrder = this.assignedOrderTransient;
 
                     return data;
                }
@@ -1019,7 +1021,29 @@ namespace Game.NPC
                          }
                     }
 
-                    // 5. Restore State
+                    // 5. Restore Prescription Data 
+                    this.hasPendingPrescriptionTransient = data.HasPendingPrescription;
+                    this.assignedOrderTransient = data.AssignedOrder;
+
+                    if (this.hasPendingPrescriptionTransient)
+                    {
+                         if (Game.Prescriptions.PrescriptionManager.Instance != null)
+                         {
+                              Game.Prescriptions.PrescriptionManager.Instance.RegisterLoadedTransientOrder(this.gameObject, this.assignedOrderTransient);
+                         }
+                    }
+
+                    // Restore Prescription Queue Specifics 
+                    if (data.QueueIndex > -1 && data.QueueTypeString == "Prescription")
+                    {
+                         if (this.QueueHandler != null)
+                         {
+                              this.QueueHandler.Initialize(CustomerManagement.CustomerManager.Instance); 
+                              this.QueueHandler.RestorePrescriptionQueueState(data.QueueIndex);
+                         }
+                    }
+
+                    // 6. Restore State
                     if (!string.IsNullOrEmpty(data.CurrentStateEnumKey) && !string.IsNullOrEmpty(data.CurrentStateEnumType))
                     {
                          // Helper to parse string back to Enum (reusing logic from TiNpcData or creating similar)

@@ -68,10 +68,10 @@ namespace Systems.Player // Place in Systems.Player namespace for consistency
             // Ensure prompt is deactivated and current interactable cleared when disabled
              if (currentInteractable != null)
              {
-                  if (PromptEditor.HasInstance)
-                  {
+                  if ((currentInteractable as UnityEngine.Object) != null && PromptEditor.HasInstance)
+                 {
                       currentInteractable.DeactivatePrompt();
-                  }
+                 }
                   currentInteractable = null;
              }
         }
@@ -149,12 +149,20 @@ namespace Systems.Player // Place in Systems.Player namespace for consistency
         /// </summary>
         private void HandleInteractionRaycast()
         {
+            if (currentInteractable != null && (currentInteractable as UnityEngine.Object) == null)
+            {
+                currentInteractable = null;
+            }
+            
             if (!isRaycastActive || cameraTransform == null)
             {
                  // If raycast is inactive or camera is null, ensure prompt is hidden and interactable is null
                  if (currentInteractable != null)
                  {
-                      currentInteractable.DeactivatePrompt();
+                      if ((currentInteractable as UnityEngine.Object) != null)
+                      {
+                          currentInteractable.DeactivatePrompt();
+                      }
                       currentInteractable = null;
                  }
                  return;
@@ -168,7 +176,7 @@ namespace Systems.Player // Place in Systems.Player namespace for consistency
             {
                  GameObject hitObject = hit.collider.gameObject;
 
-                 // --- NEW CORRECTED LOGIC: Find all IInteractable components and check their enabled state ---
+                 // --- Find all IInteractable components and check their enabled state ---
                  IInteractable[] potentialInteractables = hitObject.GetComponentsInParent<IInteractable>();
 
                  foreach (IInteractable interactable in potentialInteractables)
@@ -194,9 +202,15 @@ namespace Systems.Player // Place in Systems.Player namespace for consistency
                       // If we hit a NEW interactable (or null -> interactable)
                       if (currentInteractable != hitInteractable)
                       {
-                           currentInteractable?.DeactivatePrompt(); // Deactivate prompt on the old one (if any)
+                           if (currentInteractable != null && (currentInteractable as UnityEngine.Object) != null)
+                           {
+                               currentInteractable.DeactivatePrompt();
+                           }
                            currentInteractable = hitInteractable; // Set the new one
-                           currentInteractable.ActivatePrompt(); // Activate prompt on the new one
+                           if ((currentInteractable as UnityEngine.Object) != null)
+                           {
+                               currentInteractable.ActivatePrompt(); // Activate prompt on the new one
+                           }
                       }
                       // If we hit the SAME interactable, do nothing (prompt is already active)
                  }
@@ -205,7 +219,10 @@ namespace Systems.Player // Place in Systems.Player namespace for consistency
                       // If we were looking at an interactable, deactivate its prompt and clear the reference
                       if (currentInteractable != null)
                       {
-                           currentInteractable.DeactivatePrompt();
+                           if ((currentInteractable as UnityEngine.Object) != null)
+                           {
+                               currentInteractable.DeactivatePrompt();
+                           }
                            currentInteractable = null;
                       }
                  }
@@ -215,7 +232,10 @@ namespace Systems.Player // Place in Systems.Player namespace for consistency
                   // If we were looking at an interactable, deactivate its prompt and clear the reference
                   if (currentInteractable != null)
                   {
-                       currentInteractable.DeactivatePrompt();
+                       if ((currentInteractable as UnityEngine.Object) != null)
+                      {
+                          currentInteractable.DeactivatePrompt();
+                      }
                        currentInteractable = null;
                   }
              }
@@ -243,7 +263,10 @@ namespace Systems.Player // Place in Systems.Player namespace for consistency
              // Ensure prompt is hidden and current interactable is cleared immediately when disabled
              if (currentInteractable != null)
              {
-                  currentInteractable.DeactivatePrompt();
+                  if ((currentInteractable as UnityEngine.Object) != null)
+                 {
+                     currentInteractable.DeactivatePrompt();
+                 }
                   currentInteractable = null;
              }
             Debug.Log("PlayerInteractionManager: Interaction raycast disabled.");

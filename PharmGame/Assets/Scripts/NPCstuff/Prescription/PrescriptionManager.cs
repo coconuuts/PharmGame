@@ -1,7 +1,3 @@
-// --- START OF FILE PrescriptionManager.cs ---
-
-// --- START OF FILE PrescriptionManager.cs ---
-
 using UnityEngine;
 using System.Collections.Generic; // Needed for List and Dictionary, HashSet
 using System; // Needed for System.Serializable and Enum
@@ -21,6 +17,7 @@ using System.Linq; // Needed for LINQ operations like FirstOrDefault, Select, To
 using Game.NPC.BasicStates;
 using Systems.Crafting; // Needed for DrugRecipeMappingSO
 using Systems.Inventory; // Needed for ItemDetails
+using Systems.Persistence;
 
 
 namespace Game.Prescriptions // Place the Prescription Manager in its own namespaces
@@ -28,13 +25,8 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
     /// <summary>
     /// Manages the generation, assignment, and tracking of prescription orders.
     /// Also manages the Prescription Queue.
-    /// Now includes reference to DrugRecipeMappingSO for delivery validation.
-    /// MODIFIED: Uses PrescriptionGenerator for order creation.
-    /// MODIFIED: Provides list of currently used patient names to the generator.
-    /// MODIFIED: Provides a list of currently active orders (unassigned or assigned) for UI display.
-    /// MODIFIED: Added tracking for orders marked as "ready" by the player. // <-- Added note
     /// </summary>
-    public class PrescriptionManager : MonoBehaviour
+    public class PrescriptionManager : MonoBehaviour, ISavableComponent, IBind<PrescriptionManagerData>
     {
         // --- Singleton Instance ---
         public static PrescriptionManager Instance { get; private set; }
@@ -290,6 +282,129 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
             }
             Debug.Log("PrescriptionManager: OnDestroy completed.");
         }
+
+        // --- SAVE SYSTEM IMPLEMENTATION ---
+
+        [Header("Save System")]
+        [SerializeField] private SerializableGuid id;
+        public SerializableGuid Id { get => id; set => id = value; }
+
+        public ISaveable CreateSaveData()
+        {
+            var data = new PrescriptionManagerData();
+            data.Id = this.Id;
+            data.OrdersGeneratedToday = this.ordersGeneratedToday;
+            
+            // Save Unassigned Orders
+            data.UnassignedOrders = new List<PrescriptionOrder>(this.unassignedOrders);
+
+            // Save Ready Orders (Convert HashSet to List)
+            data.ReadyOrders = new List<string>(this.readyOrders);
+
+            // Note: We do NOT save assignedTiOrders or assignedTransientOrders here.
+            // Those are saved on the individual NPCs. We rebuild the dictionaries on Load.
+            
+            return data;
+        }
+
+        public void Bind(ISaveable data)
+        {
+            if (data is PrescriptionManagerData saveData)
+            {
+                Bind(saveData);
+            }
+        }
+
+        public void Bind(PrescriptionManagerData data)
+        {
+            Debug.Log("PrescriptionManager: Restoring state from save...");
+
+            this.ordersGeneratedToday = data.OrdersGeneratedToday;
+
+            // Restore Unassigned Orders
+            this.unassignedOrders.Clear();
+            if (data.UnassignedOrders != null)
+            {
+                this.unassignedOrders.AddRange(data.UnassignedOrders);
+            }
+
+            // Restore Ready Orders
+            this.readyOrders.Clear();
+            if (data.ReadyOrders != null)
+            {
+                foreach(var name in data.ReadyOrders)
+                {
+                    this.readyOrders.Add(name);
+                }
+            }
+
+            // Clear Assignments (They will be repopulated by the NPC Loaders)
+            this.assignedTiOrders.Clear();
+            this.assignedTransientOrders.Clear();
+
+            Debug.Log($"PrescriptionManager: Restored {unassignedOrders.Count} unassigned orders and {readyOrders.Count} ready orders.");
+        }
+
+        // --- NEW HELPER METHODS FOR LOADING ---
+
+        /// <summary>
+        /// Called by TiNpcPersistenceBridge (or TiNpcManager) when loading a TI NPC
+        /// that has a pending prescription.
+        /// </summary>
+        public void RegisterLoadedTiOrder(string tiId, PrescriptionOrder order)
+        {
+            if (!assignedTiOrders.ContainsKey(tiId))
+            {
+                assignedTiOrders.Add(tiId, order);
+                // Ensure it's not in unassigned
+                // (It shouldn't be if saved correctly, but safety check)
+                unassignedOrders.RemoveAll(x => x.patientName == order.patientName); 
+            }
+        }
+
+        /// <summary>
+        /// Called by TransientNpcPersistenceBridge (via Runner) when loading a Transient NPC
+        /// that has a pending prescription.
+        /// </summary>
+        public void RegisterLoadedTransientOrder(GameObject npcObj, PrescriptionOrder order)
+        {
+            if (!assignedTransientOrders.ContainsKey(npcObj))
+            {
+                assignedTransientOrders.Add(npcObj, order);
+                 // Ensure it's not in unassigned
+                unassignedOrders.RemoveAll(x => x.patientName == order.patientName);
+            }
+        }
+
+          /// <summary>
+          /// Forces a specific Runner into a specific queue spot. 
+          /// Used ONLY during Save/Load restoration to place an NPC back into their saved spot.
+          /// </summary>
+          public void RegisterRestoredQueueOccupant(int spotIndex, Game.NPC.NpcStateMachineRunner runner)
+          {
+          if (prescriptionQueueSpots == null || prescriptionQueueSpots.Count == 0)
+          {
+               Debug.LogError("PrescriptionManager: Cannot restore queue occupant. Queue spots not initialized.");
+               return;
+          }
+
+          if (spotIndex < 0 || spotIndex >= prescriptionQueueSpots.Count)
+          {
+               Debug.LogWarning($"PrescriptionManager: Saved queue index {spotIndex} is out of bounds (Max: {prescriptionQueueSpots.Count - 1}). Placing NPC at claim spot or exiting.");
+               return;
+          }
+
+          QueueSpot targetSpot = prescriptionQueueSpots[spotIndex];
+
+          if (targetSpot.IsOccupied && targetSpot.currentOccupant != runner)
+          {
+               Debug.LogWarning($"PrescriptionManager: Restoration conflict! Spot {spotIndex} is already occupied by {targetSpot.currentOccupant.name}. Overwriting with {runner.name}.");
+          }
+
+          // Force assignment
+          targetSpot.currentOccupant = runner;
+          Debug.Log($"PrescriptionManager: Restored {runner.name} to Prescription Queue Spot {spotIndex}.");
+          }
 
         // --- Order Generation Logic ---
 
@@ -793,7 +908,7 @@ namespace Game.Prescriptions // Place the Prescription Manager in its own namesp
              if (spotThatPublished.IsOccupied)
              {
                   // This is an inconsistency! The spot that published the "I'm leaving" event is STILL marked occupied.
-                  Debug.LogError($"PrescriptionManager: Inconsistency detected! QueueSpotFreedEvent received for spot {spotIndex} in Prescription queue, but the spot is still marked occupied by {spotThatPublished.currentOccupant.gameObject.name} (Runner). Forcing spot free.", this);
+                  Debug.Log($"PrescriptionManager: QueueSpotFreedEvent received for spot {spotIndex} in Prescription queue. Spot was occupied by {spotThatPublished.currentOccupant.gameObject.name}. Clearing occupant.", this);
                   spotThatPublished.currentOccupant = null; // Force clear the occupant reference to fix the data
              }
              else

@@ -635,6 +635,19 @@ namespace Game.NPC.TI // Keep in the TI namespace
                          // potentially triggering a state change before the Runner's Activate logic runs.
                          tiData.ProcessPendingSimulatedEvents(basicNpcStateManager);
 
+                         // RESTORE PRESCRIPTION QUEUE STATE
+                         if (tiData.savedQueueIndex > -1 && tiData.savedQueueType == QueueType.Prescription)
+                         {
+                              // Check if the handler property is accessible
+                              if (runner.QueueHandler != null)
+                              {
+                              // Ensure dependencies are ready (customerManager is available in this class)
+                              runner.QueueHandler.Initialize(customerManager); 
+                              runner.QueueHandler.RestorePrescriptionQueueState(tiData.savedQueueIndex);
+                              Debug.Log($"[TiNpcManager] Restored '{tiData.Id}' to Prescription Queue Index {tiData.savedQueueIndex}.");
+                              }
+                         }
+
                          // --- Determine the starting state based on saved data ---
                          // Delegate the complex logic to the State Transition Handler
                          Enum startingActiveStateEnum = tiNpcStateTransitionHandler.DetermineActivationState(tiData, runner, currentTime);

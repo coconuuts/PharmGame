@@ -1,5 +1,8 @@
-public enum QueueType
+namespace CustomerManagement
 {
-    Main,
-    Prescription 
+    public enum QueueType
+    {
+        Main,
+        Prescription 
+    }
 }

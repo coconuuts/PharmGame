@@ -43,6 +43,9 @@ namespace Game.NPC.States // Place alongside other active states
         {
             base.OnEnter(context); // Call base OnEnter (logs entry, enables Agent)
 
+            Debug.Log($"{context.NpcObject.name}: Entering {name}. Re-claiming prescription spot to ensure Manager tracking.", context.NpcObject);
+            context.PublishEvent(new ClaimPrescriptionSpotEvent(context.NpcObject));
+
             // Stop any residual movement from reaching the spot
             context.MovementHandler?.StopMoving();
             context.MovementHandler?.StopRotation(); // Stop rotation coroutine if it was still running from arrival
@@ -154,11 +157,11 @@ namespace Game.NPC.States // Place alongside other active states
                 waitingRoutine = null;
             }
             // impatientTimer = 0f; // Timer is managed by the coroutine now
-
+          
             // Note: Stop waiting animation
             // context.PlayAnimation("Idle");
 
-            // --- NEW: Disable interactables on exit using the InteractionManager singleton ---
+            // --- Disable interactables on exit using the InteractionManager singleton ---
              if (InteractionManager.Instance != null)
              {
                   // Disable the ObtainPrescription component on this NPC's GameObject
@@ -172,7 +175,6 @@ namespace Game.NPC.States // Place alongside other active states
              {
                   Debug.LogWarning($"{context.NpcObject.name}: InteractionManager.Instance is null on exit! Cannot disable interactables.", context.NpcObject);
              }
-            // --- END NEW ---
 
             // Reset the state of the ObtainPrescription component (clears its internal flag)
             ObtainPrescription obtainPrescriptionComponent = context.GetObtainPrescription(); // Get from context helper (assuming context caches it) or context.NpcObject.GetComponent<ObtainPrescription>()

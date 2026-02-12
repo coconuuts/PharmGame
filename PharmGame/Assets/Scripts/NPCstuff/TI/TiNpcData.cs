@@ -15,6 +15,7 @@ using System.Linq; // Needed for accessing PathState enum
 using Game.Prescriptions; // Needed for PrescriptionOrder
 using Game.Events;
 using Systems.Persistence;
+using CustomerManagement;
 
 namespace Game.NPC.TI // Keep in the TI namespace
 {

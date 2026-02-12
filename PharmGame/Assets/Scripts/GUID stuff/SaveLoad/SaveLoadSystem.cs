@@ -11,6 +11,7 @@ using Game.NPC;
 using Systems.Economy;
 using Systems.SceneManagement;
 using Systems.UI;
+using Systems.Player;
 
 namespace Systems.Persistence {
     [Serializable] public class GameData : ISaveable
@@ -26,6 +27,8 @@ namespace Systems.Persistence {
         public List<TiNpcData> tiNpcDataList;
         public List<Game.NPC.TransientNpcData> transientNpcs;
         public List<InteractableObjectData> worldInteractables;
+        public PrescriptionManagerData prescriptionSystemData;
+        public PlayerPrescriptionData playerPrescriptionData;
 
         // Global Variables
         public float PlayerCleanMoney;
@@ -51,6 +54,8 @@ namespace Systems.Persistence {
             TotalPlayTimeSeconds = 0;
             LastSaveDate = DateTime.Now.ToString();
             worldInteractables = new List<InteractableObjectData>();
+            prescriptionSystemData = new PrescriptionManagerData();
+            playerPrescriptionData = new PlayerPrescriptionData();
             
             UnlockedUpgradeIds = new List<string>();
             playerData = new PlayerData();
@@ -178,9 +183,10 @@ namespace Systems.Persistence {
             Bind<UpgradeManager, GameData>(gameData);
 
             // WORLD STATE BINDINGS
-            // Bind the Player's position and stats
-            // NOTE: Since this now runs after the whole group loads, the floor is guaranteed to be there.
             Bind<PlayerEntity, PlayerData>(gameData.playerData);
+
+            Bind<Game.Prescriptions.PrescriptionManager, PrescriptionManagerData>(gameData.prescriptionSystemData);
+            Bind<PlayerPrescriptionTracker, PlayerPrescriptionData>(gameData.playerPrescriptionData);
 
             // Bind Generic World Interactables (Light Switches, Cash Register States)
             if (gameData.worldInteractables == null) gameData.worldInteractables = new List<InteractableObjectData>();
@@ -330,6 +336,8 @@ namespace Systems.Persistence {
                 if (data != null) {
                     if (data is InventoryData invData) gameData.inventories.Add(invData);
                     else if (data is InteractableObjectData interactableData) gameData.worldInteractables.Add(interactableData);
+                    else if (data is PrescriptionManagerData pmData) gameData.prescriptionSystemData = pmData;
+                    else if (data is PlayerPrescriptionData ppData) gameData.playerPrescriptionData = ppData;
                 }
             }
             
@@ -337,6 +345,7 @@ namespace Systems.Persistence {
             Bind<EconomyManager, GameData>(gameData);
             Bind<UpgradeManager, GameData>(gameData);
             Bind<PlayerEntity, PlayerData>(gameData.playerData); 
+            Bind<Game.Prescriptions.PrescriptionManager, PrescriptionManagerData>(gameData.prescriptionSystemData);
 
             if (TiNpcPersistenceBridge.Instance != null) gameData.tiNpcDataList = TiNpcPersistenceBridge.Instance.GetAllTiNpcData();
             else {
