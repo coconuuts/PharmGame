@@ -1,8 +1,3 @@
-// --- START OF FILE PlayerInteractionManager.cs ---
-
-// Systems/Player/PlayerInteractionManager.cs
-// Keep existing usings and namespace
-
 using UnityEngine;
 using TMPro;
 using Systems.Interaction; // Needed for IInteractable, InteractionResponse
@@ -19,13 +14,6 @@ namespace Systems.Player // Place in Systems.Player namespace for consistency
         public Transform cameraTransform;
         private bool isRaycastActive = true; // Flag controlled by state changes
 
-        // promptText is now managed by PromptEditor via IInteractable methods,
-        // so this field can be removed or kept for debugging if needed, but isn't used for display here.
-        // [Header("TMP Prompt Settings")]
-        // [Tooltip("Assign the TMP Text object used for interaction prompts.")]
-        // [SerializeField] private TMP_Text promptText; // Made private and serialized
-
-
         private IInteractable currentInteractable; // The IInteractable component currently hovered over and enabled
 
         private void Awake()
@@ -41,9 +29,6 @@ namespace Systems.Player // Place in Systems.Player namespace for consistency
                  else
                  {
                      Debug.LogError("PlayerInteractionManager: Camera Transform not assigned and no object with 'MainCamera' tag found!", this);
-                     // Don't disable, still need state change handling
-                     // enabled = false; // Keep enabled for state handling
-                     // return; // Don't return, allow state handling to potentially fix things
                  }
             }
         }

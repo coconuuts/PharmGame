@@ -35,7 +35,7 @@ public class PlayerCombatManager : MonoBehaviour
     private void Update()
     {
         // Check for Left Mouse Button click
-        if (Input.GetMouseButtonDown(0)) // Assuming Left Mouse Button is the primary attack input
+        if (Input.GetMouseButtonDown(0)) 
         {
             AttemptAttack();
         }
@@ -59,12 +59,8 @@ public class PlayerCombatManager : MonoBehaviour
             if (hit.collider.gameObject.CompareTag(npcTag))
             {
                 Debug.Log($"PlayerCombatManager: Hit object has NPC tag. Triggering Combat for {hit.collider.gameObject.name}.", hit.collider.gameObject);
-                // --- PUBLISH THE NPC ATTACKED EVENT ---
-                // We don't need to get the NPC's state machine here.
-                // We just announce that this NPC GameObject was attacked.
-                // The Runner on the NPC will be subscribed and handle the rest.
+
                 EventManager.Publish(new NpcAttackedEvent(hit.collider.gameObject, this.gameObject)); // Pass the NPC GameObject and the player GameObject (this script is on the player)
-                // --------------------------------------
             }
         }
         else

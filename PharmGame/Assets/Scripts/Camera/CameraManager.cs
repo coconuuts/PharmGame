@@ -133,6 +133,31 @@ namespace Systems.CameraControl
         }
 
         /// <summary>
+        /// Gets the current vertical pitch (xRotation) of the camera.
+        /// Used by Save/Load system.
+        /// </summary>
+        public float GetPitch()
+        {
+            return xRotation;
+        }
+
+        /// <summary>
+        /// Sets the vertical pitch of the camera and applies it to the transform immediately.
+        /// Used by Save/Load system.
+        /// </summary>
+        public void SetPitch(float pitch)
+        {
+            xRotation = pitch;
+            // Clamp ensures we don't load a value that breaks the limits
+            xRotation = Mathf.Clamp(xRotation, verticalRotationLimits.x, verticalRotationLimits.y);
+            
+            if (playerCameraTransform != null)
+            {
+                playerCameraTransform.localRotation = Quaternion.Euler(xRotation, 0f, 0f);
+            }
+        }
+
+        /// <summary>
         /// Event handler for MenuManager.OnStateChanged.
         /// Automatically triggers camera return movement and sets mode when exiting cinematic states
         /// (including now exiting Crafting state).

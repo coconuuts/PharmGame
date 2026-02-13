@@ -11,5 +11,6 @@ namespace Systems.SaveLoad
         [field: SerializeField] public SerializableGuid Id { get; set; }
         public Vector3 position;
         public Quaternion rotation;
+        public float cameraPitch;
     }
 }

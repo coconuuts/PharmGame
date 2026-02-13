@@ -96,12 +96,13 @@ public class MainMenu : MonoBehaviour
 
     private void StartNewGameProcess(int slotIndex, string characterName)
     {
-        // 1. Reset Data
-        SaveLoadSystem.Instance.ResetGameData();
+        // 1. Prepare New Game (Resets Data + Sets isNewGameTransition = true)
+        // We pass 'false' so it doesn't load the scene immediately.
+        SaveLoadSystem.Instance.NewGame(false);
 
         // 2. Set the custom name and SLOT INDEX
         SaveLoadSystem.Instance.gameData.CharacterName = characterName;
-        SaveLoadSystem.Instance.gameData.SaveSlotIndex = slotIndex; // Important!
+        SaveLoadSystem.Instance.gameData.SaveSlotIndex = slotIndex; 
 
         // 3. Load the Scene
         SceneLoader loader = FindFirstObjectByType<SceneLoader>();
@@ -112,11 +113,9 @@ public class MainMenu : MonoBehaviour
         }
         else
         {
-            SaveLoadSystem.Instance.NewGame();
+            // Fallback: Use standard SceneManager if SceneLoader isn't found
+            UnityEngine.SceneManagement.SceneManager.LoadScene(SaveLoadSystem.Instance.gameData.CurrentLevelName);
         }
-
-        // 4. Create the initial Autosave
-        SaveLoadSystem.Instance.AutosaveGame();
     }
 
     private async void LoadGameScene(SceneLoader loader)

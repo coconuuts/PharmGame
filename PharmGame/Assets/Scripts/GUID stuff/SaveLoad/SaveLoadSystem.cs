@@ -95,6 +95,7 @@ namespace Systems.Persistence {
     
     public class SaveLoadSystem : PersistentSingleton<SaveLoadSystem> {
         [SerializeField] public GameData gameData;
+        private bool isNewGameTransition = false;
 
         IDataService dataService;
         bool isGameplayActive = false;
@@ -172,6 +173,27 @@ namespace Systems.Persistence {
         {
             Debug.Log("SaveLoadSystem: Restoring Game State...");
 
+            bool wasNewGame = isNewGameTransition;
+
+            // --- SPAWN POINT LOGIC START ---
+            if (isNewGameTransition)
+            {
+                PlayerSpawnPoint spawnPoint = FindFirstObjectByType<PlayerSpawnPoint>();
+                
+                if (spawnPoint != null)
+                {
+                    Debug.Log($"SaveLoadSystem: Found Spawn Point at {spawnPoint.transform.position}. Moving Player Data.");
+                    gameData.playerData.position = spawnPoint.transform.position;
+                    gameData.playerData.rotation = spawnPoint.transform.rotation;
+                }
+                else
+                {
+                    Debug.LogWarning("SaveLoadSystem: New Game started, but no PlayerSpawnPoint found in the scene! Using default/scene position.");
+                }
+
+                isNewGameTransition = false; // Reset the flag so future scene loads don't teleport the player
+            }
+
             // SYSTEM LEVEL BINDINGS 
             // Time must be first to set lighting/skybox before the screen fades in
             Bind<TimeManager, GameData>(gameData);
@@ -245,6 +267,12 @@ namespace Systems.Persistence {
             }
             
             Debug.Log("SaveLoadSystem: Data binding sequence complete.");
+
+            if (wasNewGame)
+            {
+                Debug.Log("SaveLoadSystem: Triggering initial New Game autosave.");
+                AutosaveGame();
+            }
         }
 
         public void ResetGameData() {
@@ -273,10 +301,15 @@ namespace Systems.Persistence {
             };
         }
 
-        public void NewGame() {
+        public void NewGame(bool autoLoadScene = true) {
             ResetGameData();
-            // This direct load is fine for debug buttons, but MainMenu will use SceneLoader instead
-            SceneManager.LoadScene(gameData.CurrentLevelName);
+            isNewGameTransition = true; 
+            
+            if (autoLoadScene)
+            {
+                // This direct load is fine for debug buttons
+                SceneManager.LoadScene(gameData.CurrentLevelName);
+            }
         }
         
         void Bind<T, TData>(TData data) where T : MonoBehaviour, IBind<TData> where TData : ISaveable, new() {
@@ -384,6 +417,7 @@ namespace Systems.Persistence {
         public void LoadGame(string gameName) {
             Debug.Log($"SaveLoadSystem: Loading '{gameName}'...");
             gameData = dataService.Load(gameName);
+            isNewGameTransition = false;
 
             if (String.IsNullOrWhiteSpace(gameData.CurrentLevelName)) gameData.CurrentLevelName = "SampleScene";
             if (gameData.inventories == null) gameData.inventories = new List<InventoryData>();
