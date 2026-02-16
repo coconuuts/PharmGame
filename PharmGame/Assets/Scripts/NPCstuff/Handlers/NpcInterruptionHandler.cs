@@ -160,18 +160,18 @@ namespace Game.NPC.Handlers // Placing handlers together
 
          /// <summary>
          /// Ends the current interruption state and returns to the previous state on the stack,
-         /// with conditional logic for queue/register states.
+         /// with conditional logic for queue/register states, AND overrides for Combat.
          /// Called by NpcEventHandler when an interruption completion event is received,
          /// OR called by an interruption state's OnExit method.
          /// </summary>
-         public void EndInterruption() // <-- MODIFIED
+         public void EndInterruption() 
          {
               if (runner == null) { Debug.LogError($"InterruptionHandler on {gameObject.name}: Runner is null during EndInterruption!", this); return; }
               if (runner.Manager == null) { Debug.LogError($"InterruptionHandler on {gameObject.name}: Runner's Manager is null during EndInterruption! Cannot check queue/register status. Transitioning to fallback.", this);
                  InteractorObject = null; // Clear interactor
                  stateStack.Clear(); // Clear stack as we cannot reliably return
                  isInterrupted = false; // Clear interruption flag 
-                 ProximityManager.Instance?.ExitInterruptionMode(runner); // Pass the runner
+                 ProximityManager.Instance?.ExitInterruptionMode(runner); 
 
                  // Transition to a safe state - use Runner's GetStateSO for Idle/ReturningToPool
                   NpcStateSO fallbackState = runner.GetStateSO(GeneralState.Idle);
@@ -186,26 +186,46 @@ namespace Game.NPC.Handlers // Placing handlers together
              {
                   Debug.LogWarning($"{runner.gameObject.name}: EndInterruption called but the NPC was not flagged as interrupted! Ignoring return logic, ensuring update mode is normal.", runner.gameObject);
                   InteractorObject = null; // Clear interactor defensively
-                  // Ensure update mode is restored just in case
-                  // MODIFIED: This call is now handled by ProximityManager
-                  // runner.ExitInterruptionMode(); // This will restore to normalUpdateInterval
-
+                  
                   // --- Notify ProximityManager of interruption end (defensive call) ---
-                  ProximityManager.Instance?.ExitInterruptionMode(runner); // Pass the runner
+                  ProximityManager.Instance?.ExitInterruptionMode(runner); 
                   return;
              }
 
-             isInterrupted = false; // Clear the interruption flag BEFORE returning
+             // --- Capture the current interruption state before we clear variables ---
+             Enum currentInterruptionState = runner.GetCurrentState()?.HandledState;
 
-             ProximityManager.Instance?.ExitInterruptionMode(runner); // Pass the runner
+             isInterrupted = false;
 
+             ProximityManager.Instance?.ExitInterruptionMode(runner); 
 
-             InteractorObject = null; // Clear the interactor
+             InteractorObject = null; 
 
               if (stateStack.Count > 0)
               {
                   NpcStateSO poppedState = stateStack.Pop();
                    Debug.Log($"{runner.gameObject.name}: State stack not empty ({stateStack.Count} remaining). Popped state '{poppedState.name}' from stack.", runner.gameObject);
+
+                  // --- Override return behavior if leaving Combat ---
+                  if (currentInterruptionState != null && currentInterruptionState.Equals(GeneralState.Combat))
+                  {
+                      Debug.Log($"{runner.gameObject.name}: Interruption ended from Combat. Overriding return logic and transitioning to Exiting.", runner.gameObject);
+                      
+                      NpcStateSO exitingState = runner.GetStateSO(CustomerState.Exiting);
+                      if (exitingState != null)
+                      {
+                          runner.TransitionToState(exitingState);
+                      }
+                      else
+                      {
+                          // Fallback in case the NPC (like a cashier) doesn't have a CustomerState.Exiting assigned
+                          Debug.LogWarning($"{runner.gameObject.name}: Exiting state not found after Combat! Transitioning to ReturningToPool.", runner.gameObject);
+                          NpcStateSO safeFallback = runner.GetStateSO(GeneralState.ReturningToPool) ?? runner.GetStateSO(GeneralState.Idle);
+                          runner.TransitionToState(safeFallback);
+                      }
+                      
+                      return; // Exit out early so the conditional return logic below doesn't run!
+                  }
 
                   // --- Conditional Return Logic ---
                   // Check the HandledState enum of the popped state
@@ -260,27 +280,21 @@ namespace Game.NPC.Handlers // Placing handlers together
                             {
                                  // Main queue is now full, cannot rejoin their spot. Give up and exit.
                                  Debug.LogWarning($"{runner.gameObject.name}: Main Queue is now full! Cannot rejoin after interruption from Queue. Transitioning to Exiting.", runner.gameObject);
-                                 // Note: Their old spot was already freed by the interruption handler (indirectly via QueueStateSO.OnExit calling QueueSpotFreedEvent).
-                                 // They effectively lost their place.
                                  runner.TransitionToState(runner.GetStateSO(CustomerState.Exiting));
                             }
                             else
                             {
                                  // Main queue is NOT full. Attempt to rejoin the queue.
-                                  // Note: TryJoinQueue will find the *first available spot*, which might be different from their old spot.
                                   Debug.Log($"{runner.gameObject.name}: Main Queue is not full. Attempting to rejoin Main Queue.", runner.gameObject);
                                   Transform assignedSpot;
                                   int spotIndex;
                                   if (runner.Manager.TryJoinQueue(runner, out assignedSpot, out spotIndex))
                                   {
-                                       // Successfully rejoined the queue, transition to Queue state
-                                       // --- UPDATE: Set queue index and type on QueueHandler ---
                                        if (runner.QueueHandler != null)
                                        {
                                            runner.QueueHandler.AssignedQueueSpotIndex = spotIndex;
                                            runner.QueueHandler._currentQueueMoveType = QueueType.Main;
                                        } else { Debug.LogError($"InterruptionHandler ({gameObject.name}): Runner's QueueHandler is null when trying to set queue index/type after rejoining queue!", this); }
-                                       // --- END UPDATE ---
                                        Debug.Log($"{runner.gameObject.name}: Successfully rejoined queue at spot {spotIndex}. Transitioning to Queue.", runner.gameObject);
                                        runner.CurrentTargetLocation = new BrowseLocation { browsePoint = assignedSpot, inventory = null };
                                         runner._hasReachedCurrentDestination = false; // Set flag to indicate movement is needed
@@ -290,7 +304,6 @@ namespace Game.NPC.Handlers // Placing handlers together
                                   }
                                   else
                                   {
-                                       // Should theoretically not happen if IsMainQueueFull is false, but defensive.
                                        Debug.LogError($"{runner.gameObject.name}: Manager.TryJoinQueue failed unexpectedly when Main Queue reported not full! Transitioning to Exiting.", runner.gameObject);
                                        runner.TransitionToState(runner.GetStateSO(CustomerState.Exiting));
                                   }
@@ -306,7 +319,6 @@ namespace Game.NPC.Handlers // Placing handlers together
                    else // poppedStateEnum is null
                    {
                         Debug.LogError($"InterruptionHandler ({runner.gameObject.name}): Popped state '{poppedState.name}' has a null HandledState! Cannot determine proper return logic. Transitioning to fallback.", runner.gameObject);
-                         // Transition to a safe state - use Runner's GetStateSO for Idle/ReturningToPool
                          NpcStateSO fallbackState = runner.GetStateSO(GeneralState.Idle);
                          if (fallbackState == null) fallbackState = runner.GetStateSO(GeneralState.ReturningToPool);
                          if (fallbackState != null) runner.TransitionToState(fallbackState);
@@ -315,15 +327,12 @@ namespace Game.NPC.Handlers // Placing handlers together
                   // --- End Conditional Return Logic ---
 
               }
-              else // State stack is empty - this means EndInterruption was called without a prior TryInterrupt
+              else // State stack is empty
               {
                   Debug.LogWarning($"{runner.gameObject.name}: EndInterruption called but state stack is empty! Telling Runner to Transition to Idle/Fallback and ensuring update mode is normal.", runner.gameObject);
-                  // Ensure update mode is restored just in case
-                  // MODIFIED: This call is now handled by ProximityManager
-                  // runner.ExitInterruptionMode(); // This will restore to normalUpdateInterval
 
                   // --- Notify ProximityManager of interruption end (defensive call) ---
-                  ProximityManager.Instance?.ExitInterruptionMode(runner); // Pass the runner
+                  ProximityManager.Instance?.ExitInterruptionMode(runner); 
 
                   // Transition to a safe state - use Runner's GetStateSO for Idle/ReturningToPool
                   NpcStateSO idleState = runner.GetStateSO(GeneralState.Idle);

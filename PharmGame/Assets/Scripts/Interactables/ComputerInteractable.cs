@@ -9,6 +9,7 @@ using TMPro;
 using Systems.Inventory; // Needed for ItemDetails and Inventory
 using Systems.Interaction; // Needed for IInteractable, InteractionResponse
 using Systems.UI; // Needed for PlayerUIPopups, IPanelActivatable
+using System.Linq;
 
 // Implement the new IPanelActivatable interface
 public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivatable
@@ -47,6 +48,9 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
     [Tooltip("Prefab for a single shop item button. It should contain a Button and an Image component (for the icon).")]
     [SerializeField] private GameObject shopButtonPrefab;
 
+    [Tooltip("Prefab for a shop category (Accordion style).")]
+    [SerializeField] private GameObject shopCategoryPrefab;
+
     private TextMeshProUGUI shoppingCartText;
     private Button buyButton;
 
@@ -64,6 +68,7 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
 
     // NEW: List to keep track of dynamically created buttons for cleanup
     private List<Button> createdShopButtons = new List<Button>();
+    private List<GameObject> createdCategories = new List<GameObject>();
 
     // NEW: Cached UpgradeDetailsSO references for tier unlocks
     // These will now be populated in OnEnable
@@ -171,12 +176,11 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
         {
              Debug.LogError("ComputerInteractable: 'Shop Content Panel' GameObject is not assigned! Shop UI functionality will not work.", this);
         }
-        // NEW: Check for shopButtonPrefab
+        if (shopCategoryPrefab == null) Debug.LogError("ComputerInteractable: Shop Category Prefab is not assigned!");
         if (shopButtonPrefab == null)
         {
             Debug.LogError("ComputerInteractable: 'Shop Button Prefab' is not assigned! Dynamic shop buttons cannot be created.", this);
         }
-        // NEW: Check if any purchasable items are defined
         if (purchasableItems == null || purchasableItems.Count == 0)
         {
             Debug.LogWarning("ComputerInteractable: No purchasable items defined in the 'Purchasable Items' list. The shop will appear empty.", this);
@@ -190,131 +194,70 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
     /// </summary>
     public void OnPanelActivated()
     {
-        Debug.Log("ComputerInteractable: Shop Panel Activated. Finding UI elements, creating buttons, and subscribing listeners.");
+        if (shopContentPanel == null || shopButtonPrefab == null || shopCategoryPrefab == null) return;
 
-        if (shopContentPanel == null)
-        {
-            Debug.LogError("ComputerInteractable: shopContentPanel is null in OnPanelActivated! Cannot find UI elements.", this);
-            return;
-        }
-        if (shopButtonPrefab == null)
-        {
-            Debug.LogError("ComputerInteractable: shopButtonPrefab is null in OnPanelActivated! Cannot create dynamic buttons.", this);
-            return;
-        }
-
-        // --- Validation for _upgradeManager (already fetched in OnEnable) ---
-        if (_upgradeManager == null)
-        {
-            Debug.LogError($"ComputerInteractable on {gameObject.name}: UpgradeManager.Instance is null in OnPanelActivated! (Should have been caught in OnEnable). Shop tiers will not function correctly.", this);
-            return; 
-        }
-        // --- END Validation ---
-
-        // --- Find UI elements dynamically within the shopContentPanel ---
-        Transform shopButtonsParent = shopContentPanel.transform.Find("ShopItemsScrollArea/Viewport/ShopButtons");
-        if (shopButtonsParent == null)
-        {
-            Debug.LogError("ComputerInteractable: 'ShopItemsScrollArea/Viewport/ShopButtons' parent not found! Cannot create shop buttons.", this);
-            return;
-        }
+        // 1. Find the Main Content Parent (The Scroll View Content)
+        // NOTE: In your hierarchy, this is "ShopButtons". We need to treat this object 
+        // as the holder of Categories now, NOT the holder of buttons.
+        Transform mainContentParent = shopContentPanel.transform.Find("ShopItemsScrollArea/Viewport/ShopTabs");
+        
+        if (mainContentParent == null) return;
 
         shoppingCartText = shopContentPanel.transform.Find("ShoppingCart/Text")?.GetComponent<TextMeshProUGUI>();
         buyButton = shopContentPanel.transform.Find("ShoppingCart/BuyButton")?.GetComponent<Button>();
 
-        // Clear any previously created dynamic buttons and their listeners if OnPanelDeactivated wasn't explicitly called (e.g., if re-activating quickly)
-        foreach (Button button in createdShopButtons)
+        CleanupUI(); // Remove old buttons and categories
+
+        // 2. Group items by our custom Category Names
+        var groupedItems = purchasableItems
+            .Where(item => item != null) // Filter nulls
+            .GroupBy(item => GetShopCategoryName(item.itemLabel)) // <-- Changed to use our new function
+            .OrderBy(group => group.Key); // Optional sorting
+
+        // 3. Iterate Groups and Create Categories
+        foreach (var group in groupedItems)
         {
-            if (button != null)
-            {
-                button.onClick.RemoveAllListeners();
-                Destroy(button.gameObject);
-            }
-        }
-        createdShopButtons.Clear(); // Ensure the list is empty before populating
+            // First, check if ANY item in this group is unlocked. 
+            // If the whole category is locked, we might want to hide the category header entirely.
+            var unlockedItemsInGroup = group.Where(IsItemTierUnlocked).ToList();
 
-        // --- Dynamically create buttons for each purchasable item ---
-        foreach (ItemDetails details in purchasableItems)
-        {
-            if (details == null)
-            {
-                Debug.LogWarning("ComputerInteractable: Skipping null ItemDetails in purchasableItems list.", this);
-                continue;
-            }
+            if (unlockedItemsInGroup.Count == 0) continue; // Skip empty categories
 
-            // --- MODIFIED: Check if unlocked BEFORE instantiating the button ---
-            bool isUnlocked = IsItemTierUnlocked(details);
-            if (!isUnlocked)
-            {
-                Debug.Log($"ComputerInteractable: Item '{details.Name}' (Tier {details.itemTier}) is locked. Hiding from shop list.");
-                continue; // Skip creating the button for this locked item
-            }
-            // --- END MODIFIED ---
+            // Instantiate Category Header
+            GameObject categoryGO = Instantiate(shopCategoryPrefab, mainContentParent);
+            createdCategories.Add(categoryGO);
 
-            GameObject buttonGO = Instantiate(shopButtonPrefab, shopButtonsParent);
-            buttonGO.name = $"ShopItemButton_{details.Name}"; // Give it a descriptive name
-            Button button = buttonGO.GetComponent<Button>();
-            Image buttonImage = buttonGO.GetComponent<Image>(); // Assuming the Image is on the root of the prefab
+            ShopCategoryHandler categoryHandler = categoryGO.GetComponent<ShopCategoryHandler>();
+            
+            // The group.Key is now directly the string returned by GetShopCategoryName
+            string categoryName = group.Key; 
+            categoryHandler.Setup(categoryName);
 
-            if (button == null)
-            {
-                Debug.LogError($"ComputerInteractable: Shop button prefab '{shopButtonPrefab.name}' is missing a Button component! Skipping item '{details.Name}'.", shopButtonPrefab);
-                Destroy(buttonGO);
-                continue;
-            }
+            Transform itemContainer = categoryHandler.GetItemContainer();
 
-            // Set the icon - this logic is now only for UNLOCKED items
-            if (buttonImage != null)
+            // 4. Instantiate Items inside the Category Container
+            foreach (ItemDetails details in unlockedItemsInGroup)
             {
-                if (details.Icon != null)
+                GameObject buttonGO = Instantiate(shopButtonPrefab, itemContainer);
+                Button button = buttonGO.GetComponent<Button>();
+                Image buttonImage = buttonGO.GetComponent<Image>();
+
+                if (buttonImage != null && details.Icon != null)
                 {
                     buttonImage.sprite = details.Icon;
-                    buttonImage.color = Color.white; // Always white for unlocked items
+                    buttonImage.color = Color.white;
                     buttonImage.preserveAspect = true;
                 }
-                else
-                {
-                    buttonImage.sprite = null;
-                    buttonImage.color = new Color(1, 1, 1, 0); // Transparent
-                    Debug.LogWarning($"ComputerInteractable: ItemDetails '{details.Name}' has no Icon assigned. Button will be transparent or use default.", details);
-                }
+
+                // Setup Button Click
+                ItemDetails currentItemDetails = details;
+                button.onClick.AddListener(() => AddItemToCart(currentItemDetails));
+                createdShopButtons.Add(button);
             }
-            else
-            {
-                Debug.LogWarning($"ComputerInteractable: Shop button prefab '{shopButtonPrefab.name}' is missing an Image component! Item icon for '{details.Name}' will not display.", shopButtonPrefab);
-            }
-
-            // Text will always be active and empty (or whatever is desired for unlocked items)
-            TextMeshProUGUI buttonText = buttonGO.GetComponentInChildren<TextMeshProUGUI>();
-            if (buttonText != null)
-            {
-                buttonText.text = ""; // Keep it empty, visual icon is enough
-                buttonText.gameObject.SetActive(true); // Always active for visible (unlocked) buttons
-            }
-
-            button.interactable = true; // Always interactable for displayed (unlocked) buttons
-
-            // --- IMPORTANT: Closure Bug Fix ---
-            // Capture the current 'details' into a local variable for the lambda expression
-            ItemDetails currentItemDetails = details;
-            button.onClick.AddListener(() => AddItemToCart(currentItemDetails));
-            // ----------------------------------
-
-            createdShopButtons.Add(button);
-            Debug.Log($"ComputerInteractable: Created button for '{details.Name}'.");
         }
 
-        if(buyButton != null)
-        {
-            buyButton.onClick.AddListener(ProcessPurchase);
-            Debug.Log("ComputerInteractable: Subscribed Buy Button listener.");
-        }
-        else
-        {
-             Debug.LogWarning("ComputerInteractable: Buy Button not found under shopContentPanel.");
-        }
+        if(buyButton != null) buyButton.onClick.AddListener(ProcessPurchase);
         
-        // Update the UI display when the panel becomes active
         UpdateShoppingCartUI();
     }
 
@@ -324,9 +267,15 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
     /// </summary>
     public void OnPanelDeactivated()
     {
-        Debug.Log("ComputerInteractable: Shop Panel Deactivated. Unsubscribing listeners and clearing references.");
+        CleanupUI(); // Consolidate cleanup logic
+        if(buyButton != null) buyButton.onClick.RemoveAllListeners();
+        shoppingCartText = null;
+        buyButton = null;
+    }
 
-        // --- Unsubscribe and destroy dynamically created buttons ---
+    private void CleanupUI()
+    {
+        // 1. Destroy Buttons
         foreach (Button button in createdShopButtons)
         {
             if (button != null)
@@ -335,20 +284,14 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
                 Destroy(button.gameObject);
             }
         }
-        createdShopButtons.Clear(); // Clear the list after destroying all buttons
-        Debug.Log("ComputerInteractable: Destroyed dynamic shop buttons and unsubscribed listeners.");
+        createdShopButtons.Clear();
 
-        // --- Unsubscribe buy button events ---
-        if(buyButton != null)
+        // 2. Destroy Categories
+        foreach (GameObject category in createdCategories)
         {
-            buyButton.onClick.RemoveAllListeners();
-            Debug.Log("ComputerInteractable: Unsubscribed Buy Button listeners.");
+            if (category != null) Destroy(category);
         }
-
-        // --- Clear dynamic references (but NOT cached managers/upgrades, as OnDisable handles that) ---
-        shoppingCartText = null;
-        buyButton = null;
-        // --- END MODIFIED ---
+        createdCategories.Clear();
     }
 
     private void OnDestroy()
@@ -632,6 +575,34 @@ public class ComputerInteractable : MonoBehaviour, IInteractable, IPanelActivata
         }
     }
 
+    /// <summary>
+    /// Maps an ItemLabel to a specific shop category string.
+    /// </summary>
+    private string GetShopCategoryName(ItemLabel label)
+    {
+        switch (label)
+        {
+            case ItemLabel.OverTheCounter:
+                return "Over-the-Counter";
+
+            case ItemLabel.PillStock:
+            case ItemLabel.LiquidStock:
+            case ItemLabel.InhalerStock:
+            case ItemLabel.InsulinStock:
+                return "Stock";
+
+            case ItemLabel.PillMedContainer:
+            case ItemLabel.LiquidMedContainer:
+            case ItemLabel.InhalerMedContainer:
+            case ItemLabel.InsulinMedContainer:
+                return "Packaging";
+
+            default:
+                // Fallback for any items not explicitly listed above 
+                // Uses the Regex you originally had to format the Enum name nicely
+                return System.Text.RegularExpressions.Regex.Replace(label.ToString(), "(\\B[A-Z])", " $1");
+        }
+    }
 
     public void ResetInteraction()
     {
