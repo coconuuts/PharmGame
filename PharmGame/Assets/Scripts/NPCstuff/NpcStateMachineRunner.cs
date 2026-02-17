@@ -71,6 +71,7 @@ namespace Game.NPC
           // --- Public methods/properties for external access if needed ---
           public NpcStateSO CurrentStateSO => currentState;
           public NpcStateSO PreviousStateSO => previousState;
+          public NpcInterruptionHandler InterruptionHandler => interruptionHandler;
 
 
           // --- External References ---
@@ -761,6 +762,36 @@ namespace Game.NPC
                gameObject.SetActive(true);
                enabled = true;
 
+               if (tiData.isInterrupted && !string.IsNullOrEmpty(tiData.interruptedStateEnumKey))
+               {
+               try
+               {
+                    Type enumType = Type.GetType(tiData.interruptedStateEnumType);
+                    if (enumType != null)
+                    {
+                         Enum interruptedEnum = (Enum)Enum.Parse(enumType, tiData.interruptedStateEnumKey);
+                         NpcStateSO interruptedState = GetStateSO(interruptedEnum);
+                         
+                         if (interruptionHandler != null && interruptedState != null)
+                         {
+                              interruptionHandler.RestoreInterruptionState(interruptedState);
+                              
+                              // Restore path variables to the runner
+                              this.wasInterruptedFromPathState = tiData.wasInterruptedFromPath;
+                              this.interruptedPathID = tiData.interruptedPathID;
+                              this.interruptedWaypointIndex = tiData.interruptedWaypointIndex;
+                              this.interruptedFollowReverse = tiData.interruptedFollowReverse;
+                              
+                              Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Restored TI Interruption State. Original state: {interruptedState.name}");
+                         }
+                    }
+               }
+               catch (Exception e)
+               {
+                    Debug.LogError($"Failed to restore TI interrupted state: {e.Message}");
+               }
+               }
+
                CheckAndRegisterStorePresence();
 
                // Initialize timers here. ProximityManager will set the initial mode via SetUpdateMode // MOVED TO TiNpcData.LinkGameObject
@@ -914,7 +945,25 @@ namespace Game.NPC
                     {
                          data.InventoryItems = Shopper.GetTransientInventoryData();
                     }
+
+                    // Interruption
+                    data.IsInterrupted = interruptionHandler.IsInterrupted();
+                    if (data.IsInterrupted)
+                    {
+                    NpcStateSO stackedState = interruptionHandler.GetSavedStateFromStack();
+                    if (stackedState != null && stackedState.HandledState != null)
+                    {
+                         data.InterruptedStateEnumKey = stackedState.HandledState.ToString();
+                         data.InterruptedStateEnumType = stackedState.HandledState.GetType().AssemblyQualifiedName;
+                    }
                     
+                    // Save path interruption variables
+                    data.WasInterruptedFromPath = this.wasInterruptedFromPathState;
+                    data.InterruptedPathID = this.interruptedPathID;
+                    data.InterruptedWaypointIndex = this.interruptedWaypointIndex;
+                    data.InterruptedFollowReverse = this.interruptedFollowReverse;
+                    }
+                                        
                     data.HasPendingPrescription = this.hasPendingPrescriptionTransient;
                     data.AssignedOrder = this.assignedOrderTransient;
 
@@ -1064,6 +1113,37 @@ namespace Game.NPC
                               // Fallback
                               TransitionToState(GetStateSO(GeneralState.Idle));
                          }
+                    }
+
+                    // 7. Restore Interruption
+                    if (data.IsInterrupted && !string.IsNullOrEmpty(data.InterruptedStateEnumKey))
+                    {
+                    try 
+                    {
+                         Type enumType = Type.GetType(data.InterruptedStateEnumType);
+                         if (enumType != null)
+                         {
+                              Enum interruptedEnum = (Enum)Enum.Parse(enumType, data.InterruptedStateEnumKey);
+                              NpcStateSO interruptedState = GetStateSO(interruptedEnum);
+                              
+                              if (interruptionHandler != null && interruptedState != null)
+                              {
+                                   interruptionHandler.RestoreInterruptionState(interruptedState);
+                                   
+                                   // Restore path variables to the runner
+                                   this.wasInterruptedFromPathState = data.WasInterruptedFromPath;
+                                   this.interruptedPathID = data.InterruptedPathID;
+                                   this.interruptedWaypointIndex = data.InterruptedWaypointIndex;
+                                   this.interruptedFollowReverse = data.InterruptedFollowReverse;
+                                   
+                                   Debug.Log($"NpcStateMachineRunner ({gameObject.name}): Restored Interruption State. Original state: {interruptedState.name}");
+                              }
+                         }
+                    }
+                    catch (Exception e)
+                    {
+                         Debug.LogError($"NpcStateMachineRunner: Failed to restore interrupted state '{data.InterruptedStateEnumKey}': {e.Message}");
+                    }
                     }
 
                     CheckAndRegisterStorePresence();

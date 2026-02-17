@@ -164,6 +164,35 @@ namespace Game.NPC.TI
                      data.simulatedFollowReverse = false;
                      data.isFollowingPathBasic = false;
                  }
+
+                 // Flush Interruption Data ---
+                if (runner.InterruptionHandler != null)
+                {
+                    data.isInterrupted = runner.InterruptionHandler.IsInterrupted();
+                    if (data.isInterrupted)
+                    {
+                        var stackedState = runner.InterruptionHandler.GetSavedStateFromStack();
+                        if (stackedState != null && stackedState.HandledState != null)
+                        {
+                            data.interruptedStateEnumKey = stackedState.HandledState.ToString();
+                            data.interruptedStateEnumType = stackedState.HandledState.GetType().AssemblyQualifiedName;
+                        }
+                        
+                        // Also grab internal runner path variables
+                        data.wasInterruptedFromPath = runner.wasInterruptedFromPathState;
+                        data.interruptedPathID = runner.interruptedPathID;
+                        data.interruptedWaypointIndex = runner.interruptedWaypointIndex;
+                        data.interruptedFollowReverse = runner.interruptedFollowReverse;
+                    }
+                    else
+                    {
+                        // Clear them out so we don't accidentally restore an old interruption later
+                        data.interruptedStateEnumKey = null;
+                        data.interruptedStateEnumType = null;
+                        data.wasInterruptedFromPath = false;
+                        data.interruptedPathID = null;
+                    }
+                }
              }
 
              // Confirm the position being saved to data

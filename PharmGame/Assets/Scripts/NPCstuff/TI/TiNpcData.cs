@@ -105,6 +105,16 @@ namespace Game.NPC.TI // Keep in the TI namespace
         [Tooltip("A timer used for off-screen simulation of states like waiting, browsing, etc.")]
         [SerializeField] public float simulatedStateTimer; // Made public for direct access by simulation logic
 
+        [Header("Interruption Persistence")]
+        [SerializeField] public bool isInterrupted;
+        [SerializeField] public string interruptedStateEnumKey;
+        [SerializeField] public string interruptedStateEnumType;
+
+        [SerializeField] public bool wasInterruptedFromPath;
+        [SerializeField] public string interruptedPathID;
+        [SerializeField] public int interruptedWaypointIndex;
+        [SerializeField] public bool interruptedFollowReverse;
+
         // --- Path Following Simulation Data ---
         [Tooltip("The ID of the path currently being followed in simulation.")]
         [SerializeField] public string simulatedPathID; // Public for direct access by simulation logic

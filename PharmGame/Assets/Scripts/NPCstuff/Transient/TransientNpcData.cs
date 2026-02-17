@@ -18,6 +18,14 @@ namespace Game.NPC
         public List<TransientInventoryItemData> InventoryItems;
         public bool HasPendingPrescription;
         public PrescriptionOrder AssignedOrder;
+        
+        public bool IsInterrupted;
+        public string InterruptedStateEnumKey;
+        public string InterruptedStateEnumType;
+        public bool WasInterruptedFromPath;
+        public string InterruptedPathID;
+        public int InterruptedWaypointIndex;
+        public bool InterruptedFollowReverse;
 
         public TransientNpcData()
         {

@@ -342,5 +342,35 @@ namespace Game.NPC.Handlers // Placing handlers together
                    else Debug.LogError($"InterruptionHandler ({gameObject.name}): Neither Idle nor ReturningToPool fallback states found when stack is empty on EndInterruption!", this);
               }
          }
+
+        /// <summary>
+        /// Peeks at the state stack to get the state the NPC was in before the interruption.
+        /// Used for saving the game.
+        /// </summary>
+        public NpcStateSO GetSavedStateFromStack()
+        {
+            if (stateStack != null && stateStack.Count > 0)
+            {
+                return stateStack.Peek();
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Forces the handler into an interrupted state and pushes the original state to the stack.
+        /// Used when loading a saved game.
+        /// </summary>
+        public void RestoreInterruptionState(NpcStateSO originalState)
+        {
+            if (originalState != null)
+            {
+                stateStack.Clear();
+                stateStack.Push(originalState);
+                isInterrupted = true;
+                
+                // Note: InteractorObject is intentionally left null upon load, 
+                // as the interacting GameObject (like the player) shouldn't be serialized directly here.
+            }
+        }
     }
 }
