@@ -16,6 +16,7 @@ namespace Game.Navigation.Editor
     public class WaypointPathEditorWindow : EditorWindow
     {
         private string newPathID = "NewPath";
+        private string newPathGroupTag = "";
         private List<GameObject> currentPathWaypoints = new List<GameObject>(); // Temporarily holds GameObjects
 
         // Variables for adding waypoints by selecting in scene
@@ -53,6 +54,7 @@ namespace Game.Navigation.Editor
 
             // Path ID input
             newPathID = EditorGUILayout.TextField("Path ID", newPathID);
+            newPathGroupTag = EditorGUILayout.TextField("Path Group Tag", newPathGroupTag);
 
             GUILayout.Space(10);
 
@@ -302,8 +304,9 @@ namespace Game.Navigation.Editor
         private void ClearPathDefinition()
         {
             currentPathWaypoints.Clear();
-            newPathID = "NewPath"; // Reset default ID
-            Repaint(); // Repaint the window
+            newPathID = "NewPath"; 
+            newPathGroupTag = "";
+            Repaint(); 
         }
 
         private void CreatePathSOAsset()
@@ -339,11 +342,8 @@ namespace Game.Navigation.Editor
             PathSO newPath = CreateInstance<PathSO>();
             newPath.name = newPathID; // Asset name
             // Use the PathID property setter if it had one, otherwise set directly
-            typeof(PathSO).GetProperty("PathID").SetValue(newPath, newPathID); // Set private field via reflection, or make PathID settable internal
-            // Or, if pathID is private [SerializeField], you can't set it directly here without reflection.
-            // Make pathID internal set in PathSO for easier editor access, or use reflection.
-            // Let's assume we make PathID settable internal for cleaner code here.
-            // Modify PathSO: public string PathID { get; internal set; }
+            typeof(PathSO).GetProperty("PathID").SetValue(newPath, newPathID); 
+            typeof(PathSO).GetProperty("PathGroupTag").SetValue(newPath, newPathGroupTag);
 
             // Populate waypoint IDs from the list of GameObjects
             List<string> waypointIDs = currentPathWaypoints

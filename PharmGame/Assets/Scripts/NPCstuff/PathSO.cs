@@ -27,6 +27,10 @@ namespace Game.Navigation
         [SerializeField] private string pathID;
         public string PathID { get => pathID; internal set => pathID = value; }
 
+        [Tooltip("A tag used to group multiple paths that share the same destination or purpose (e.g., 'ToPharmacy').")]
+        [SerializeField] private string pathGroupTag;
+        public string PathGroupTag { get => pathGroupTag; internal set => pathGroupTag = value; }
+
         [Tooltip("The ordered list of waypoint IDs that make up this path.")]
         [SerializeField] private List<string> waypointIDs;
         public List<string> WaypointIDs { get => waypointIDs; internal set => waypointIDs = value; }

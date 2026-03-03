@@ -25,15 +25,12 @@ namespace Game.NPC.Decisions // A new namespace for decision-related assets/logi
         [SerializeField] private string waypointID;
         public string WaypointID => waypointID; // Public getter for the associated Waypoint ID
 
-        // --- Decision Options --- // <-- NEW HEADER
+        // --- Decision Options --- 
         [Header("Decision Options")]
         [Tooltip("The list of possible outcomes (states or paths) an NPC can choose from at this point.")]
-        [SerializeField] private List<DecisionOption> decisionOptions = new List<DecisionOption>(); // <-- NEW FIELD
-        public List<DecisionOption> DecisionOptions => decisionOptions; // Public getter
-        // --- End Decision Options ---
+        [SerializeField] private List<DecisionOption> decisionOptions = new List<DecisionOption>();
+        public List<DecisionOption> DecisionOptions => decisionOptions; 
 
-
-        // Optional: Add validation in editor
         #if UNITY_EDITOR
         private void OnValidate()
         {

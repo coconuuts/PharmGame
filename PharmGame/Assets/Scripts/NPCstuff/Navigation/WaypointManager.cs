@@ -37,10 +37,8 @@ namespace Game.Navigation // Use the same namespace
         // Internal dictionaries for quick lookup
         private Dictionary<string, PathSO> pathToSODictionary;
         private Dictionary<string, Waypoint> waypointDictionary;
-        // --- NEW: Dictionary for DecisionPointSO lookup ---
         private Dictionary<string, DecisionPointSO> decisionPointDictionary;
-        // --- END NEW ---
-
+        private Dictionary<string, List<PathSO>> pathsByTagDictionary;
 
         private void Awake()
         {
@@ -60,16 +58,14 @@ namespace Game.Navigation // Use the same namespace
             // Initialize dictionaries
             pathToSODictionary = new Dictionary<string, PathSO>();
             waypointDictionary = new Dictionary<string, Waypoint>();
-            // --- NEW: Initialize DecisionPoint dictionary ---
             decisionPointDictionary = new Dictionary<string, DecisionPointSO>();
-            // --- END NEW ---
+            pathsByTagDictionary = new Dictionary<string, List<PathSO>>();
 
 
             // Load and register assets and waypoints
             LoadPaths();
-            // --- NEW: Load Decision Points ---
+            // --- Load Decision Points ---
             LoadDecisionPoints();
-            // --- END NEW ---
             FindAndRegisterWaypoints();
 
             Debug.Log("WaypointManager: Awake completed.");
@@ -82,9 +78,8 @@ namespace Game.Navigation // Use the same namespace
                 // Clear dictionaries and singleton reference
                 pathToSODictionary.Clear();
                 waypointDictionary.Clear();
-                // --- NEW: Clear DecisionPoint dictionary ---
                 decisionPointDictionary.Clear();
-                // --- END NEW ---
+                pathsByTagDictionary.Clear();
                 Instance = null;
                 Debug.Log("WaypointManager: OnDestroy completed. Dictionaries cleared.");
             }
@@ -123,6 +118,17 @@ namespace Game.Navigation // Use the same namespace
                 }
 
                 pathToSODictionary.Add(pathSO.PathID, pathSO);
+
+                if (!string.IsNullOrWhiteSpace(pathSO.PathGroupTag))
+                {
+                    // If the tag isn't in the dictionary yet, create a new list for it
+                    if (!pathsByTagDictionary.ContainsKey(pathSO.PathGroupTag))
+                    {
+                        pathsByTagDictionary[pathSO.PathGroupTag] = new List<PathSO>();
+                    }
+                    // Add this path to the list for this tag
+                    pathsByTagDictionary[pathSO.PathGroupTag].Add(pathSO);
+                }
             }
 
             Debug.Log($"WaypointManager: Loaded {pathToSODictionary.Count} unique PathSO assets.");
@@ -177,9 +183,8 @@ namespace Game.Navigation // Use the same namespace
                  return;
             }
 
-            // --- MODIFIED: Find GameObjects by tag instead of components directly ---
+            // --- Find GameObjects by tag instead of components directly ---
             GameObject[] waypointObjects = GameObject.FindGameObjectsWithTag(waypointTag);
-            // --- END MODIFIED ---
 
 
             if (waypointObjects == null || waypointObjects.Length == 0)
@@ -196,15 +201,13 @@ namespace Game.Navigation // Use the same namespace
                     continue;
                 }
 
-                // --- MODIFIED: Get the Waypoint component from the GameObject ---
+                // --- Get the Waypoint component from the GameObject ---
                 Waypoint waypoint = go.GetComponent<Waypoint>();
                 if (waypoint == null)
                 {
                      Debug.LogWarning($"WaypointManager: GameObject '{go.name}' has tag '{waypointTag}' but is missing the Waypoint component! Skipping registration.", go);
                      continue;
                 }
-                // --- END MODIFIED ---
-
 
                 if (string.IsNullOrWhiteSpace(waypoint.ID))
                 {
@@ -302,6 +305,27 @@ namespace Game.Navigation // Use the same namespace
               Debug.LogWarning($"WaypointManager: Decision Point with ID '{pointID}' not found in loaded assets.", this);
               return null;
          }
+
+         /// <summary>
+        /// Gets a list of PathSO assets that share the specified group tag.
+        /// </summary>
+        /// <param name="tag">The group tag to search for (e.g., "ToPharmacy").</param>
+        /// <returns>A list of PathSOs with the matching tag, or an empty list if none are found.</returns>
+        public List<PathSO> GetPathsByTag(string tag)
+        {
+            if (string.IsNullOrWhiteSpace(tag))
+            {
+                Debug.LogWarning("WaypointManager: Attempted to get paths with null or empty tag.", this);
+                return new List<PathSO>();
+            }
+
+            if (pathsByTagDictionary.TryGetValue(tag, out List<PathSO> paths))
+            {
+                return paths;
+            }
+
+            return new List<PathSO>(); // Return an empty list to prevent null reference errors elsewhere
+        }
     }
 }
 
