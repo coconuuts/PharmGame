@@ -1,8 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using TMPro;
-using UnityEngine.UI; // --- ADDED: Required for UI elements like Slider ---
+using UnityEngine.UI;
 using Systems.GameStates; 
 using Systems.Interaction;
 
@@ -31,20 +30,12 @@ namespace Systems.Player
         [Header("Stamina Settings")]
         public float maxStamina = 100f;
         public float currentStamina = 100f;
-        [Tooltip("How many seconds the player can sprint before stamina hits 0.")]
         public float sprintDuration = 10f; 
-        [Tooltip("How many seconds it takes to regenerate from 0 to max stamina.")]
         public float regenDuration = 5f; 
-        [Tooltip("Minimum percentage of stamina required to start sprinting (0.0 to 1.0).")]
         [Range(0f, 1f)] public float minStaminaToSprint = 0.30f; 
-        
-        // --- ADDED: Reference to the UI Slider ---
-        [Tooltip("Drag your UI Slider here to display stamina.")]
         public Slider staminaSlider; 
         
-        // Flag to lock out sprinting until the minimum threshold is met
         private bool canSprint = true;
-
         Vector3 velocity;
 
         [Header("Ground Check")]
@@ -55,11 +46,15 @@ namespace Systems.Player
 
         private bool movementEnabled = true;
 
+        [Header("Developer Debug")]
+        public bool isDebugModeActive = false;
+        public bool isFlying = false;
+        public float flySpeedMultiplier = 3f;
+        public float flyVerticalSpeed = 10f;
+
         private void Start()
         {
             currentStamina = maxStamina;
-
-            // --- ADDED: Initialize the slider values ---
             if (staminaSlider != null)
             {
                 staminaSlider.maxValue = maxStamina;
@@ -104,7 +99,8 @@ namespace Systems.Player
         {
             isGrounded = Physics.CheckSphere(groundCheck.position, groundDistance, groundMask);
 
-            if (isGrounded && velocity.y < 0)
+            // Do not snap to ground if we are flying
+            if (isGrounded && velocity.y < 0 && !isFlying)
             {
                 velocity.y = -2f;
             }
@@ -113,6 +109,14 @@ namespace Systems.Player
 
             if (movementEnabled)
             {
+                // Listen for Fly Mode Toggle (Z) if debug mode is active
+                if (isDebugModeActive && Input.GetKeyDown(KeyCode.Z))
+                {
+                    isFlying = !isFlying;
+                    if (isFlying) velocity.y = 0f; // Reset falling momentum immediately
+                    Debug.Log("Fly mode: " + isFlying);
+                }
+
                 float x = Input.GetAxisRaw("Horizontal");
                 float z = Input.GetAxisRaw("Vertical");
 
@@ -148,8 +152,7 @@ namespace Systems.Player
                     }
                 }
 
-                // Drain stamina if we are actively sprinting
-                if (isSprinting)
+                if (isSprinting && !isFlying) // Don't drain stamina if flying
                 {
                     float drainRate = maxStamina / sprintDuration;
                     currentStamina -= drainRate * Time.deltaTime;
@@ -162,26 +165,44 @@ namespace Systems.Player
                     }
                 }
 
-                // --- ADDED: Update the UI Slider every frame ---
-                if (staminaSlider != null)
-                {
-                    staminaSlider.value = currentStamina;
-                }
+                if (staminaSlider != null) staminaSlider.value = currentStamina;
 
+                // Move Speed assignment
                 moveSpeed = isSprinting ? sprintSpeed : walkSpeed;
+                if (isFlying) moveSpeed *= flySpeedMultiplier;
 
                 Vector3 move = transform.right * x + transform.forward * z;
                 if (move.magnitude > 1f) move.Normalize(); 
 
                 horizontalMove = move * moveSpeed;
 
-                if (Input.GetButtonDown("Jump") && isGrounded)
+                // Jump or Fly Vertical Movement
+                if (isFlying)
                 {
-                    velocity.y = jumpForce;
+                    velocity.y = 0f; // Neutralize gravity
+                    if (Input.GetKey(KeyCode.Space))
+                    {
+                        velocity.y = flyVerticalSpeed;
+                    }
+                    else if (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))
+                    {
+                        velocity.y = -flyVerticalSpeed;
+                    }
+                }
+                else
+                {
+                    if (Input.GetButtonDown("Jump") && isGrounded)
+                    {
+                        velocity.y = jumpForce;
+                    }
                 }
             }
 
-            velocity.y += gravity * Time.deltaTime;
+            // Only apply gravity if we aren't flying
+            if (!isFlying)
+            {
+                velocity.y += gravity * Time.deltaTime;
+            }
 
             Vector3 finalMovement = horizontalMove + velocity;
             controller.Move(finalMovement * Time.deltaTime);
