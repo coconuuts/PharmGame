@@ -119,6 +119,17 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!114 &13968848 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 1530452294477281489, guid: 8202459e60c16e64a96afbd191a02aa8, type: 3}
+  m_PrefabInstance: {fileID: 704730797}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 704730798}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3af06c733cebbf5468a0f6d65bd60ae2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &16478272
 GameObject:
   m_ObjectHideFlags: 0
@@ -2762,8 +2773,16 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 704730799}
     - target: {fileID: 8331152532640911185, guid: 0e600044bae2d5d42ba4d89d7781d783, type: 3}
+      propertyPath: playerMovement
+      value: 
+      objectReference: {fileID: 13968848}
+    - target: {fileID: 8331152532640911185, guid: 0e600044bae2d5d42ba4d89d7781d783, type: 3}
       propertyPath: mouseSensitivity
       value: 275
+      objectReference: {fileID: 0}
+    - target: {fileID: 8331152532640911185, guid: 0e600044bae2d5d42ba4d89d7781d783, type: 3}
+      propertyPath: sprintBobAmplitude
+      value: 0.125
       objectReference: {fileID: 0}
     - target: {fileID: 8331152532640911185, guid: 0e600044bae2d5d42ba4d89d7781d783, type: 3}
       propertyPath: playerBodyTransform

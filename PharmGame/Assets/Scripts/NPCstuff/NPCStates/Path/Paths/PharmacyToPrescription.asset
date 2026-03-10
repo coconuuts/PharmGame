@@ -13,6 +13,7 @@ MonoBehaviour:
   m_Name: PharmacyToPrescription
   m_EditorClassIdentifier: 
   pathID: PharmacyToPrescription
+  pathGroupTag: ToPrescription
   waypointIDs:
   - P2P1
   - P2P
