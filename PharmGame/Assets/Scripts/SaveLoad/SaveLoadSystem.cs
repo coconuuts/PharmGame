@@ -101,13 +101,11 @@ namespace Systems.Persistence {
         bool isGameplayActive = false;
         private Texture2D currentScreenshot;
 
-        protected override void Awake() {
+        protected override void Awake() 
+        {
             base.Awake();
-
             ItemDatabase.Initialize();
-
-            dataService = new FileDataService(new JsonSerializer());
-
+            dataService = new FileDataService(new BinarySerializer());
             if (gameData == null) gameData = new GameData();
             if (gameData.inventories == null) gameData.inventories = new List<InventoryData>();
             if (gameData.tiNpcDataList == null) gameData.tiNpcDataList = new List<TiNpcData>();
